@@ -10,6 +10,10 @@ import (
 // thread. It is surfaced to API callers as a 400.
 var ErrQuotedMessageOutOfScope = errors.New("quoted message is not in this channel, conversation, or thread")
 
+// ErrClientNonceConflict is returned when a client reuses an idempotency nonce
+// for a different message request.
+var ErrClientNonceConflict = errors.New("client nonce was already used for a different message")
+
 type User struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -55,6 +59,10 @@ type Message struct {
 	QuotedBodySnapshot   string   `json:"quoted_body_snapshot,omitempty"`
 	QuotedAuthorID       *string  `json:"quoted_author_id,omitempty"`
 	QuotedAuthor         *User    `json:"quoted_author,omitempty"`
+	// Nonce is a client-supplied idempotency key used by optimistic UIs to match
+	// the server response to a pending placeholder and safely retry after a lost
+	// response.
+	Nonce string `json:"nonce,omitempty"`
 }
 
 type ThreadState struct {
@@ -122,6 +130,7 @@ type CreateMessageInput struct {
 	AuthorID        string
 	Body            string
 	QuotedMessageID *string
+	Nonce           string
 }
 
 type UpdateMessageInput struct {
@@ -203,6 +212,7 @@ type CreateDirectMessageInput struct {
 	AuthorID        string
 	Body            string
 	QuotedMessageID *string
+	Nonce           string
 }
 
 type Invite struct {

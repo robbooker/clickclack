@@ -43,6 +43,11 @@ export type Message = {
   quoted_body_snapshot?: string;
   quoted_author_id?: string;
   quoted_author?: User;
+  // Optimistic-send: client-supplied id, echoed by server. Used to swap
+  // pending placeholder with the real message on response/WS event.
+  nonce?: string;
+  // Client-only status. Absent for sent messages.
+  status?: "pending" | "failed";
 };
 
 export type Upload = {
@@ -82,6 +87,8 @@ export type EventPayload = {
   root_message_id?: string;
   channel_id?: string;
   direct_conversation_id?: string;
+  nonce?: string;
+  user_id?: string;
 };
 
 export type RealtimeEvent = {

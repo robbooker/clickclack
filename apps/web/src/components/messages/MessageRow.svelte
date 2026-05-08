@@ -16,6 +16,8 @@
     onOpenThread: (message: Message) => void;
     onJumpToQuote: (message: Message) => void;
     onOpenImage: (url: string, title: string) => void;
+    onRetry?: (message: Message) => void;
+    onDiscard?: (message: Message) => void;
   };
 
   let {
@@ -28,10 +30,21 @@
     onOpenThread,
     onJumpToQuote,
     onOpenImage,
+    onRetry,
+    onDiscard,
   }: Props = $props();
+
+  let isPending = $derived(message.status === "pending");
+  let isFailed = $derived(message.status === "failed");
 </script>
 
-<div class="message-row" class:selected data-message-id={message.id}>
+<div
+  class="message-row"
+  class:selected
+  class:is-pending={isPending}
+  class:is-failed={isFailed}
+  data-message-id={message.id}
+>
   <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
   <div class="message-content">
     <QuoteBlock {message} onJump={onJumpToQuote} />
@@ -47,6 +60,17 @@
         {/each}
       </div>
     {/if}
+    {#if isFailed}
+      <div class="message-failed" role="alert">
+        <span class="message-failed__label">Couldn't send.</span>
+        {#if onRetry}
+          <button type="button" class="message-failed__action" onclick={() => onRetry?.(message)}>Retry</button>
+        {/if}
+        {#if onDiscard}
+          <button type="button" class="message-failed__action message-failed__action--ghost" onclick={() => onDiscard?.(message)}>Discard</button>
+        {/if}
+      </div>
+    {/if}
   </div>
   <div class="message-actions" aria-label="Message actions">
     <button
@@ -54,6 +78,7 @@
       aria-label="Reply"
       class="tooltip"
       data-tooltip="Reply"
+      disabled={isPending || isFailed}
       onclick={() => onReply(message, replyContext)}
     >
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -65,6 +90,7 @@
       aria-label="Open thread"
       class="tooltip"
       data-tooltip={threadSummary(message, selectedThreadID)}
+      disabled={isPending || isFailed}
       onclick={() => onOpenThread(message)}
     >
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">

@@ -213,16 +213,17 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body            string `json:"body"`
 		QuotedMessageID string `json:"quoted_message_id"`
+		Nonce           string `json:"nonce"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
-	if err == nil {
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
-	writeResultStatus(w, http.StatusCreated, map[string]any{"message": message, "event": event}, err)
+	writeMessageCreateResult(w, message, event, err)
 }
 
 func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
@@ -405,6 +406,20 @@ func writeResultStatus(w http.ResponseWriter, status int, body any, err error) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	writeJSON(w, status, body)
+}
+
+func writeMessageCreateResult(w http.ResponseWriter, message store.Message, event store.Event, err error) {
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	body := map[string]any{"message": message}
+	status := http.StatusOK
+	if event.ID != "" {
+		body["event"] = event
+		status = http.StatusCreated
 	}
 	writeJSON(w, status, body)
 }

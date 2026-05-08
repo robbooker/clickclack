@@ -112,12 +112,26 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if event := readEventType(t, conn, "message.created"); event.Type != "message.created" {
 		t.Fatalf("unexpected websocket event %s", event.Type)
 	}
+	nonceCreated, nonceStatus := postJSONWithStatus[struct {
+		Message store.Message `json:"message"`
+		Event   *store.Event  `json:"event,omitempty"`
+	}](t, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]string{"body": "idempotent post", "nonce": "http-nonce-1"})
+	if nonceStatus != http.StatusCreated || nonceCreated.Event == nil || nonceCreated.Message.Nonce != "http-nonce-1" {
+		t.Fatalf("unexpected nonce create response: status=%d payload=%#v", nonceStatus, nonceCreated)
+	}
+	nonceReplay, replayStatus := postJSONWithStatus[struct {
+		Message store.Message `json:"message"`
+		Event   *store.Event  `json:"event,omitempty"`
+	}](t, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]string{"body": "idempotent post", "nonce": "http-nonce-1"})
+	if replayStatus != http.StatusOK || nonceReplay.Message.ID != nonceCreated.Message.ID || nonceReplay.Event != nil {
+		t.Fatalf("unexpected nonce replay response: status=%d payload=%#v", replayStatus, nonceReplay)
+	}
 
 	messages := getJSON[struct {
 		Messages []store.Message `json:"messages"`
 	}](t, server.URL+"/api/channels/"+channel.ID+"/messages")
-	if len(messages.Messages) != 1 {
-		t.Fatalf("expected one root message, got %d", len(messages.Messages))
+	if len(messages.Messages) != 2 {
+		t.Fatalf("expected two root messages, got %d", len(messages.Messages))
 	}
 
 	reply := postJSON[struct {
@@ -309,10 +323,17 @@ func getJSON[T any](t *testing.T, endpoint string) T {
 
 func postJSON[T any](t *testing.T, endpoint string, body any) T {
 	t.Helper()
+	out, _ := postJSONWithStatus[T](t, endpoint, body)
+	return out
+}
+
+func postJSONWithStatus[T any](t *testing.T, endpoint string, body any) (T, int) {
+	t.Helper()
 	payload, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var out T
 	resp, err := http.Post(endpoint, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -322,11 +343,10 @@ func postJSON[T any](t *testing.T, endpoint string, body any) T {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("POST %s: %s %s", endpoint, resp.Status, string(body))
 	}
-	var out T
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return out, resp.StatusCode
 }
 
 func postForm[T any](t *testing.T, endpoint string, form url.Values) T {

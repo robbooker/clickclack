@@ -14,6 +14,8 @@
     onOpenThread: (message: Message) => void;
     onJumpToQuote: (message: Message) => void;
     onOpenImage: (url: string, title: string) => void;
+    onRetry?: (message: Message) => void;
+    onDiscard?: (message: Message) => void;
   };
 
   let {
@@ -25,6 +27,8 @@
     onOpenThread,
     onJumpToQuote,
     onOpenImage,
+    onRetry,
+    onDiscard,
   }: Props = $props();
 </script>
 
@@ -63,6 +67,8 @@
         {onOpenThread}
         {onJumpToQuote}
         {onOpenImage}
+        {onRetry}
+        {onDiscard}
       />
     {/each}
   </div>

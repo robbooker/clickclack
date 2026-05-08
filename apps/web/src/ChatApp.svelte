@@ -6,9 +6,11 @@
   import { collectRecentPeople, dmTitle } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
   import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
+  import { notifyTyping, stopTyping } from "./lib/typing";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList, { type MessageListHandle, type MessageListState } from "./components/messages/MessageList.svelte";
+  import TypingIndicator, { TYPING_TTL_MS, type TypingEntry } from "./components/messages/TypingIndicator.svelte";
   import GuildRail from "./components/navigation/GuildRail.svelte";
   import Sidebar from "./components/navigation/Sidebar.svelte";
   import ProfilePane from "./components/profile/ProfilePane.svelte";
@@ -64,6 +66,8 @@
   let messageInput: HTMLTextAreaElement | null = null;
   let replyInput: HTMLTextAreaElement | null = null;
   let activeComposerContext: "message" | "thread" = "message";
+  let typingEntries: TypingEntry[] = [];
+  let typingSweeper: number | undefined;
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: connected = socket?.connected ?? false;
@@ -86,6 +90,8 @@
   onDestroy(() => {
     socket?.close();
     socket = null;
+    stopTyping();
+    if (typingSweeper) window.clearInterval(typingSweeper);
   });
 
   async function boot() {
@@ -245,14 +251,91 @@
 
   function commitView(key: string, msgs: Message[]) {
     // Update viewKey + messages atomically so MessageList sees the swap as one tick.
+    const switchingView = key !== viewKey;
     viewRestoreState = scrollMemory.get(key);
-    messages = msgs;
+    // Preserve outgoing optimistic placeholders for this view that the server
+    // hasn't echoed yet. Without this the placeholder would flicker out when a
+    // sibling realtime event triggers a reload mid-flight.
+    const localOptimistic = messages.filter(
+      (m) => (m.status === "pending" || m.status === "failed") && belongsToView(m, key),
+    );
+    const localByID = new Map(localOptimistic.map((m) => [m.id, m]));
+    const localByNonce = new Map(localOptimistic.filter((m) => m.nonce).map((m) => [m.nonce, m]));
+    const merged = msgs.map((m) => {
+      const local = localByID.get(m.id) || (m.nonce ? localByNonce.get(m.nonce) : undefined);
+      if (!local) return m;
+      return {
+        ...m,
+        nonce: local.nonce,
+        status: local.status,
+        attachments: local.attachments?.length ? local.attachments : m.attachments,
+      };
+    });
+    const knownIDs = new Set(merged.map((m) => m.id));
+    const knownNonces = new Set(merged.map((m) => m.nonce).filter(Boolean));
+    const preserve = messages.filter(
+      (m) =>
+        (m.status === "pending" || m.status === "failed") &&
+        m.id.startsWith("tmp_") &&
+        !knownIDs.has(m.id) &&
+        !(m.nonce && knownNonces.has(m.nonce)) &&
+        belongsToView(m, key),
+    );
+    messages = preserve.length > 0 ? [...merged, ...preserve] : merged;
     viewKey = key;
+    if (switchingView) {
+      typingEntries = [];
+      stopTyping();
+    }
+  }
+
+  function belongsToView(message: Message, key: string): boolean {
+    if (!key) return false;
+    return message.channel_id === key || message.direct_conversation_id === key;
   }
 
   async function scrollMessagesToBottom() {
     await tick();
     messageList?.scrollToBottom();
+  }
+
+  type OutgoingDraft = {
+    body: string;
+    quotedMessageID?: string;
+    upload?: Upload;
+    workspaceID: string;
+    channelID?: string;
+    directConversationID?: string;
+    viewKey: string;
+  };
+
+  let pendingDrafts = new Map<string, OutgoingDraft>();
+
+  function newNonce(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID().replace(/-/g, "");
+    }
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function buildOptimisticMessage(nonce: string, draft: OutgoingDraft, id = `tmp_${nonce}`): Message {
+    const now = new Date().toISOString();
+    return {
+      id,
+      workspace_id: draft.workspaceID,
+      channel_id: draft.channelID,
+      direct_conversation_id: draft.directConversationID,
+      author_id: user?.id || "",
+      thread_root_id: id,
+      body: draft.body,
+      body_format: "markdown",
+      created_at: now,
+      author: user || undefined,
+      attachments: draft.upload ? [draft.upload] : [],
+      quoted_message_id: draft.quotedMessageID,
+      nonce,
+      status: "pending",
+    };
   }
 
   async function sendMessage() {
@@ -262,33 +345,105 @@
       status = "pick or create a channel";
       return;
     }
+    stopTyping();
     const activeContext: "channel" | "dm" = selectedDirectID ? "dm" : "channel";
     const quote = replyTarget && replyContext === activeContext ? replyTarget : null;
+    const draft: OutgoingDraft = {
+      body,
+      quotedMessageID: quote?.id,
+      upload: pendingUpload || undefined,
+      workspaceID: selectedWorkspaceID,
+      channelID: selectedChannelID || undefined,
+      directConversationID: selectedDirectID || undefined,
+      viewKey: currentConversationKey(),
+    };
     messageBody = "";
-    const path = selectedDirectID ? `/api/dms/${selectedDirectID}/messages` : `/api/channels/${selectedChannelID}/messages`;
-    const payload: Record<string, unknown> = { body };
-    if (quote) payload.quoted_message_id = quote.id;
-    const data = await api<{ message: Message }>(path, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    let message = data.message;
     if (quote) clearReplyTarget();
-    if (pendingUpload) {
-      const upload = pendingUpload;
-      await api(`/api/messages/${data.message.id}/attachments`, {
+    pendingUpload = null;
+    await dispatchDraft(draft);
+  }
+
+  async function dispatchDraft(draft: OutgoingDraft, existingNonce?: string, existingMessageID?: string) {
+    const nonce = existingNonce ?? newNonce();
+    const tmpID = `tmp_${nonce}`;
+    const localID = existingMessageID ?? tmpID;
+    pendingDrafts.set(nonce, draft);
+    const placeholder = buildOptimisticMessage(nonce, draft, localID);
+    if (existingNonce) {
+      messages = messages.map((m) => (m.id === localID ? placeholder : m));
+    } else if (currentConversationKey() === draft.viewKey) {
+      messages = [...messages, placeholder];
+      void scrollMessagesToBottom();
+    }
+    const path = draft.directConversationID
+      ? `/api/dms/${draft.directConversationID}/messages`
+      : `/api/channels/${draft.channelID}/messages`;
+    const payload: Record<string, unknown> = { body: draft.body, nonce };
+    if (draft.quotedMessageID) payload.quoted_message_id = draft.quotedMessageID;
+    try {
+      const data = await api<{ message: Message }>(path, {
         method: "POST",
-        body: JSON.stringify({ upload_id: upload.id })
+        body: JSON.stringify(payload),
       });
-      pendingUpload = null;
-      message = { ...message, attachments: [...(message.attachments || []), upload] };
+      let message = data.message;
+      if (draft.upload) {
+        try {
+          await api(`/api/messages/${message.id}/attachments`, {
+            method: "POST",
+            body: JSON.stringify({ upload_id: draft.upload.id }),
+          });
+          message = {
+            ...message,
+            attachments: [...(message.attachments || []), draft.upload],
+          };
+        } catch (err) {
+          console.warn("attachment failed", err);
+          const failedMessage: Message = {
+            ...message,
+            nonce,
+            status: "failed",
+            attachments: draft.upload ? [...(message.attachments || []), draft.upload] : message.attachments,
+          };
+          messages = messages.map((m) => (m.id === localID ? failedMessage : m));
+          return;
+        }
+      }
+      pendingDrafts.delete(nonce);
+      // Replace placeholder with the real message (or append if a concurrent
+      // realtime reload already removed our placeholder).
+      const tmpIndex = messages.findIndex((m) => m.id === localID);
+      if (tmpIndex >= 0) {
+        messages = messages.map((m) => (m.id === localID ? message : m));
+      } else if (
+        belongsToView(message, currentConversationKey()) &&
+        !messages.some((m) => m.id === message.id)
+      ) {
+        messages = [...messages, message];
+      }
+    } catch (err) {
+      console.warn("send failed", err);
+      messages = messages.map((m) =>
+        m.id === localID ? { ...m, status: "failed" as const } : m,
+      );
     }
-    if (messages.some((existing) => existing.id === message.id)) {
-      messages = messages.map((existing) => (existing.id === message.id ? message : existing));
-    } else {
-      messages = [...messages, message];
+  }
+
+  function retryFailedMessage(message: Message) {
+    if (!message.nonce) return;
+    const draft = pendingDrafts.get(message.nonce);
+    if (!draft) {
+      // We lost the draft (e.g., page reload). Best we can do is reuse the
+      // placeholder body — but our pending tracker is in-memory only, so we
+      // simply discard.
+      discardFailedMessage(message);
+      return;
     }
-    await scrollMessagesToBottom();
+    void dispatchDraft({ ...draft, viewKey: draft.viewKey }, message.nonce, message.id);
+  }
+
+  function discardFailedMessage(message: Message) {
+    if (message.nonce) pendingDrafts.delete(message.nonce);
+    messages = messages.filter((m) => m.id !== message.id);
   }
 
   async function openThread(message: Message) {
@@ -467,6 +622,10 @@
   }
 
   async function handleEvent(event: RealtimeEvent) {
+    if (event.type === "typing.started" || event.type === "typing.stopped") {
+      handleTypingEvent(event);
+      return;
+    }
     if ((event.type === "channel.created" || event.type === "channel.updated") && event.workspace_id === selectedWorkspaceID) {
       await loadChannels();
       return;
@@ -475,12 +634,73 @@
       (event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID) &&
       (event.type === "message.created" || event.type === "message.updated" || event.type === "message.deleted")
     ) {
+      // Optimistic-send echo: if this is our own outgoing message, the HTTP
+      // response will swap the placeholder; skip the reload to avoid a flicker.
+      const echoNonce = event.payload.nonce;
+      if (event.type === "message.created" && echoNonce && pendingDrafts.has(echoNonce)) {
+        return;
+      }
       await loadMessages();
     }
     const rootID = event.payload.root_message_id || event.payload.message_id;
     if (selectedThread && rootID === selectedThread.id) {
       await openThread(selectedThread);
     }
+  }
+
+  function handleTypingEvent(event: RealtimeEvent) {
+    const payload = event.payload as Record<string, unknown>;
+    const userID = typeof payload.user_id === "string" ? payload.user_id : "";
+    if (!userID || userID === user?.id) return;
+    const eventChannel = event.channel_id || (typeof payload.channel_id === "string" ? payload.channel_id : "");
+    const eventDM = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
+    const matchesView =
+      (selectedChannelID && eventChannel === selectedChannelID) ||
+      (selectedDirectID && eventDM === selectedDirectID);
+    if (!matchesView) return;
+    if (event.type === "typing.stopped") {
+      typingEntries = typingEntries.filter((entry) => entry.userID !== userID);
+      return;
+    }
+    const author = lookupUser(userID);
+    const next = typingEntries.filter((entry) => entry.userID !== userID);
+    next.push({ userID, user: author, expiresAt: Date.now() + TYPING_TTL_MS });
+    typingEntries = next;
+    ensureTypingSweeper();
+  }
+
+  function lookupUser(userID: string): User | undefined {
+    if (user?.id === userID) return user;
+    const fromMessages = messages.find((msg) => msg.author?.id === userID)?.author;
+    if (fromMessages) return fromMessages;
+    for (const dm of directConversations) {
+      const member = dm.members.find((m) => m.id === userID);
+      if (member) return member;
+    }
+    return undefined;
+  }
+
+  function ensureTypingSweeper() {
+    if (typingSweeper) return;
+    typingSweeper = window.setInterval(() => {
+      const now = Date.now();
+      const next = typingEntries.filter((entry) => entry.expiresAt > now);
+      if (next.length !== typingEntries.length) typingEntries = next;
+      if (next.length === 0 && typingSweeper) {
+        window.clearInterval(typingSweeper);
+        typingSweeper = undefined;
+      }
+    }, 1000);
+  }
+
+  function notifyComposerTyping() {
+    if (!selectedWorkspaceID) return;
+    if (!selectedChannelID && !selectedDirectID) return;
+    notifyTyping({
+      workspaceID: selectedWorkspaceID,
+      channelID: selectedChannelID || undefined,
+      directConversationID: selectedDirectID || undefined,
+    });
   }
 
   function openUserProfile(profile?: User | null) {
@@ -699,7 +919,11 @@
       onOpenThread={openThread}
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
+      onRetry={retryFailedMessage}
+      onDiscard={discardFailedMessage}
     />
+
+    <TypingIndicator entries={typingEntries} currentUserID={user?.id} />
 
     <ChatComposer
       value={messageBody}
@@ -713,7 +937,12 @@
       showGifPicker={showGifPicker}
       gifQuery={gifQuery}
       filteredGifs={filteredGifs}
-      onValue={(value) => (messageBody = value)}
+      onValue={(value) => {
+        const previous = messageBody;
+        messageBody = value;
+        if (value.trim() && value !== previous) notifyComposerTyping();
+        else if (!value.trim()) stopTyping();
+      }}
       onSubmit={() => void sendMessage()}
       onKeydown={handleComposerKey}
       onFocus={() => (activeComposerContext = "message")}

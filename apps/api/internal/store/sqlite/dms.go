@@ -132,6 +132,10 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 	if body == "" {
 		return store.Message{}, store.Event{}, errors.New("message body is required")
 	}
+	nonce, err := normalizeClientNonce(input.Nonce)
+	if err != nil {
+		return store.Message{}, store.Event{}, err
+	}
 	var quotedID, quotedAuthorID, quotedSnapshot string
 	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
 		quotedID = strings.TrimSpace(*input.QuotedMessageID)
@@ -142,15 +146,29 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 		quotedSnapshot = snap
 		quotedAuthorID = authorID
 	}
+	if existing, err := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); err == nil {
+		if existing.DirectConversationID != input.ConversationID || existing.ChannelID != "" || existing.ParentMessageID != nil || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
+			return store.Message{}, store.Event{}, store.ErrClientNonceConflict
+		}
+		return existing, store.Event{}, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return store.Message{}, store.Event{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-		VALUES (?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, 'markdown', ?, ?, ?, ?)`, id, workspaceID, input.ConversationID, input.AuthorID, id, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
+		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+		VALUES (?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, 'markdown', ?, ?, ?, ?, ?)`, id, workspaceID, input.ConversationID, input.AuthorID, id, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID), nonce); err != nil {
+		if existing, lookupErr := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); lookupErr == nil {
+			if existing.DirectConversationID == input.ConversationID && existing.ChannelID == "" && existing.ParentMessageID == nil && existing.Body == body && sameQuotedMessageID(existing, quotedID) {
+				return existing, store.Event{}, nil
+			}
+			return store.Message{}, store.Event{}, store.ErrClientNonceConflict
+		}
 		return store.Message{}, store.Event{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, "", "message.created", &seq, map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID})
+	event, err := insertEvent(ctx, tx, workspaceID, "", "message.created", &seq, eventPayload(map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID}, nonce))
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}

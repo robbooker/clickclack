@@ -50,7 +50,8 @@ func messageSelect() string {
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
 		       u.id, u.display_name, u.handle, u.avatar_url, u.created_at,
 		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
-		       qu.id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at
+		       qu.id, qu.display_name, qu.handle, qu.avatar_url, qu.created_at,
+		       m.client_nonce
 		FROM messages m
 		JOIN users u ON u.id = m.author_id
 		LEFT JOIN users qu ON qu.id = m.quoted_author_id`
@@ -63,12 +64,14 @@ func scanMessage(row scanner) (store.Message, error) {
 	var author store.User
 	var quotedMessageID, quotedAuthorID sql.NullString
 	var quAuthorID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
+	var nonce string
 	err := row.Scan(
 		&m.ID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
 		&m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted,
 		&author.ID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
 		&quotedMessageID, &m.QuotedBodySnapshot, &quotedAuthorID,
 		&quAuthorID, &quDisplayName, &quHandle, &quAvatarURL, &quCreatedAt,
+		&nonce,
 	)
 	if err != nil {
 		return store.Message{}, err
@@ -104,7 +107,30 @@ func scanMessage(row scanner) (store.Message, error) {
 			CreatedAt:   quCreatedAt.String,
 		}
 	}
+	m.Nonce = nonce
 	return m, nil
+}
+
+func normalizeClientNonce(value string) (string, error) {
+	nonce := strings.TrimSpace(value)
+	if len(nonce) > 128 {
+		return "", errors.New("nonce is too long")
+	}
+	return nonce, nil
+}
+
+func getMessageByClientNonceTx(ctx context.Context, tx *sql.Tx, authorID, nonce string) (store.Message, error) {
+	if nonce == "" {
+		return store.Message{}, sql.ErrNoRows
+	}
+	return scanMessage(tx.QueryRowContext(ctx, messageSelect()+` WHERE m.author_id = ? AND m.client_nonce = ?`, authorID, nonce))
+}
+
+func sameQuotedMessageID(message store.Message, quotedID string) bool {
+	if quotedID == "" {
+		return message.QuotedMessageID == nil || *message.QuotedMessageID == ""
+	}
+	return message.QuotedMessageID != nil && *message.QuotedMessageID == quotedID
 }
 
 var handlePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
@@ -210,6 +236,21 @@ func insertEvent(ctx context.Context, tx *sql.Tx, workspaceID, channelID, eventT
 		return store.Event{}, err
 	}
 	return event, nil
+}
+
+// eventPayload returns the base payload with a "nonce" key only if non-empty.
+// Used so optimistic clients can correlate WS message.created with their pending
+// placeholder.
+func eventPayload(base map[string]string, nonce string) map[string]string {
+	if nonce == "" {
+		return base
+	}
+	out := make(map[string]string, len(base)+1)
+	for k, v := range base {
+		out[k] = v
+	}
+	out["nonce"] = nonce
+	return out
 }
 
 func scanEvents(rows *sql.Rows) ([]store.Event, error) {

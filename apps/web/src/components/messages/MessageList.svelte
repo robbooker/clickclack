@@ -28,6 +28,7 @@
     messages: Message[];
     viewKey: string;
     loading?: boolean;
+    unreadCount?: number;
     restoreState?: MessageListState;
     selectedDirect?: DirectConversation;
     selectedChannel?: Channel;
@@ -41,12 +42,15 @@
     onOpenThread: (message: Message) => void;
     onJumpToQuote: (message: Message) => void;
     onOpenImage: (url: string, title: string) => void;
+    onRetry?: (message: Message) => void;
+    onDiscard?: (message: Message) => void;
   };
 
   let {
     messages,
     viewKey,
     loading = false,
+    unreadCount = 0,
     restoreState,
     selectedDirect,
     selectedChannel,
@@ -60,6 +64,8 @@
     onOpenThread,
     onJumpToQuote,
     onOpenImage,
+    onRetry,
+    onDiscard,
   }: Props = $props();
 
   const ANCHOR_THRESHOLD_PX = 120;
@@ -264,9 +270,28 @@
             {onOpenThread}
             {onJumpToQuote}
             {onOpenImage}
+            {onRetry}
+            {onDiscard}
           />
         {/if}
       {/snippet}
     </VList>
+  {/if}
+  {#if !loading && messages.length > 0}
+    <button
+      type="button"
+      class="jump-to-bottom"
+      class:visible={!atBottom && revealed}
+      aria-label={unreadCount > 0 ? `Jump to ${unreadCount} new message${unreadCount === 1 ? "" : "s"}` : "Jump to most recent"}
+      onclick={() => scrollToBottom()}
+      tabindex={!atBottom && revealed ? 0 : -1}
+    >
+      {#if unreadCount > 0}
+        <span class="jump-to-bottom__count">{unreadCount > 99 ? "99+" : unreadCount} new</span>
+      {/if}
+      <svg viewBox="0 0 16 16" aria-hidden="true" width="14" height="14">
+        <path fill="currentColor" d="M8 11.5a1 1 0 0 1-.71-.29l-4-4a1 1 0 1 1 1.42-1.42L8 9.09l3.29-3.3a1 1 0 0 1 1.42 1.42l-4 4a1 1 0 0 1-.71.29z"/>
+      </svg>
+    </button>
   {/if}
 </div>

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -53,20 +54,52 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	if root.ChannelSeq == nil || *root.ChannelSeq != 1 {
 		t.Fatalf("expected first channel sequence, got %#v", root.ChannelSeq)
 	}
+	idempotent, idempotentEvent, err := st.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID: channel.ID,
+		AuthorID:  owner.ID,
+		Body:      "idempotent body",
+		Nonce:     "client-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idempotent.Nonce != "client-nonce-1" || idempotentEvent.Type != "message.created" {
+		t.Fatalf("unexpected idempotent create result: %#v %#v", idempotent, idempotentEvent)
+	}
+	replayed, replayEvent, err := st.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID: channel.ID,
+		AuthorID:  owner.ID,
+		Body:      "idempotent body",
+		Nonce:     "client-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ID != idempotent.ID || replayEvent.ID != "" {
+		t.Fatalf("expected idempotent replay without event, got %#v %#v", replayed, replayEvent)
+	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{
+		ChannelID: channel.ID,
+		AuthorID:  owner.ID,
+		Body:      "different body",
+		Nonce:     "client-nonce-1",
+	}); !errors.Is(err, store.ErrClientNonceConflict) {
+		t.Fatalf("expected nonce conflict, got %v", err)
+	}
 
 	messages, err := st.ListMessages(ctx, channel.ID, owner.ID, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1 || messages[0].ID != root.ID {
+	if len(messages) != 2 || messages[0].ID != root.ID || messages[1].ID != idempotent.ID || messages[1].Nonce != "client-nonce-1" {
 		t.Fatalf("unexpected messages: %#v", messages)
 	}
 	after, err := st.ListMessages(ctx, channel.ID, owner.ID, *root.ChannelSeq, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != 0 {
-		t.Fatalf("expected no messages after seq, got %#v", after)
+	if len(after) != 1 || after[0].ID != idempotent.ID {
+		t.Fatalf("expected idempotent message after root seq, got %#v", after)
 	}
 
 	reply, state, events, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
@@ -300,12 +333,25 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 		ConversationID: dm.ID,
 		AuthorID:       other.ID,
 		Body:           " direct hello ",
+		Nonce:          "dm-nonce-1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if msg.DirectConversationID != dm.ID || event.Type != "message.created" || event.ChannelID != "" {
 		t.Fatalf("unexpected direct message result: %#v %#v", msg, event)
+	}
+	replayedDM, replayedDMEvent, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
+		ConversationID: dm.ID,
+		AuthorID:       other.ID,
+		Body:           "direct hello",
+		Nonce:          "dm-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayedDM.ID != msg.ID || replayedDMEvent.ID != "" {
+		t.Fatalf("expected idempotent dm replay without event, got %#v %#v", replayedDM, replayedDMEvent)
 	}
 	messages, err := st.ListDirectMessages(ctx, dm.ID, third.ID, 0, 0)
 	if err != nil {

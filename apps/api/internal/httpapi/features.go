@@ -163,16 +163,17 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body            string `json:"body"`
 		QuotedMessageID string `json:"quoted_message_id"`
+		Nonce           string `json:"nonce"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
-	if err == nil {
+	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
-	writeResultStatus(w, http.StatusCreated, map[string]any{"message": message, "event": event}, err)
+	writeMessageCreateResult(w, message, event, err)
 }
 
 func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
