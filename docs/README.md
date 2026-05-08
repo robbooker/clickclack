@@ -13,8 +13,9 @@ WebSocket pipe, and a framework-neutral TypeScript SDK so the bots feel at home.
 It's built for small teams, internal tools, communities, and anyone who would
 rather host their own.
 
-Product domain: [clickclack.chat](https://clickclack.chat). Docs domain:
-[docs.clickclack.chat](https://docs.clickclack.chat).
+Product domain: [clickclack.chat](https://clickclack.chat). App domain:
+[app.clickclack.chat](https://app.clickclack.chat), with `/app` as the local
+path. Docs domain: [docs.clickclack.chat](https://docs.clickclack.chat).
 
 ## Why ClickClack
 
@@ -40,8 +41,8 @@ go run ./apps/api/cmd/clickclack serve
 ```
 
 The dev fallback boots a default user, workspace, and channel so the SPA loads
-into something useful on first hit. Disable it for anything that isn't a local
-clone.
+into something useful at `/app`. The root path is the product website. Disable
+it for anything that isn't a local clone.
 
 [Get the full quickstart →](quickstart.html)
 

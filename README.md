@@ -31,7 +31,9 @@ go run ./apps/api/cmd/clickclack serve
 
 ## Documentation
 
-Product domain: **[clickclack.chat](https://clickclack.chat)**. Docs domain:
+Product domain: **[clickclack.chat](https://clickclack.chat)**. App domain:
+**[app.clickclack.chat](https://app.clickclack.chat)**, with `/app` as the
+local path. Docs domain:
 **[docs.clickclack.chat](https://docs.clickclack.chat)**, built from `docs/`
 by `pnpm docs:site`. The [docs/](docs/) tree is organised so each file has a
 short `read_when` hint at the top — open the one that matches your change.
@@ -74,8 +76,9 @@ go run ./apps/api/cmd/clickclack serve              # http://localhost:8080
 ```
 
 The dev fallback boots a default user, workspace, and channel so the SPA
-loads into something useful on first hit. Disable it with
-`--dev-bootstrap=false` for anything that isn't a local checkout.
+loads into something useful at `/app`. The root path is the public product
+website. Disable it with `--dev-bootstrap=false` for anything that isn't a
+local checkout.
 
 ### Two-process dev loop
 

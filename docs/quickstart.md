@@ -17,9 +17,10 @@ pnpm build
 go run ./apps/api/cmd/clickclack serve
 ```
 
-Open `http://localhost:8080`. You should see the SPA with a `Local Captain`
-user already signed in via the dev fallback. That's the empty-dev path —
-useful for poking around, not what you want long-term.
+Open `http://localhost:8080` for the product website. Open
+`http://localhost:8080/app` for the chat app with a `Local Captain` user
+already signed in via the dev fallback. That's the empty-dev path — useful for
+poking around, not what you want long-term.
 
 ## 2. Replace the dev user with a real owner
 

@@ -2,6 +2,8 @@ node_modules/
 apps/web/dist/
 packages/sdk-ts/dist/
 dist/
+!apps/api/internal/webassets/dist/
+!apps/api/internal/webassets/dist/**
 data/
 coverage.out
 coverage.txt

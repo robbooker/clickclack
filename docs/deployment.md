@@ -10,6 +10,13 @@ ClickClack ships as one Go binary that embeds the Svelte SPA and the SQL
 migrations. The deployment story is "drop a binary on a box, point it at a
 data directory, run it behind a reverse proxy."
 
+Public surfaces:
+
+- `clickclack.chat` — product website.
+- `app.clickclack.chat` — chat app. The same app is also available at `/app`
+  for local development and simple single-host deployments.
+- `docs.clickclack.chat` — documentation site built by `pnpm docs:site`.
+
 ## Single binary
 
 ```sh
