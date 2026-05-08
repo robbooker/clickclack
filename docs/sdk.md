@@ -26,7 +26,7 @@ import { ClickClackClient } from "@clickclack/sdk-ts";
 const client = new ClickClackClient({
   baseUrl: "http://localhost:8080",
   token: process.env.CLICKCLACK_TOKEN,        // optional, sets Authorization
-  userId: process.env.CLICKCLACK_USER_ID,     // optional, sets X-ClickClack-User
+  userId: process.env.CLICKCLACK_USER_ID,     // optional local/dev override
 });
 
 const me = await client.me();
@@ -43,7 +43,8 @@ The client sends, in this order:
 
 - `Authorization: Bearer <token>` if `token` was set or `auth.consumeMagicLink`
   succeeded (it stores the returned session token).
-- `X-ClickClack-User: <userId>` if `userId` was set.
+- `X-ClickClack-User: <userId>` if `userId` was set. Use this only for local
+  development/test impersonation; hosted bots should use bearer tokens.
 
 Helpers:
 

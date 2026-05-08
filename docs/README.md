@@ -13,6 +13,9 @@ WebSocket pipe, and a framework-neutral TypeScript SDK so the bots feel at home.
 It's built for small teams, internal tools, communities, and anyone who would
 rather host their own.
 
+Product domain: [clickclack.chat](https://clickclack.chat). Docs domain:
+[docs.clickclack.chat](https://docs.clickclack.chat).
+
 ## Why ClickClack
 
 - **One binary, zero ceremony.** Drop it on a box, point at a data directory,
@@ -22,7 +25,8 @@ rather host their own.
 - **Threads that don't nest.** One level deep, on purpose. Discussion stays
   scannable.
 - **Bots that aren't second-class.** Same auth surface as humans, a typed
-  TypeScript SDK, and a Mattermost-shaped webhook for drop-in scripts.
+  TypeScript SDK, a scriptable CLI client, and a Mattermost-shaped webhook for
+  drop-in scripts.
 - **Crustacean, lightly.** Lobster mascot, claw reactions, `:molting:` status.
   Normal controls stay normal.
 
@@ -58,7 +62,10 @@ clone.
 
 ## Operate it
 
-- [CLI](cli.md) — `serve · migrate · admin · backup · export`.
+- [CLI](cli.md) — server, admin, backup/export, and remote chat client
+  commands.
+- [Agent-friendly CLI](agent-friendly-cli.md) — scriptable chat client commands
+  for humans, agents, and CI jobs.
 - [Configuration](configuration.md) — flag/env/file precedence.
 - [Deployment](deployment.md) — single binary, Docker, data layout, OAuth.
 - [Development](development.md) — pnpm scripts, monorepo layout, gates.

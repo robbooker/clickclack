@@ -7,6 +7,9 @@ read_when:
 # CLI
 
 The single binary is `clickclack`. Source: `apps/api/cmd/clickclack/main.go`.
+It can host a server and act as a scriptable local or remote chat client. The
+broader agent-friendly contract is documented in
+[agent-friendly-cli.md](agent-friendly-cli.md).
 
 ```text
 clickclack <command> [flags]
@@ -17,7 +20,44 @@ Commands:
   admin      bootstrap, user create, invite create, magic-link create
   backup     write a SQLite backup file
   export     write a JSON dump to a file or stdout
+  login      consume a magic-link token and store/print a session token
+  logout     remove stored client credentials
+  whoami     print the current server-side user
+  status     print selected server/user/workspace/channel
+  workspaces list
+  channels list
+  send
+  messages send
+  messages list
+  threads open
+  threads reply
 ```
+
+Client commands accept these common flags before the command or on the command
+itself:
+
+| Flag | Env | Default | Notes |
+| --- | --- | --- | --- |
+| `--server` | `CLICKCLACK_SERVER` | `http://localhost:8080` | Remote server URL. |
+| `--token` | `CLICKCLACK_TOKEN` | stored config | Sends `Authorization: Bearer`. |
+| `--user`, `--user-id` | `CLICKCLACK_USER_ID` | unset | Sends `X-ClickClack-User`; local development/test escape hatch. |
+| `--workspace` | `CLICKCLACK_WORKSPACE` | first visible workspace | ID, slug, or name. |
+| `--channel` | `CLICKCLACK_CHANNEL` | `general`, then first visible channel | ID or name. Channel IDs are resolved across visible workspaces unless `--workspace` is set. |
+| `--json` | — | false | Machine-readable JSON output. |
+| `--plain` | — | false | Stable single-field output, usually an ID or token. |
+| `--no-input` | — | false | Reserved for non-interactive flows. |
+
+Stored client config lives at `~/.config/clickclack/config.json`. Stored
+token, workspace, and channel defaults are scoped to their saved server URL.
+If `--server` or `CLICKCLACK_SERVER` points somewhere else and no explicit
+`--token` is supplied, the CLI will not reuse the saved bearer token. It also
+will not reuse the saved workspace or channel unless the selected server
+matches.
+
+If `--user` or `CLICKCLACK_USER_ID` is set and no explicit `--token` is
+supplied, the CLI also skips the stored bearer token so the server can honor
+the requested dev user. If both `--token` and `--user` are supplied, the
+server's auth order applies and the bearer token wins.
 
 ## `serve`
 
@@ -111,6 +151,49 @@ clickclack export --out -                # stdout
 Writes a JSON dump of users, workspaces, channels, messages, threads,
 reactions, uploads metadata, and DMs. Useful for migrations between SQLite
 files or for one-off audits.
+
+## Client auth
+
+```sh
+clickclack --server http://localhost:8080 login \
+  --magic-token mgt_... \
+  --plain
+```
+
+Consumes a magic-link token through `/api/auth/magic/consume`. By default it
+stores the returned session token in the client config file. Use `--no-store`
+for CI or tests that only need stdout.
+
+`logout` removes the stored client config.
+
+For remote or hosted agents, prefer `login` plus stored credentials or
+`CLICKCLACK_TOKEN`. Reserve `--user` for local/dev servers where explicit user
+impersonation is acceptable.
+
+## Client reads
+
+```sh
+clickclack --server http://localhost:8080 --token sst_... whoami
+clickclack --server http://localhost:8080 --token sst_... workspaces list
+clickclack --server http://localhost:8080 --token sst_... channels list --workspace clickclack
+clickclack --server http://localhost:8080 --token sst_... messages list --channel general --json
+clickclack --server http://localhost:8080 --token sst_... threads open msg_... --json
+```
+
+`workspaces list` prints `id slug name` in human mode. `channels list` prints
+`id name kind`. `messages list` prints `seq id author body`.
+
+## Client writes
+
+```sh
+clickclack --server http://localhost:8080 --token sst_... send --channel general "hello"
+printf 'long body\n' | clickclack --server http://localhost:8080 --token sst_... send --channel general --stdin
+clickclack --server http://localhost:8080 --token sst_... threads reply msg_... --stdin <reply.md
+```
+
+`send` and `threads reply` accept the body from a positional argument,
+`--body`, `--file`, or `--stdin`. `--plain` prints only the created message ID;
+`--json` prints the API response.
 
 ## Exit codes
 

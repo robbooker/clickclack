@@ -42,9 +42,8 @@ a session token:
 TOKEN=$(go run ./apps/api/cmd/clickclack admin magic-link create \
   --email steipete@gmail.com --name "Peter")
 
-curl -s -X POST http://localhost:8080/api/auth/magic/consume \
-  -H 'content-type: application/json' \
-  -d "{\"token\":\"$TOKEN\"}" | jq -r .session.token
+SESSION=$(go run ./apps/api/cmd/clickclack login \
+  --magic-token "$TOKEN" --plain --no-store)
 # prints ses_...
 ```
 
@@ -52,13 +51,13 @@ That `ses_...` is what bots and CLIs put in `Authorization: Bearer`. The
 browser already has it as the `cc_session` cookie if you ran consume from the
 SPA.
 
+To store the session for future CLI commands, omit `--no-store`.
+
 ## 4. Make a workspace and a channel
 
 You can use the SPA, or hit the API directly:
 
 ```sh
-SESSION="ses_..."
-
 WORKSPACE=$(curl -s -X POST http://localhost:8080/api/workspaces \
   -H "authorization: Bearer $SESSION" \
   -H 'content-type: application/json' \
@@ -75,6 +74,11 @@ echo "workspace=$WORKSPACE channel=$CHANNEL"
 ## 5. Post your first message
 
 ```sh
+go run ./apps/api/cmd/clickclack \
+  --server http://localhost:8080 \
+  --token "$SESSION" \
+  send --channel "$CHANNEL" "click. clack."
+
 curl -s -X POST "http://localhost:8080/api/channels/$CHANNEL/messages" \
   -H "authorization: Bearer $SESSION" \
   -H 'content-type: application/json' \

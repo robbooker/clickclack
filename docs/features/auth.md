@@ -13,8 +13,8 @@ resolver lives in `apps/api/internal/httpapi/server.go` (`currentUser`).
 1. `Authorization: Bearer <token>` — bearer session token.
 2. `cc_session` cookie — HTTP-only session cookie set by magic-link consume and
    GitHub OAuth callback.
-3. `X-ClickClack-User: usr_...` header — explicit user impersonation. Useful for
-   bots and tests.
+3. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
+   development and tests.
 4. Dev fallback — the very first user in the database. Enabled by default by
    `clickclack serve --dev-bootstrap=true` so a fresh checkout boots into a
    working app without any token plumbing.
@@ -59,6 +59,17 @@ Or from the CLI, which is the V0 delivery path:
 ```sh
 clickclack admin magic-link create --email steipete@gmail.com --name "Peter"
 ```
+
+The client CLI can consume that token directly:
+
+```sh
+clickclack login --magic-token mgt_...
+```
+
+For remote agents and bots, use the resulting bearer session token. The CLI
+will not send a stored bearer token to a different `--server`, and it skips
+stored bearer tokens when `--user` / `CLICKCLACK_USER_ID` is set without an
+explicit `--token`.
 
 `ConsumeMagicLink` returns `{user, session, token}` and sets `cc_session` as an
 HTTP-only cookie. Browsers can drop the body; bots should hold the

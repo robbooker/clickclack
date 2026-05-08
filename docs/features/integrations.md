@@ -19,8 +19,9 @@ Content-Type: application/json
 
 Behavior:
 
-- Authenticates the caller like any other API request (token or
-  `X-ClickClack-User`).
+- Authenticates the caller like any other API request. Use bearer session
+  tokens for real integrations; reserve `X-ClickClack-User` for local/dev
+  setups.
 - Posts the `text` field as a Markdown channel message authored by the
   current user.
 - Emits a `message.created` durable event.

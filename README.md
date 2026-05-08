@@ -22,7 +22,8 @@ go run ./apps/api/cmd/clickclack serve
   pull-style fallback.
 - Channels with Slack-style threads (one level, no nesting), reactions,
   uploads, and direct messages.
-- CLI-managed bootstrap, magic-link auth, and optional GitHub OAuth.
+- CLI-managed bootstrap, magic-link auth, optional GitHub OAuth, and an
+  agent-friendly client mode for sending/listing/replying from scripts.
 - Framework-neutral [TypeScript SDK](packages/sdk-ts) and a tiny
   [bot example](examples/bot-ts).
 - Mattermost-shaped incoming webhook and slash command surfaces for drop-in
@@ -30,10 +31,10 @@ go run ./apps/api/cmd/clickclack serve
 
 ## Documentation
 
-Hosted at **[clickclack.chat](https://clickclack.chat)** (built from
-`docs/` by `pnpm docs:site`). The [docs/](docs/) tree is organised so each
-file has a short `read_when` hint at the top — open the one that matches
-your change.
+Product domain: **[clickclack.chat](https://clickclack.chat)**. Docs domain:
+**[docs.clickclack.chat](https://docs.clickclack.chat)**, built from `docs/`
+by `pnpm docs:site`. The [docs/](docs/) tree is organised so each file has a
+short `read_when` hint at the top — open the one that matches your change.
 
 - **Start here:** [docs/README.md](docs/README.md) — landing page + index.
 - [Architecture](docs/architecture/overview.md) — process layout, durable vs
@@ -41,7 +42,8 @@ your change.
 - [API overview](docs/api/overview.md) — REST/WebSocket surface and where to
   find each endpoint.
 - [Data model](docs/data-model.md) — tables, IDs, invariants.
-- [CLI](docs/cli.md), [Configuration](docs/configuration.md),
+- [CLI](docs/cli.md), [Agent-friendly CLI](docs/agent-friendly-cli.md),
+  [Configuration](docs/configuration.md),
   [Deployment](docs/deployment.md), [Development](docs/development.md).
 - [TypeScript SDK](docs/sdk.md).
 
@@ -91,11 +93,19 @@ go run ./apps/api/cmd/clickclack admin bootstrap \
 go run ./apps/api/cmd/clickclack admin magic-link create \
   --email steipete@gmail.com --name "Peter"
 
+go run ./apps/api/cmd/clickclack login --magic-token mgt_...
+go run ./apps/api/cmd/clickclack whoami
+go run ./apps/api/cmd/clickclack send --channel general "click clack"
+go run ./apps/api/cmd/clickclack messages list --channel general
+go run ./apps/api/cmd/clickclack threads reply msg_... --stdin <reply.md
+
 go run ./apps/api/cmd/clickclack backup --out ./data/backup.db
 go run ./apps/api/cmd/clickclack export --out ./data/export.json
 ```
 
-See [docs/cli.md](docs/cli.md) for the full command reference.
+See [docs/cli.md](docs/cli.md) for the implemented command reference and
+[docs/agent-friendly-cli.md](docs/agent-friendly-cli.md) for the target
+script/agent contract.
 
 ### Bot example
 
@@ -112,7 +122,7 @@ session token. See [docs/sdk.md](docs/sdk.md).
 
 ## Auth
 
-ClickClack accepts, in order: a `Authorization: Bearer` token, the
+ClickClack accepts, in order: an `Authorization: Bearer` token, the
 `cc_session` cookie, an `X-ClickClack-User` header, or a dev fallback to the
 first user in the DB. Magic-link tokens are mintable from the CLI today; the
 HTTP endpoint also exists. GitHub OAuth is opt-in via:
@@ -124,6 +134,10 @@ CLICKCLACK_GITHUB_CLIENT_SECRET=...
 ```
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).
+For the CLI, stored session tokens, workspace defaults, and channel defaults
+are scoped to their saved server URL. Stored tokens are also skipped when
+`--user` / `CLICKCLACK_USER_ID` is set, unless `--token` is explicitly
+provided.
 
 ## Tooling
 

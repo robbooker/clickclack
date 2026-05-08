@@ -34,6 +34,7 @@ const sections = [
   ]],
   ["Operate", [
     "cli.md",
+    "agent-friendly-cli.md",
     "configuration.md",
     "deployment.md",
     "development.md",
