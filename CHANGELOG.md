@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added type-to-focus on the chat composer: pressing a printable key while
+  focus is outside any text field (and no modal/menu is open) now jumps the
+  caret to the active composer — the thread reply textarea when a thread pane
+  is open, otherwise the channel/DM composer — so the keystroke lands as the
+  next character of your draft. The composer also auto-grows as the draft
+  spans multiple lines (Discord-style), capped at half the viewport before a
+  scrollbar appears, and shrinks back to a single row after sending. IME
+  composition, modifier shortcuts, text fields, menus, media controls, and
+  active text selections inside messages or threads are preserved untouched.
+  Thanks @shakkernerd.
 - Added inline quote-replies in channels, DMs, and threads. Every
   message-create endpoint now accepts an optional `quoted_message_id`; the
   server captures a 280-rune trimmed snapshot of the quoted body plus the

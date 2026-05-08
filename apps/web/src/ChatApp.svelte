@@ -44,6 +44,9 @@
   let mobileNavOpen = false;
   let replyTarget: Message | null = null;
   let replyContext: "channel" | "dm" | "thread" | null = null;
+  let messageInput: HTMLTextAreaElement | null = null;
+  let replyInput: HTMLTextAreaElement | null = null;
+  let activeComposerContext: "message" | "thread" = "message";
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
@@ -190,6 +193,7 @@
     selectedChannelID = channels.find((channel) => channel.id === selectedChannelID)?.id || channels[0]?.id || "";
     selectedThread = null;
     selectedProfile = null;
+    activeComposerContext = "message";
     replies = [];
     await loadMessages();
   }
@@ -267,6 +271,7 @@
   async function openThread(message: Message) {
     selectedProfile = null;
     selectedThread = message;
+    activeComposerContext = "thread";
     const data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${message.id}/thread`);
     selectedThread = data.root;
     replies = data.replies;
@@ -294,11 +299,139 @@
   function setReplyTarget(message: Message, context: "channel" | "dm" | "thread") {
     replyTarget = message;
     replyContext = context;
+    activeComposerContext = context === "thread" ? "thread" : "message";
+  }
+
+  const KEY_CONSUMING_ROLES = new Set([
+    "button",
+    "checkbox",
+    "combobox",
+    "link",
+    "listbox",
+    "menu",
+    "menubar",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "option",
+    "radio",
+    "radiogroup",
+    "slider",
+    "spinbutton",
+    "switch",
+    "tab",
+    "tablist",
+    "textbox",
+    "tree",
+    "treeitem",
+  ]);
+  const KEY_CONSUMING_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "DETAILS", "SUMMARY", "VIDEO", "AUDIO"]);
+
+  function isModalOpen(): boolean {
+    return selectedImage !== null || showProfileSettings;
+  }
+
+  function isEditableElement(el: HTMLElement | null): boolean {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    if (el instanceof HTMLInputElement) {
+      const t = (el.type || "text").toLowerCase();
+      return t !== "checkbox" && t !== "radio" && t !== "button" && t !== "submit" && t !== "reset" && t !== "file";
+    }
+    if (el instanceof HTMLTextAreaElement) return true;
+    return false;
+  }
+
+  function consumesKeystrokes(el: HTMLElement | null): boolean {
+    if (!el) return false;
+    if (isChatSurfaceAction(el)) return false;
+    if (KEY_CONSUMING_TAGS.has(el.tagName)) return true;
+    const role = el.getAttribute("role");
+    if (role && KEY_CONSUMING_ROLES.has(role)) return true;
+    const tabindex = el.getAttribute("tabindex");
+    if (tabindex !== null && tabindex !== "-1" && el.hasAttribute("aria-keyshortcuts")) return true;
+    return false;
+  }
+
+  function isChatSurfaceAction(el: HTMLElement): boolean {
+    if (!el.closest(".messages, .thread")) return false;
+    if (el instanceof HTMLButtonElement || el instanceof HTMLAnchorElement) return true;
+    const role = el.getAttribute("role");
+    return role === "button" || role === "link";
+  }
+
+  function hasMessageTextSelection(): boolean {
+    const sel = typeof window !== "undefined" ? window.getSelection() : null;
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+    const node = sel.getRangeAt(0).commonAncestorContainer;
+    if (!node) return false;
+    const host = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+    return !!host?.closest(".messages, .thread, .markdown");
+  }
+
+  function shouldRedirectKeystroke(event: KeyboardEvent): boolean {
+    if (authRequired) return false;
+    if (isModalOpen()) return false;
+    if (event.defaultPrevented) return false;
+    if (event.isComposing || event.keyCode === 229) return false;
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    if (event.key.length !== 1) return false;
+    if (hasMessageTextSelection()) return false;
+    const active = document.activeElement as HTMLElement | null;
+    if (active === messageInput || active === replyInput) return false;
+    if (isEditableElement(active)) return false;
+    if (consumesKeystrokes(active)) return false;
+    return true;
+  }
+
+  function redirectTypingToComposer(event: KeyboardEvent) {
+    if (!shouldRedirectKeystroke(event)) return;
+    const target = activeComposerTarget();
+    if (!target || target.disabled || target.readOnly) return;
+    if (event.key === " ") event.preventDefault();
+    target.focus({ preventScroll: true });
+    const len = target.value.length;
+    target.setSelectionRange(len, len);
+    if (event.key === " ") {
+      const start = target.selectionStart ?? len;
+      const end = target.selectionEnd ?? len;
+      target.setRangeText(" ", start, end, "end");
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
+  function activeComposerTarget(): HTMLTextAreaElement | null {
+    if (activeComposerContext === "thread" && selectedThread && replyInput) return replyInput;
+    return messageInput;
   }
 
   function clearReplyTarget() {
     replyTarget = null;
     replyContext = null;
+  }
+
+  function autoGrow(node: HTMLTextAreaElement, _value: string) {
+    const resize = () => {
+      const previous = node.style.height;
+      node.style.height = "auto";
+      const next = `${node.scrollHeight}px`;
+      if (previous !== next) node.style.height = next;
+      else node.style.height = previous;
+    };
+    const onInput = () => resize();
+    const onWindowResize = () => resize();
+    requestAnimationFrame(resize);
+    node.addEventListener("input", onInput);
+    window.addEventListener("resize", onWindowResize);
+    return {
+      update() {
+        requestAnimationFrame(resize);
+      },
+      destroy() {
+        node.removeEventListener("input", onInput);
+        window.removeEventListener("resize", onWindowResize);
+      },
+    };
   }
 
   function quoteSnippet(text: string | undefined, max = 120): string {
@@ -363,6 +496,7 @@
     selectedChannelID = "";
     selectedThread = null;
     selectedProfile = null;
+    activeComposerContext = "message";
     await loadMessages();
   }
 
@@ -376,6 +510,7 @@
       selectedChannelID = "";
       selectedThread = null;
       selectedProfile = null;
+      activeComposerContext = "message";
       await loadMessages();
       return;
     }
@@ -388,6 +523,7 @@
     selectedChannelID = "";
     selectedThread = null;
     selectedProfile = null;
+    activeComposerContext = "message";
     await loadMessages();
   }
 
@@ -636,6 +772,7 @@
     if (replyContext === "thread") clearReplyTarget();
     selectedThread = null;
     selectedProfile = null;
+    activeComposerContext = "message";
     replies = [];
   }
 
@@ -652,6 +789,7 @@
 <svelte:window
   onkeydown={(event) => {
     if (event.key === "Escape") closeModal();
+    redirectTypingToComposer(event);
   }}
 />
 
@@ -778,6 +916,7 @@
                 selectedDirectID = "";
                 selectedThread = null;
                 selectedProfile = null;
+                activeComposerContext = "message";
                 mobileNavOpen = false;
                 await loadMessages();
               }}
@@ -816,6 +955,7 @@
                 selectedChannelID = "";
                 selectedThread = null;
                 selectedProfile = null;
+                activeComposerContext = "message";
                 mobileNavOpen = false;
                 await loadMessages();
               }}
@@ -864,6 +1004,7 @@
                   selectedChannelID = "";
                   selectedThread = null;
                   selectedProfile = null;
+                  activeComposerContext = "message";
                   mobileNavOpen = false;
                   await loadMessages();
                 } else {
@@ -1029,6 +1170,7 @@
       role="log"
       aria-live="polite"
       bind:this={messageList}
+      onpointerdown={() => (activeComposerContext = "message")}
       onpointerup={handleInlineImagePointerUp}
     >
       {#if messages.length === 0}
@@ -1246,10 +1388,13 @@
           </svg>
         </label>
         <textarea
+          bind:this={messageInput}
           bind:value={messageBody}
+          use:autoGrow={messageBody}
           rows="1"
           placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
           aria-label="Message body"
+          onfocus={() => (activeComposerContext = "message")}
           onkeydown={handleComposerKey}
         ></textarea>
         <button type="submit" class="send" aria-label="Send" disabled={!messageBody.trim()}>
@@ -1279,7 +1424,13 @@
           }}
         >×</button>
       </header>
-      <div class="thread-scroll" role="region" aria-label="Thread messages" onpointerup={handleInlineImagePointerUp}>
+      <div
+        class="thread-scroll"
+        role="region"
+        aria-label="Thread messages"
+        onpointerdown={() => (activeComposerContext = "thread")}
+        onpointerup={handleInlineImagePointerUp}
+      >
         <article class="thread-root" data-message-id={selectedThread.id}>
           <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
             {#if selectedThread.author?.avatar_url}
@@ -1437,10 +1588,13 @@
         {/if}
         <div class="composer-row">
           <textarea
+            bind:this={replyInput}
             bind:value={replyBody}
+            use:autoGrow={replyBody}
             rows="1"
             placeholder="Reply in thread"
             aria-label="Reply body"
+            onfocus={() => (activeComposerContext = "thread")}
             onkeydown={handleReplyKey}
           ></textarea>
           <button type="submit" class="send" aria-label="Reply" disabled={!replyBody.trim()}>

@@ -1683,16 +1683,17 @@ button.ghost {
 .composer textarea,
 .reply-composer textarea {
   width: 100%;
-  height: 36px;
+  height: auto;
   min-height: 36px;
-  max-height: 160px;
+  max-height: 50vh;
   padding: 8px 4px;
   resize: none;
   color: var(--text);
   line-height: 1.45;
   font-size: 14.5px;
   align-self: end;
-  overflow: auto;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .composer textarea::placeholder,

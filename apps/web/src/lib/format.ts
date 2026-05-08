@@ -2,7 +2,7 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 
 export function markdown(body: string) {
-  return DOMPurify.sanitize(marked.parse(body, { async: false }));
+  return DOMPurify.sanitize(marked.parse(body, { async: false, breaks: true, gfm: true }));
 }
 
 export function time(value: string) {
