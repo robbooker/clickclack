@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api } from "./lib/api";
+  import { APIError, api } from "./lib/api";
   import { markdown, time } from "./lib/format";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
@@ -24,6 +24,7 @@
   let searchResults: SearchResult[] = [];
   let pendingUpload: Upload | null = null;
   let status = "loading";
+  let authRequired = false;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | undefined;
 
@@ -47,6 +48,11 @@
       await loadWorkspaces();
       status = "ready";
     } catch (error) {
+      if (error instanceof APIError && (error.status === 401 || error.status === 403)) {
+        authRequired = true;
+        status = "auth";
+        return;
+      }
       status = error instanceof Error ? error.message : "Could not load ClickClack";
     }
   }
@@ -238,6 +244,24 @@
   <meta name="color-scheme" content="light dark" />
 </svelte:head>
 
+{#if authRequired}
+  <main class="auth-shell">
+    <section class="auth-panel" aria-label="Sign in">
+      <div class="brand">
+        <div class="mark">cc</div>
+        <div>
+          <strong>ClickClack</strong>
+          <span>OpenClaw workspace chat</span>
+        </div>
+      </div>
+      <div class="auth-copy">
+        <h1>Sign in to ClickClack</h1>
+        <p>GitHub access is limited to active members of the OpenClaw organization.</p>
+      </div>
+      <a class="github-login" href="/api/auth/github/start">Continue with GitHub</a>
+    </section>
+  </main>
+{:else}
 <div class="shell">
   <aside class="sidebar" aria-label="Workspace and channel navigation">
     <div class="brand">
@@ -470,3 +494,4 @@
     {/if}
   </aside>
 </div>
+{/if}

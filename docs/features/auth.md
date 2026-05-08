@@ -84,6 +84,7 @@ before serving:
 CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
+CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
 ```
 
 Without those, `GET /api/auth/github/start` returns `501`.
@@ -93,11 +94,16 @@ Flow:
 1. `GET /api/auth/github/start` sets a state cookie and redirects to GitHub.
 2. GitHub redirects back to `GET /api/auth/github/callback?code&state`.
 3. The handler exchanges the code, fetches `/user` and primary `/user/emails`,
-   upserts a user keyed by `(provider="github", provider_subject=<github id>)`,
-   creates a session, sets `cc_session`, redirects to `/`.
+   checks org membership when `CLICKCLACK_GITHUB_ALLOWED_ORG` is set, upserts a
+   user keyed by `(provider="github", provider_subject=<github id>)`, creates a
+   session, sets `cc_session`, redirects to `/`.
 
 The redirect URL is derived from `CLICKCLACK_PUBLIC_URL` when set, otherwise
 from the request scheme/host. Configure GitHub with `<public-url>/api/auth/github/callback`.
+
+Org-gated deployments request `read:org`. GitHub only returns private org
+membership after the user grants that scope, so OpenClaw-only hosting should set
+`CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw` and `CLICKCLACK_DEV_BOOTSTRAP=false`.
 
 ## Authorization
 

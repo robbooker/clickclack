@@ -25,10 +25,11 @@ hook in `cmd/clickclack/main.go`.
 | `--data`              | `CLICKCLACK_DATA`                | `./data`    | Data root for DB, uploads, logs. |
 | `--db`                | `CLICKCLACK_DB`                  | derived     | DB URL. Defaults to `sqlite://<data>/clickclack.db`. |
 | `--config`            | —                                | unset       | JSON config file. |
-| `--dev-bootstrap`     | —                                | `true`      | `serve` only. Creates a default user/workspace/channel if the DB is empty. |
+| `--dev-bootstrap`     | `CLICKCLACK_DEV_BOOTSTRAP`       | `true`      | `serve` only. Creates a default user/workspace/channel and enables local dev auth fallbacks. |
 | —                     | `CLICKCLACK_PUBLIC_URL`          | unset       | External URL. Used to build the GitHub OAuth callback. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_ID`    | unset       | GitHub OAuth app client ID. |
 | —                     | `CLICKCLACK_GITHUB_CLIENT_SECRET`| unset       | GitHub OAuth app client secret. |
+| —                     | `CLICKCLACK_GITHUB_ALLOWED_ORG`  | unset       | Optional GitHub org login gate. Requires `read:org` scope. |
 
 ## Config file
 
@@ -37,9 +38,11 @@ hook in `cmd/clickclack/main.go`.
   "addr": ":8080",
   "data": "./data",
   "db": "sqlite:///var/lib/clickclack/clickclack.db",
+  "dev_bootstrap": false,
   "public_url": "https://chat.example.com",
   "github_client_id": "Iv1.xxxxxxxxxxxx",
-  "github_client_secret": "..."
+  "github_client_secret": "...",
+  "github_allowed_org": "openclaw"
 }
 ```
 
@@ -70,4 +73,5 @@ clickclack serve \
 ```
 
 Combine with real auth (magic links or GitHub OAuth) so the
-"first-user-in-DB" fallback in `currentUser` never kicks in.
+"first-user-in-DB" fallback in `currentUser` never kicks in. In containers,
+`CLICKCLACK_DEV_BOOTSTRAP=false` is the easiest way to enforce the same mode.

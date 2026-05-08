@@ -11,13 +11,15 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_DATA", "/tmp/clickclack")
 	t.Setenv("CLICKCLACK_DB", "sqlite:///tmp/clickclack.db")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "https://clickclack.test")
+	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "false")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "client")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_SECRET", "secret")
+	t.Setenv("CLICKCLACK_GITHUB_ALLOWED_ORG", "openclaw")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.PublicURL != "https://clickclack.test" || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" {
+	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.PublicURL != "https://clickclack.test" || cfg.DevBootstrap || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" || cfg.GitHubAllowedOrg != "openclaw" {
 		t.Fatalf("unexpected env config: %#v", cfg)
 	}
 
@@ -37,8 +39,10 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_DATA", "")
 	t.Setenv("CLICKCLACK_DB", "")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "")
+	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_SECRET", "")
+	t.Setenv("CLICKCLACK_GITHUB_ALLOWED_ORG", "")
 	emptyPath := filepath.Join(t.TempDir(), "empty.json")
 	if err := os.WriteFile(emptyPath, []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -53,6 +57,11 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "missing.json")); err == nil {
 		t.Fatal("expected missing config error")
 	}
+	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "not-bool")
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected bad bool env error")
+	}
+	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "")
 	badPath := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(badPath, []byte(`{`), 0o644); err != nil {
 		t.Fatal(err)

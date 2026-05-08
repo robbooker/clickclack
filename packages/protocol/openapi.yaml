@@ -56,6 +56,8 @@ paths:
           description: Session created and redirected to app
         "400":
           description: Invalid OAuth callback
+        "403":
+          description: GitHub account is not allowed
   /api/me:
     get:
       operationId: getMe

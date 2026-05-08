@@ -590,6 +590,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description GitHub account is not allowed */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   getMe: {

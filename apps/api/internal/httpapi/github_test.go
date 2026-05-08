@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -176,6 +177,109 @@ func TestGitHubOAuthFlow(t *testing.T) {
 	}
 }
 
+func TestGitHubOAuthAllowedOrg(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			switch r.FormValue("code") {
+			case "member":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "member-token"})
+			case "denied":
+				_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "denied-token"})
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+			}
+		case "/user":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 42, "login": "octo", "email": "octo@example.com"})
+		case "/memberships/orgs/openclaw":
+			if r.Header.Get("Authorization") == "Bearer denied-token" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"state":        "active",
+				"organization": map[string]any{"login": "OpenClaw"},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(provider.Close)
+
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{
+		ClientID:      "client",
+		ClientSecret:  "secret",
+		AuthURL:       provider.URL + "/authorize",
+		TokenURL:      provider.URL + "/token",
+		UserURL:       provider.URL + "/user",
+		EmailsURL:     provider.URL + "/emails",
+		MembershipURL: provider.URL + "/memberships/orgs/",
+		AllowedOrg:    "openclaw",
+	}}).Handler())
+	t.Cleanup(server.Close)
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+
+	resp, err := client.Get(server.URL + "/api/auth/github/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	location, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope := location.Query().Get("scope"); scope != "read:user user:email read:org" {
+		t.Fatalf("unexpected scope %q", scope)
+	}
+	stateCookie := findCookie(resp.Cookies(), "cc_github_state")
+	resp.Body.Close()
+	if stateCookie == nil {
+		t.Fatal("expected state cookie")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/auth/github/callback?code=member&state="+stateCookie.Value, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(stateCookie)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected member callback redirect, got %s", resp.Status)
+	}
+	resp.Body.Close()
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/auth/github/callback?code=denied&state="+stateCookie.Value, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(stateCookie)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected org denied, got %s", resp.Status)
+	}
+}
+
 func TestGitHubOAuthErrors(t *testing.T) {
 	t.Parallel()
 	st := newEmptyHTTPStore(t)
@@ -197,4 +301,13 @@ func TestGitHubOAuthErrors(t *testing.T) {
 	if err := srv.githubGetJSON(context.Background(), "://bad", "token", &struct{}{}); err == nil {
 		t.Fatal("expected bad github api url error")
 	}
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }

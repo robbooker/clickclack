@@ -111,10 +111,14 @@ If you want GitHub login, set:
 CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
+CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+CLICKCLACK_DEV_BOOTSTRAP=false
 ```
 
 Configure the GitHub OAuth app callback to
-`<public-url>/api/auth/github/callback`. See [features/auth.md](features/auth.md).
+`<public-url>/api/auth/github/callback`. When `CLICKCLACK_GITHUB_ALLOWED_ORG`
+is set, ClickClack asks GitHub for `read:org` and only accepts active members
+of that org. See [features/auth.md](features/auth.md).
 
 ## Migrations
 

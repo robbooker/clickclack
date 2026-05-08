@@ -54,6 +54,55 @@ button {
   cursor: pointer;
 }
 
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 420px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.auth-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-copy h1,
+.auth-copy p {
+  margin: 0;
+}
+
+.auth-copy h1 {
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.auth-copy p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.github-login {
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--panel);
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) minmax(320px, 28vw);

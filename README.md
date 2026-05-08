@@ -135,6 +135,8 @@ HTTP endpoint also exists. GitHub OAuth is opt-in via:
 CLICKCLACK_PUBLIC_URL=https://chat.example.com
 CLICKCLACK_GITHUB_CLIENT_ID=...
 CLICKCLACK_GITHUB_CLIENT_SECRET=...
+CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw
+CLICKCLACK_DEV_BOOTSTRAP=false
 ```
 
 Details and trade-offs in [docs/features/auth.md](docs/features/auth.md).

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,15 +17,19 @@ import (
 )
 
 type GitHubOAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	PublicURL    string
-	AuthURL      string
-	TokenURL     string
-	UserURL      string
-	EmailsURL    string
-	HTTPClient   *http.Client
+	ClientID      string
+	ClientSecret  string
+	PublicURL     string
+	AuthURL       string
+	TokenURL      string
+	UserURL       string
+	EmailsURL     string
+	MembershipURL string
+	AllowedOrg    string
+	HTTPClient    *http.Client
 }
+
+var errGitHubOrgDenied = errors.New("github account is not a member of the allowed organization")
 
 func (c GitHubOAuthConfig) withDefaults() GitHubOAuthConfig {
 	if c.AuthURL == "" {
@@ -38,6 +43,9 @@ func (c GitHubOAuthConfig) withDefaults() GitHubOAuthConfig {
 	}
 	if c.EmailsURL == "" {
 		c.EmailsURL = "https://api.github.com/user/emails"
+	}
+	if c.MembershipURL == "" {
+		c.MembershipURL = "https://api.github.com/user/memberships/orgs/"
 	}
 	if c.HTTPClient == nil {
 		c.HTTPClient = http.DefaultClient
@@ -59,7 +67,7 @@ func (s *Server) githubStart(w http.ResponseWriter, r *http.Request) {
 	values := url.Values{
 		"client_id":    {s.githubOAuth.ClientID},
 		"redirect_uri": {s.githubRedirectURL(r)},
-		"scope":        {"read:user user:email"},
+		"scope":        {s.githubScope()},
 		"state":        {state},
 	}
 	http.Redirect(w, r, s.githubOAuth.AuthURL+"?"+values.Encode(), http.StatusFound)
@@ -83,6 +91,14 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	profile, err := s.fetchGitHubProfile(r.Context(), token)
 	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if err := s.ensureGitHubOrgMembership(r.Context(), token); err != nil {
+		if errors.Is(err, errGitHubOrgDenied) {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -193,6 +209,52 @@ func (s *Server) githubGetJSON(ctx context.Context, endpoint, token string, out 
 		return errors.New("github api request failed")
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (s *Server) ensureGitHubOrgMembership(ctx context.Context, token string) error {
+	org := strings.TrimSpace(s.githubOAuth.AllowedOrg)
+	if org == "" {
+		return nil
+	}
+	endpoint := strings.TrimRight(s.githubOAuth.MembershipURL, "/") + "/" + url.PathEscape(org)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := s.githubOAuth.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
+		return errGitHubOrgDenied
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("github organization membership check failed: %s", resp.Status)
+	}
+	var membership struct {
+		State        string `json:"state"`
+		Organization struct {
+			Login string `json:"login"`
+		} `json:"organization"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&membership); err != nil {
+		return err
+	}
+	if !strings.EqualFold(membership.State, "active") || !strings.EqualFold(membership.Organization.Login, org) {
+		return errGitHubOrgDenied
+	}
+	return nil
+}
+
+func (s *Server) githubScope() string {
+	scope := "read:user user:email"
+	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+		scope += " read:org"
+	}
+	return scope
 }
 
 func (s *Server) githubRedirectURL(r *http.Request) string {

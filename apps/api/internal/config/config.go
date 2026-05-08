@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -10,12 +11,14 @@ type Config struct {
 	Data               string `json:"data"`
 	DB                 string `json:"db"`
 	PublicURL          string `json:"public_url"`
+	DevBootstrap       bool   `json:"dev_bootstrap"`
 	GitHubClientID     string `json:"github_client_id"`
 	GitHubClientSecret string `json:"github_client_secret"`
+	GitHubAllowedOrg   string `json:"github_allowed_org"`
 }
 
 func Defaults() Config {
-	return Config{Addr: ":8080", Data: "./data"}
+	return Config{Addr: ":8080", Data: "./data", DevBootstrap: true}
 }
 
 func Load(path string) (Config, error) {
@@ -32,11 +35,21 @@ func Load(path string) (Config, error) {
 	if env := os.Getenv("CLICKCLACK_PUBLIC_URL"); env != "" {
 		cfg.PublicURL = env
 	}
+	if env := os.Getenv("CLICKCLACK_DEV_BOOTSTRAP"); env != "" {
+		value, err := strconv.ParseBool(env)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.DevBootstrap = value
+	}
 	if env := os.Getenv("CLICKCLACK_GITHUB_CLIENT_ID"); env != "" {
 		cfg.GitHubClientID = env
 	}
 	if env := os.Getenv("CLICKCLACK_GITHUB_CLIENT_SECRET"); env != "" {
 		cfg.GitHubClientSecret = env
+	}
+	if env := os.Getenv("CLICKCLACK_GITHUB_ALLOWED_ORG"); env != "" {
+		cfg.GitHubAllowedOrg = env
 	}
 	if path == "" {
 		return cfg, nil

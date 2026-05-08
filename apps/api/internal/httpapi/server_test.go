@@ -45,6 +45,8 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	server := httptest.NewServer(New(st, hub, Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
 	t.Cleanup(server.Close)
 
+	expectStatus(t, http.MethodHead, server.URL+"/", nil, http.StatusOK)
+
 	me := getJSON[struct {
 		User store.User `json:"user"`
 	}](t, server.URL+"/api/me")
@@ -419,6 +421,59 @@ func getBody(t *testing.T, endpoint string) string {
 		t.Fatalf("GET %s: %s %s", endpoint, resp.Status, string(body))
 	}
 	return string(body)
+}
+
+func TestDisableDevAuthRequiresSession(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{DisableDevAuth: true}).Handler())
+	t.Cleanup(server.Close)
+
+	expectStatus(t, http.MethodGet, server.URL+"/api/me", nil, http.StatusUnauthorized)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-ClickClack-User", owner.ID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected dev user header to be ignored, got %s", resp.Status)
+	}
+
+	session, err := st.CreateSession(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "cc_session", Value: session.Token})
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected session auth, got %s", resp.Status)
+	}
 }
 
 func readEventType(t *testing.T, conn *websocket.Conn, eventType string) store.Event {

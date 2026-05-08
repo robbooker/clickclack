@@ -59,7 +59,7 @@ func serve(args []string) error {
 	flags.String("data", "./data", "data directory")
 	flags.String("db", "", "database URL")
 	configPath := flags.String("config", "", "config file")
-	devBootstrap := flags.Bool("dev-bootstrap", true, "create a local owner/workspace/channel if no user exists")
+	flags.Bool("dev-bootstrap", true, "create a local owner/workspace/channel if no user exists")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func serve(args []string) error {
 	if err := st.Migrate(ctx); err != nil {
 		return err
 	}
-	if *devBootstrap {
+	if cfg.DevBootstrap {
 		user, err := st.EnsureBootstrap(ctx, "Local Captain", "local@clickclack.chat")
 		if err != nil {
 			return err
@@ -91,11 +91,13 @@ func serve(args []string) error {
 	}
 	log.Printf("ClickClack listening on %s", displayURL(cfg.Addr))
 	server := httpapi.New(st, realtime.NewHub(), httpapi.Options{
-		UploadDir: filepath.Join(cfg.Data, "uploads"),
+		UploadDir:      filepath.Join(cfg.Data, "uploads"),
+		DisableDevAuth: !cfg.DevBootstrap,
 		GitHubOAuth: httpapi.GitHubOAuthConfig{
 			ClientID:     cfg.GitHubClientID,
 			ClientSecret: cfg.GitHubClientSecret,
 			PublicURL:    cfg.PublicURL,
+			AllowedOrg:   cfg.GitHubAllowedOrg,
 		},
 	})
 	return httpapi.ListenAndServe(ctx, cfg.Addr, server.Handler())
@@ -309,6 +311,8 @@ func applyFlagOverrides(flags *flag.FlagSet, cfg *config.Config) {
 			cfg.Data = f.Value.String()
 		case "db":
 			cfg.DB = f.Value.String()
+		case "dev-bootstrap":
+			cfg.DevBootstrap = f.Value.String() == "true"
 		}
 	})
 }

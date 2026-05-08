@@ -20,19 +20,27 @@ import (
 )
 
 type Server struct {
-	store       store.Store
-	hub         *realtime.Hub
-	uploadDir   string
-	githubOAuth GitHubOAuthConfig
+	store          store.Store
+	hub            *realtime.Hub
+	uploadDir      string
+	githubOAuth    GitHubOAuthConfig
+	disableDevAuth bool
 }
 
 type Options struct {
-	UploadDir   string
-	GitHubOAuth GitHubOAuthConfig
+	UploadDir      string
+	GitHubOAuth    GitHubOAuthConfig
+	DisableDevAuth bool
 }
 
 func New(st store.Store, hub *realtime.Hub, options Options) *Server {
-	return &Server{store: st, hub: hub, uploadDir: options.UploadDir, githubOAuth: options.GitHubOAuth.withDefaults()}
+	return &Server{
+		store:          st,
+		hub:            hub,
+		uploadDir:      options.UploadDir,
+		githubOAuth:    options.GitHubOAuth.withDefaults(),
+		disableDevAuth: options.DisableDevAuth,
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -78,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	r.NotFound(s.serveSPA)
+	r.Head("/*", s.serveSPA)
 	r.Get("/*", s.serveSPA)
 	return r
 }
@@ -314,6 +323,9 @@ func (s *Server) currentUser(r *http.Request) (store.User, error) {
 	}
 	if cookie, err := r.Cookie("cc_session"); err == nil && cookie.Value != "" {
 		return s.store.GetSessionUser(r.Context(), cookie.Value)
+	}
+	if s.disableDevAuth {
+		return store.User{}, errors.New("authentication required")
 	}
 	if id := r.Header.Get("X-ClickClack-User"); id != "" {
 		return s.store.GetUser(r.Context(), id)
