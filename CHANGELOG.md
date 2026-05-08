@@ -13,3 +13,5 @@
 - Documented the `clickclack.chat` product domain, `app.clickclack.chat` app
   domain, `docs.clickclack.chat` docs domain, and recommended bearer-token auth
   flow for hosted agents.
+- Added more visible GitHub links to the product website and improved the docs
+  quickstart CTA contrast in dark mode.

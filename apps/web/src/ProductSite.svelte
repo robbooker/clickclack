@@ -84,6 +84,7 @@
       <div class="hero-actions">
         <a class="primary-action" href={appURL}>Open app</a>
         <a class="secondary-action" href={docsURL}>Read docs</a>
+        <a class="secondary-action" href={repoURL}>GitHub</a>
       </div>
     </div>
   </section>
@@ -131,6 +132,7 @@
       <a href="/">clickclack.chat <span>Product website</span></a>
       <a href={docsURL}>docs.clickclack.chat <span>Architecture, API, deploy</span></a>
       <a href={appURL}>app.clickclack.chat <span>Hosted app surface</span></a>
+      <a href={repoURL}>github.com/openclaw/clickclack <span>Source and issues</span></a>
     </div>
   </section>
 </main>

@@ -152,6 +152,8 @@ main{min-width:0;padding:32px clamp(20px,4.5vw,60px) 96px;max-width:1200px;margi
 .home-cta .btn{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:11px 17px;font-weight:600;font-size:.92rem;text-decoration:none;transition:background .15s,border-color .15s,color .15s,transform .12s,box-shadow .15s}
 .home-cta .btn-primary{background:var(--coral);color:#fff;border:1px solid var(--coral);box-shadow:0 1px 0 rgba(60,28,12,.18),0 8px 18px -8px var(--coral)}
 .home-cta .btn-primary:hover{background:var(--coral-deep);border-color:var(--coral-deep);text-decoration:none;transform:translateY(-1px)}
+:root[data-theme="dark"] .home-cta .btn-primary{background:var(--coral);border-color:var(--coral);color:#0c0805;box-shadow:0 0 0 1px rgba(255,255,255,.12),0 10px 22px -10px var(--coral)}
+:root[data-theme="dark"] .home-cta .btn-primary:hover{background:#ff9a8b;border-color:#ff9a8b;color:#0c0805}
 .home-cta .btn-ghost{padding:11px 17px}
 .home-install{display:flex;align-items:center;gap:12px;background:var(--code-bg);color:var(--code-fg);border-radius:9px;padding:10px 10px 10px 16px;font:500 .9rem/1.2 "JetBrains Mono","SF Mono",ui-monospace,monospace;max-width:36em;border:1px solid var(--code-border);box-shadow:0 6px 18px -10px rgba(60,28,12,.4)}
 .home-install .prompt{color:var(--coral);user-select:none;flex:0 0 auto}
