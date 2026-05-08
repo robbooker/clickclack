@@ -37,8 +37,9 @@ The handler checks that the requesting user is a member of the message's
 workspace before linking. There is no "upload owner must equal message
 author" rule today.
 
-The web client renders `image/*` uploads inline in timelines and threads.
-Other content types appear as authenticated download cards that link to
+The web client renders `image/*` uploads inline in timelines and threads, and
+renders `video/*` uploads as inline native players with controls. Other content
+types appear as authenticated download cards that link to
 `/api/uploads/{upload_id}`.
 
 ## Storage layout

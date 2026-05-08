@@ -82,6 +82,16 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
 
   await page.goto("/app");
 
+  await page
+    .getByRole("button", { name: /Account settings for Local Captain/ })
+    .click({ button: "right" });
+  await expect(page.getByRole("heading", { name: "Profile settings" })).toBeVisible();
+  await page.getByLabel("Display name").fill("Peter Steinberger");
+  await page.getByLabel("Handle").fill("@steipete");
+  await page.getByLabel("Avatar URL").fill("https://avatars.githubusercontent.com/u/280?v=4");
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.getByRole("button", { name: /@steipete/ })).toBeVisible();
+
   await page.getByRole("button", { name: "# general" }).click();
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 
@@ -116,9 +126,20 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
       "base64",
     ),
   });
+  await expect(page.getByText("pixel.png")).toBeVisible();
   await page.getByLabel("Message body").fill("inline image upload");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByRole("img", { name: "pixel.png" })).toBeVisible();
+  await expect(page.locator(".image-attachment").filter({ hasText: "pixel.png" })).toBeVisible();
+
+  await page.getByLabel("Upload file").setInputFiles({
+    name: "clip.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("not a real mp4, but enough to assert inline video rendering"),
+  });
+  await expect(page.getByText("clip.mp4")).toBeVisible();
+  await page.getByLabel("Message body").fill("inline video upload");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator('.video-attachment video[aria-label="clip.mp4"]')).toBeVisible();
 
   await page.getByRole("button", { name: "GIF picker" }).click();
   await page.getByLabel("Search GIFs").fill("ship");
@@ -264,7 +285,7 @@ test("CLI supports multiple accounts chatting in one channel", async ({ page }) 
   );
   expect(
     listed.messages.find((message) => message.id === ownerMessageId)?.author?.display_name,
-  ).toBe("Local Captain");
+  ).toMatch(/^(Local Captain|Peter Steinberger)$/);
   expect(
     listed.messages.find((message) => message.id === secondMessageId)?.author?.display_name,
   ).toBe("CLI Second");

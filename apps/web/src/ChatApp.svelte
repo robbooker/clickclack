@@ -24,7 +24,13 @@
   let searchResults: SearchResult[] = [];
   let pendingUpload: Upload | null = null;
   let showGifPicker = false;
+  let showProfileSettings = false;
   let gifQuery = "";
+  let profileDisplayName = "";
+  let profileHandle = "";
+  let profileAvatarURL = "";
+  let profileStatus = "";
+  let profileStatusError = false;
   let status = "loading";
   let authRequired = false;
   let socket: WebSocket | null = null;
@@ -102,6 +108,44 @@
         return;
       }
       status = error instanceof Error ? error.message : "Could not load ClickClack";
+    }
+  }
+
+  function openProfileSettings() {
+    if (!user) return;
+    profileDisplayName = user.display_name;
+    profileHandle = user.handle ? `@${user.handle}` : "";
+    profileAvatarURL = user.avatar_url;
+    profileStatus = "";
+    profileStatusError = false;
+    showProfileSettings = true;
+  }
+
+  async function saveProfile() {
+    profileStatus = "";
+    profileStatusError = false;
+    try {
+      const data = await api<{ user: User }>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          display_name: profileDisplayName,
+          handle: profileHandle,
+          avatar_url: profileAvatarURL,
+        }),
+      });
+      user = data.user;
+      messages = messages.map((message) =>
+        message.author?.id === user?.id ? { ...message, author: data.user } : message,
+      );
+      replies = replies.map((reply) =>
+        reply.author?.id === user?.id ? { ...reply, author: data.user } : reply,
+      );
+      if (selectedThread?.author?.id === user.id) selectedThread = { ...selectedThread, author: data.user };
+      profileStatus = "Saved";
+      showProfileSettings = false;
+    } catch (error) {
+      profileStatus = error instanceof Error ? error.message : "Could not save profile";
+      profileStatusError = true;
     }
   }
 
@@ -325,6 +369,14 @@
     return trimmed ? trimmed[0].toUpperCase() : "?";
   }
 
+  function handleLabel(value?: string | null) {
+    return value ? `@${value}` : "";
+  }
+
+  function dmAvatarUser(conversation: DirectConversation) {
+    return conversation.members.find((member) => member.id !== user?.id) || conversation.members[0];
+  }
+
   function avatarHue(seed: string) {
     let hash = 0;
     for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -348,6 +400,8 @@
     dayLabel: string | null;
     messages: Message[];
     authorName: string;
+    authorHandle: string;
+    authorAvatarURL: string;
     authorID: string;
     timestamp: string;
   };
@@ -370,6 +424,8 @@
           dayLabel: dayChanged ? dayLabel(message.created_at) : null,
           messages: [message],
           authorName: message.author?.display_name || "Local User",
+          authorHandle: message.author?.handle || "",
+          authorAvatarURL: message.author?.avatar_url || "",
           authorID,
           timestamp: message.created_at,
         });
@@ -409,6 +465,10 @@
 
   function isImageUpload(upload: Upload) {
     return upload.content_type.startsWith("image/");
+  }
+
+  function isVideoUpload(upload: Upload) {
+    return upload.content_type.startsWith("video/");
   }
 
   function formatBytes(size: number) {
@@ -606,8 +666,12 @@
                 await loadMessages();
               }}
             >
-              <span class="dm-avatar" style="--hue: {avatarHue(conversation.id)}deg">
-                {avatarInitial(conversation.members[0]?.display_name)}
+              <span class="dm-avatar" style="--hue: {avatarHue(dmAvatarUser(conversation)?.id || conversation.id)}deg">
+                {#if dmAvatarUser(conversation)?.avatar_url}
+                  <img src={dmAvatarUser(conversation)?.avatar_url} alt="" loading="lazy" />
+                {:else}
+                  {avatarInitial(dmAvatarUser(conversation)?.display_name)}
+                {/if}
               </span>
               <span class="nav-label">{dmTitle(conversation)}</span>
               <span class="presence-dot" aria-hidden="true"></span>
@@ -631,14 +695,29 @@
     </div>
 
     {#if user}
-      <footer class="user-card">
-        <span class="dm-avatar" style="--hue: {avatarHue(user.id)}deg">{avatarInitial(user.display_name)}</span>
+      <button
+        class="user-card"
+        type="button"
+        onclick={openProfileSettings}
+        oncontextmenu={(event) => {
+          event.preventDefault();
+          openProfileSettings();
+        }}
+        aria-label={`Account settings for ${user.display_name} ${handleLabel(user.handle)}`}
+      >
+        <span class="dm-avatar" style="--hue: {avatarHue(user.id)}deg">
+          {#if user.avatar_url}
+            <img src={user.avatar_url} alt="" loading="lazy" />
+          {:else}
+            {avatarInitial(user.display_name)}
+          {/if}
+        </span>
         <div class="user-meta">
           <strong>{user.display_name}</strong>
-          <span>{connected ? "Active" : "Reconnecting…"}</span>
+          <span>{user.handle ? handleLabel(user.handle) : connected ? "Active" : "Reconnecting…"}</span>
         </div>
         <span class="presence-dot active" aria-hidden="true"></span>
-      </footer>
+      </button>
     {/if}
   </aside>
 
@@ -680,10 +759,6 @@
         {/if}
         <button type="submit" class="search-submit">Search</button>
       </form>
-      <div class="connection" class:live={connected}>
-        <span class="dot" aria-hidden="true"></span>
-        <span>{connected ? "Live" : status}</span>
-      </div>
       <div class="topbar-actions" aria-label="Channel tools">
         <button
           type="button"
@@ -736,7 +811,11 @@
             }}
           >
             <span class="dm-avatar" style="--hue: {avatarHue(result.message.author?.id || result.message.author_id || 'x')}deg">
-              {avatarInitial(result.message.author?.display_name)}
+              {#if result.message.author?.avatar_url}
+                <img src={result.message.author.avatar_url} alt="" loading="lazy" />
+              {:else}
+                {avatarInitial(result.message.author?.display_name)}
+              {/if}
             </span>
             <div class="search-result-body">
               <div>
@@ -773,10 +852,17 @@
           <div class="day-divider"><span>{group.dayLabel}</span></div>
         {/if}
         <article class="message-group">
-          <div class="avatar" style="--hue: {avatarHue(group.authorID)}deg">{avatarInitial(group.authorName)}</div>
+          <div class="avatar" style="--hue: {avatarHue(group.authorID)}deg">
+            {#if group.authorAvatarURL}
+              <img src={group.authorAvatarURL} alt="" loading="lazy" />
+            {:else}
+              {avatarInitial(group.authorName)}
+            {/if}
+          </div>
           <div class="group-body">
             <header>
               <strong>{group.authorName}</strong>
+              {#if group.authorHandle}<span>{handleLabel(group.authorHandle)}</span>{/if}
               <time>{time(group.timestamp)}</time>
             </header>
             {#each group.messages as message, index (message.id)}
@@ -792,6 +878,13 @@
                             <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                             <span>{attachment.filename}</span>
                           </a>
+                        {:else if isVideoUpload(attachment)}
+                          <div class="video-attachment">
+                            <video controls preload="metadata" aria-label={attachment.filename}>
+                              <source src={uploadURL(attachment)} type={attachment.content_type} />
+                            </video>
+                            <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
+                          </div>
                         {:else}
                           <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
                             <span class="file-icon" aria-hidden="true">↧</span>
@@ -927,11 +1020,16 @@
       <div class="thread-scroll">
         <article class="thread-root">
           <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
-            {avatarInitial(selectedThread.author?.display_name)}
+            {#if selectedThread.author?.avatar_url}
+              <img src={selectedThread.author.avatar_url} alt="" loading="lazy" />
+            {:else}
+              {avatarInitial(selectedThread.author?.display_name)}
+            {/if}
           </div>
           <div class="group-body">
             <header>
               <strong>{selectedThread.author?.display_name || "Local User"}</strong>
+              {#if selectedThread.author?.handle}<span>{handleLabel(selectedThread.author.handle)}</span>{/if}
               <time>{time(selectedThread.created_at)}</time>
             </header>
             <div class="markdown">{@html markdown(selectedThread.body)}</div>
@@ -943,6 +1041,13 @@
                       <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                       <span>{attachment.filename}</span>
                     </a>
+                  {:else if isVideoUpload(attachment)}
+                    <div class="video-attachment">
+                      <video controls preload="metadata" aria-label={attachment.filename}>
+                        <source src={uploadURL(attachment)} type={attachment.content_type} />
+                      </video>
+                      <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
+                    </div>
                   {:else}
                     <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
                       <span class="file-icon" aria-hidden="true">↧</span>
@@ -962,11 +1067,16 @@
           {#each replies as reply (reply.id)}
             <article class="reply">
               <div class="avatar small" style="--hue: {avatarHue(reply.author?.id || reply.author_id || 'x')}deg">
-                {avatarInitial(reply.author?.display_name)}
+                {#if reply.author?.avatar_url}
+                  <img src={reply.author.avatar_url} alt="" loading="lazy" />
+                {:else}
+                  {avatarInitial(reply.author?.display_name)}
+                {/if}
               </div>
               <div class="group-body">
                 <header>
                   <strong>{reply.author?.display_name || "Local User"}</strong>
+                  {#if reply.author?.handle}<span>{handleLabel(reply.author.handle)}</span>{/if}
                   <time>{time(reply.created_at)}</time>
                 </header>
                 <div class="markdown">{@html markdown(reply.body)}</div>
@@ -978,6 +1088,13 @@
                           <img src={uploadURL(attachment)} alt={attachment.filename} loading="lazy" />
                           <span>{attachment.filename}</span>
                         </a>
+                      {:else if isVideoUpload(attachment)}
+                        <div class="video-attachment">
+                          <video controls preload="metadata" aria-label={attachment.filename}>
+                            <source src={uploadURL(attachment)} type={attachment.content_type} />
+                          </video>
+                          <a href={uploadURL(attachment)} target="_blank" rel="noreferrer">{attachment.filename}</a>
+                        </div>
                       {:else}
                         <a class="file-attachment" href={uploadURL(attachment)} target="_blank" rel="noreferrer">
                           <span class="file-icon" aria-hidden="true">↧</span>
@@ -1030,4 +1147,56 @@
     {/if}
   </aside>
 </div>
+{#if showProfileSettings && user}
+  <div class="modal-scrim" role="presentation">
+    <button class="modal-backdrop" type="button" aria-label="Close account settings" onclick={() => (showProfileSettings = false)}></button>
+    <section class="profile-modal" aria-label="Account settings">
+      <header>
+        <div>
+          <p>Account</p>
+          <h2>Profile settings</h2>
+        </div>
+        <button type="button" aria-label="Close account settings" onclick={() => (showProfileSettings = false)}>×</button>
+      </header>
+      <form
+        class="profile-form"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void saveProfile();
+        }}
+      >
+        <div class="profile-preview">
+          <span class="avatar large" style="--hue: {avatarHue(user.id)}deg">
+            {#if profileAvatarURL}
+              <img src={profileAvatarURL} alt="" loading="lazy" />
+            {:else}
+              {avatarInitial(profileDisplayName)}
+            {/if}
+          </span>
+          <div>
+            <strong>{profileDisplayName || user.display_name}</strong>
+            <span>{profileHandle || handleLabel(user.handle) || "No handle set"}</span>
+          </div>
+        </div>
+        <label class="field">
+          <span>Display name</span>
+          <input bind:value={profileDisplayName} aria-label="Display name" maxlength="80" autocomplete="name" />
+        </label>
+        <label class="field">
+          <span>Handle</span>
+          <input bind:value={profileHandle} aria-label="Handle" placeholder="@steipete" autocomplete="username" />
+        </label>
+        <label class="field">
+          <span>Avatar URL</span>
+          <input bind:value={profileAvatarURL} aria-label="Avatar URL" placeholder="https://example.com/avatar.png" inputmode="url" />
+        </label>
+        {#if profileStatus}<p class="profile-status" class:error={profileStatusError}>{profileStatus}</p>{/if}
+        <div class="profile-actions">
+          <button type="button" class="ghost-action" onclick={() => (showProfileSettings = false)}>Cancel</button>
+          <button type="submit" class="primary-action">Save profile</button>
+        </div>
+      </form>
+    </section>
+  </div>
+{/if}
 {/if}

@@ -1,6 +1,7 @@
 export type User = {
   id: string;
   display_name: string;
+  handle: string;
   avatar_url: string;
   created_at: string;
 };
