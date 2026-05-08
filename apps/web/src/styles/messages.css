@@ -321,7 +321,7 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "Geist Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
 }
 

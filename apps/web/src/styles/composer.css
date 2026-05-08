@@ -342,7 +342,7 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 0 5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10.5px;
   color: var(--text);
 }
