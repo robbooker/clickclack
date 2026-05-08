@@ -46,7 +46,8 @@ short `read_when` hint at the top — open the one that matches your change.
 - [Data model](docs/data-model.md) — tables, IDs, invariants.
 - [CLI](docs/cli.md), [Agent-friendly CLI](docs/agent-friendly-cli.md),
   [Configuration](docs/configuration.md),
-  [Deployment](docs/deployment.md), [Development](docs/development.md).
+  [Deployment](docs/deployment.md), [Development](docs/development.md),
+  [Releasing](docs/releasing.md).
 - [TypeScript SDK](docs/sdk.md).
 
 Per-feature docs:
@@ -156,6 +157,7 @@ pnpm coverage     # Go coverage with 90% gate
 pnpm test:e2e     # Playwright
 pnpm fmt          # gofmt + oxfmt write
 pnpm fmt:check    # gofmt + oxfmt check, CI-compatible
+goreleaser release --snapshot --clean  # local release smoke test
 ```
 
 ## Deployment

@@ -1,0 +1,91 @@
+version: 2
+
+project_name: clickclack
+
+before:
+  hooks:
+    - pnpm build
+
+builds:
+  - id: clickclack
+    main: ./apps/api/cmd/clickclack
+    binary: clickclack
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X main.version={{ .Version }}
+        -X main.commit={{ .ShortCommit }}
+        -X main.date={{ .Date }}
+
+archives:
+  - id: bundles
+    ids:
+      - clickclack
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{- if eq .Arch "arm64" -}}aarch64{{- else -}}{{ .Arch }}{{- end -}}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - SPEC.md
+      - CHANGELOG.md
+      - docs/**/*
+
+checksum:
+  name_template: "sha256sums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^Merge pull request"
+      - "^Merge branch"
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - clickclack
+    package_name: clickclack
+    file_name_template: "{{ .ConventionalFileName }}"
+    homepage: https://clickclack.chat
+    maintainer: OpenClaw <steipete@gmail.com>
+    description: Self-hostable chat with Slack-style threads, durable realtime, OpenAPI, and a TypeScript SDK.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/clickclack/README.md
+      - src: ./LICENSE
+        dst: /usr/share/doc/clickclack/LICENSE
+      - src: ./SPEC.md
+        dst: /usr/share/doc/clickclack/SPEC.md

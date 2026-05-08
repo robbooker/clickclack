@@ -55,6 +55,7 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm fmt`             | `gofmt` + `oxfmt` over Go and TS/Svelte. |
 | `pnpm fmt:check`       | CI-compatible formatting check with `gofmt -l` and `oxfmt --check`. |
 | `pnpm lint`            | `oxlint` over web, SDK, examples, and tests. |
+| `goreleaser release --snapshot --clean` | Local release smoke test for all configured OS/arch targets. |
 | `pnpm typecheck`       | `tsgo --noEmit -p tsconfig.json` for root Playwright config/tests. |
 | `pnpm test`            | `go test ./... && pnpm build`. |
 | `pnpm test:e2e`        | Playwright suite in `tests/e2e`. |

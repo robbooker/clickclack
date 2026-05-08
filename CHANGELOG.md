@@ -17,3 +17,5 @@
   quickstart CTA contrast in dark mode.
 - Split GitHub Actions into explicit Go, TypeScript, Playwright, and Docker
   gates, with `gofmt` and `oxfmt --check` enforced in CI.
+- Added GoReleaser config and release workflow for Linux, macOS, Windows, and
+  FreeBSD archives, plus Linux `.deb` and `.rpm` packages.

@@ -38,6 +38,7 @@ const sections = [
     "configuration.md",
     "deployment.md",
     "development.md",
+    "releasing.md",
     "sdk.md",
   ]],
   ["Reference", [

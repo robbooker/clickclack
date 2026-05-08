@@ -70,6 +70,7 @@ it for anything that isn't a local clone.
 - [Configuration](configuration.md) — flag/env/file precedence.
 - [Deployment](deployment.md) — single binary, Docker, data layout, OAuth.
 - [Development](development.md) — pnpm scripts, monorepo layout, gates.
+- [Releasing](releasing.md) — GoReleaser targets, artifacts, and tag flow.
 
 ## Look under the hood
 

@@ -17,6 +17,12 @@ import (
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -39,6 +45,9 @@ func run() error {
 		return backup(os.Args[2:])
 	case "export":
 		return exportData(os.Args[2:])
+	case "version":
+		fmt.Printf("clickclack %s (%s, %s)\n", version, commit, date)
+		return nil
 	default:
 		return client(os.Args[1:])
 	}

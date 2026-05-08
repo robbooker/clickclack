@@ -30,6 +30,22 @@ The Go build step requires the SPA `dist/` to be present because `webassets`
 uses `go:embed`. The `pnpm build` script copies `apps/web/dist` into
 `apps/api/internal/webassets/dist`; CI must run it before `go build`.
 
+## Releases
+
+GoReleaser is configured in `.goreleaser.yml`. It builds `clickclack` for
+Linux, macOS, Windows, and FreeBSD on `amd64` and `arm64`, with Windows
+archives emitted as `.zip` and the others as `.tar.gz`. Linux `.deb` and
+`.rpm` packages are generated through nfpm.
+
+```sh
+pnpm install
+goreleaser release --snapshot --clean
+```
+
+The GoReleaser config runs `pnpm build` before compiling so the embedded SPA
+is refreshed. Publishing is handled by `.github/workflows/release.yml` on
+`v*` tags or manual dispatch with an existing tag.
+
 ## Docker
 
 The provided `Dockerfile` is multi-stage:

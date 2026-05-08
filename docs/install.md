@@ -53,8 +53,21 @@ docker run --rm -v clickclack-data:/app/data clickclack \
 
 ## Pre-built binaries
 
-There are no published release artifacts yet — V1 ships from source. Once
-binaries land, this page will list the canonical install line.
+GitHub releases publish `clickclack` archives for Linux, macOS, Windows, and
+FreeBSD on `amd64` and `arm64`, plus Linux `.deb` and `.rpm` packages.
+
+```sh
+# macOS/Linux tarball shape
+tar -xzf clickclack_<version>_<os>_<arch>.tar.gz
+./clickclack version
+
+# Linux packages
+sudo dpkg -i clickclack_<version>_amd64.deb
+sudo rpm -i clickclack-<version>-1.x86_64.rpm
+```
+
+Release archives include `LICENSE`, `README.md`, `SPEC.md`, `CHANGELOG.md`,
+and the docs tree. Checksums are published as `sha256sums.txt`.
 
 ## What you get
 
