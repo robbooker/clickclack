@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -277,6 +278,80 @@ func TestGitHubOAuthAllowedOrg(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected org denied, got %s", resp.Status)
+	}
+}
+
+func TestGitHubOrgMembershipChecks(t *testing.T) {
+	t.Parallel()
+	st := newEmptyHTTPStore(t)
+	responses := map[string]func(http.ResponseWriter){
+		"active": func(w http.ResponseWriter) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "active", "organization": map[string]any{"login": "openclaw"}})
+		},
+		"inactive": func(w http.ResponseWriter) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "pending", "organization": map[string]any{"login": "openclaw"}})
+		},
+		"wrong-org": func(w http.ResponseWriter) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": "active", "organization": map[string]any{"login": "other"}})
+		},
+		"broken-json": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{`))
+		},
+		"server-error": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := responses[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+		if handler == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		handler(w)
+	}))
+	t.Cleanup(provider.Close)
+
+	srv := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{
+		MembershipURL: provider.URL + "/memberships/orgs/",
+		AllowedOrg:    "openclaw",
+	}})
+	if err := srv.ensureGitHubOrgMembership(context.Background(), "active"); err != nil {
+		t.Fatalf("expected active membership, got %v", err)
+	}
+	noOrg := New(st, realtime.NewHub(), Options{})
+	if err := noOrg.ensureGitHubOrgMembership(context.Background(), "token"); err != nil {
+		t.Fatalf("expected empty org to skip check, got %v", err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		token      string
+		wantDenied bool
+	}{
+		{"inactive", "inactive", true},
+		{"wrong org", "wrong-org", true},
+		{"missing", "missing", true},
+		{"broken json", "broken-json", false},
+		{"server error", "server-error", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{
+				MembershipURL: provider.URL + "/memberships/orgs/",
+				AllowedOrg:    "openclaw",
+			}})
+			err := srv.ensureGitHubOrgMembership(context.Background(), tc.token)
+			if err == nil {
+				t.Fatal("expected membership error")
+			}
+			if errors.Is(err, errGitHubOrgDenied) != tc.wantDenied {
+				t.Fatalf("unexpected denied error state for %v", err)
+			}
+		})
+	}
+
+	badURL := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{MembershipURL: "://bad", AllowedOrg: "openclaw"}})
+	if err := badURL.ensureGitHubOrgMembership(context.Background(), "token"); err == nil {
+		t.Fatal("expected bad membership url error")
 	}
 }
 
