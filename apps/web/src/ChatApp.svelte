@@ -2,7 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { gifLibrary } from "./lib/gifs";
-  import { groupMessages, quoteSnippet, quotedAuthorName, threadSummary } from "./lib/chat/messages";
+  import { quoteSnippet, quotedAuthorName } from "./lib/chat/messages";
   import {
     avatarHue,
     avatarInitial,
@@ -18,6 +18,7 @@
   import { uploadURL } from "./lib/uploads";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import MediaAttachment from "./components/MediaAttachment.svelte";
+  import MessageList from "./components/messages/MessageList.svelte";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   let user: User | null = null;
@@ -68,7 +69,6 @@
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
   $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
-  $: groupedMessages = groupMessages(messages);
   $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
   $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
   $: if (replyContext === "dm" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
@@ -898,126 +898,21 @@
       </div>
     {/if}
 
-    <div
-      class="messages"
-      role="log"
-      aria-live="polite"
-      bind:this={messageList}
-      onpointerdown={() => (activeComposerContext = "message")}
-      onpointerup={handleInlineImagePointerUp}
-    >
-      {#if messages.length === 0}
-        <div class="empty">
-          <div class="empty-icon">
-            {#if selectedDirect}@{:else}#{/if}
-          </div>
-          <strong>
-            {#if selectedDirect}
-              This is the start of your conversation with {dmTitle(selectedDirect, user?.id)}.
-            {:else if selectedChannel}
-              Welcome to #{selectedChannel.name}!
-            {:else}
-              Pick a channel to get started.
-            {/if}
-          </strong>
-          <span>Send a message in Markdown — code fences, lists, links all work. Threads open from any message.</span>
-        </div>
-      {/if}
-      {#each groupedMessages as group (group.key)}
-        {#if group.dayLabel}
-          <div class="day-divider"><span>{group.dayLabel}</span></div>
-        {/if}
-        <article class="message-group">
-          <button
-            type="button"
-            class="avatar avatar-button"
-            style="--hue: {avatarHue(group.authorID)}deg"
-            aria-label={`View profile for ${group.authorName}`}
-            onclick={() => openUserProfile(group.messages[0]?.author)}
-          >
-            {#if group.authorAvatarURL}
-              <img src={group.authorAvatarURL} alt="" loading="lazy" />
-            {:else}
-              {avatarInitial(group.authorName)}
-            {/if}
-          </button>
-          <div class="group-body">
-            <header>
-              <button
-                type="button"
-                class="author-name"
-                onclick={() => openUserProfile(group.messages[0]?.author)}
-              >{group.authorName}</button>
-              {#if group.authorHandle}<span>{handleLabel(group.authorHandle)}</span>{/if}
-              <time>{time(group.timestamp)}</time>
-            </header>
-            {#each group.messages as message, index (message.id)}
-              <div class="message-row" class:selected={selectedThread?.id === message.id} data-message-id={message.id}>
-                <span class="row-stamp" aria-hidden="true">{index === 0 ? "" : time(message.created_at)}</span>
-                <div class="message-content">
-                  {#if message.quoted_message_id || message.quoted_body_snapshot}
-                    <button
-                      type="button"
-                      class="quote-block"
-                      class:dangling={!message.quoted_message_id}
-                      onclick={() => jumpToQuotedMessage(message)}
-                      disabled={!message.quoted_message_id}
-                      aria-label={message.quoted_message_id ? `Jump to quoted message from ${quotedAuthorName(message)}` : "Original message was deleted"}
-                    >
-                      <span class="quote-bar" aria-hidden="true"></span>
-                      <span class="quote-content">
-                        <span class="quote-author">{quotedAuthorName(message)}</span>
-                        {#if message.quoted_message_id}
-                          <span class="quote-snippet">{quoteSnippet(message.quoted_body_snapshot)}</span>
-                        {:else}
-                          <span class="quote-snippet muted">[original deleted] {quoteSnippet(message.quoted_body_snapshot)}</span>
-                        {/if}
-                      </span>
-                    </button>
-                  {/if}
-                  <div class="markdown">{@html markdown(message.body)}</div>
-                  {#if message.attachments?.length}
-                    <div class="attachment-grid" aria-label="Attachments">
-                      {#each message.attachments as attachment (attachment.id)}
-                        <MediaAttachment
-                          upload={attachment}
-                          url={uploadURL(attachment)}
-                          onOpenImage={openImageViewer}
-                        />
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-	                <div class="message-actions" aria-label="Message actions">
-	                  <button
-	                    type="button"
-	                    aria-label="Reply"
-	                    class="tooltip"
-	                    data-tooltip="Reply"
-	                    onclick={() => setReplyTarget(message, selectedDirectID ? "dm" : "channel")}
-	                  >
-	                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-	                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 17 4 12l5-5M4 12h11a5 5 0 0 1 5 5v3"/>
-	                    </svg>
-	                  </button>
-	                  <button
-	                    type="button"
-	                    aria-label="Open thread"
-	                    class="tooltip"
-	                    data-tooltip={threadSummary(message, selectedThread?.id)}
-	                    onclick={() => openThread(message)}
-	                  >
-	                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-	                      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-	                    </svg>
-                  </button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        </article>
-      {/each}
-    </div>
+    <MessageList
+      {messages}
+      {selectedDirect}
+      {selectedChannel}
+      selectedThreadID={selectedThread?.id}
+      currentUserID={user?.id}
+      onListRef={(node) => (messageList = node)}
+      onActivateMessageComposer={() => (activeComposerContext = "message")}
+      onInlineImagePointerUp={handleInlineImagePointerUp}
+      onOpenProfile={openUserProfile}
+      onReply={setReplyTarget}
+      onOpenThread={openThread}
+      onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
+      onOpenImage={openImageViewer}
+    />
 
     <ChatComposer
       value={messageBody}
