@@ -85,6 +85,13 @@ func TestStoreMiscBranches(t *testing.T) {
 	if err := st.AddWorkspaceMember(ctx, untitled.ID, unnamed.ID, ""); err != nil {
 		t.Fatal(err)
 	}
+	joined, err := st.EnsureDefaultWorkspaceMember(ctx, identityUser.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined.Name != "ClickClack" {
+		t.Fatalf("expected first workspace, got %#v", joined)
+	}
 	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -152,5 +159,63 @@ func TestStoreMiscBranches(t *testing.T) {
 	}
 	if len(results) == 0 || results[0].Message.ParentMessageID == nil || results[0].Message.ThreadSeq == nil {
 		t.Fatalf("expected reply search result with thread fields, got %#v", results)
+	}
+}
+
+func TestEnsureDefaultWorkspaceMemberCreatesWorkspace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	user, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "GitHub User", Email: "github@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := st.EnsureDefaultWorkspaceMember(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Name != "ClickClack" {
+		t.Fatalf("unexpected workspace: %#v", workspace)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 || workspaces[0].ID != workspace.ID {
+		t.Fatalf("expected default workspace membership, got %#v", workspaces)
+	}
+	channels, err := st.ListChannels(ctx, workspace.ID, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 1 || channels[0].Name != "general" {
+		t.Fatalf("expected general channel, got %#v", channels)
+	}
+	if again, err := st.EnsureDefaultWorkspaceMember(ctx, user.ID); err != nil || again.ID != workspace.ID {
+		t.Fatalf("expected idempotent default membership, got %#v %v", again, err)
+	}
+
+	closed := newTestStore(t)
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := closed.EnsureDefaultWorkspaceMember(ctx, user.ID); err == nil {
+		t.Fatal("expected closed db default workspace error")
+	}
+
+	withWorkspace := newTestStore(t)
+	owner, err := withWorkspace.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withWorkspace.EnsureDefaultWorkspaceMember(ctx, "usr_missing"); err == nil {
+		t.Fatal("expected missing user membership error")
+	}
+	ownerWorkspaces, err := withWorkspace.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownerWorkspaces) != 1 {
+		t.Fatalf("unexpected owner workspaces: %#v", ownerWorkspaces)
 	}
 }

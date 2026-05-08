@@ -210,6 +210,7 @@ type Store interface {
 	CreateUser(ctx context.Context, input CreateUserInput) (User, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error
+	EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (Workspace, error)
 	FirstUser(ctx context.Context) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)

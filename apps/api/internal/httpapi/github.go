@@ -113,6 +113,12 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if strings.TrimSpace(s.githubOAuth.AllowedOrg) != "" {
+		if _, err := s.store.EnsureDefaultWorkspaceMember(r.Context(), user.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	session, err := s.store.CreateSession(r.Context(), user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

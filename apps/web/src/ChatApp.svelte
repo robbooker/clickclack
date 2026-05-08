@@ -63,6 +63,7 @@
     selectedWorkspaceID = selectedWorkspaceID || workspaces[0]?.id || "";
     await loadChannels();
     await loadDirectConversations();
+    if (workspaces.length === 0) status = "create a workspace";
     connectRealtime();
   }
 
@@ -118,7 +119,11 @@
 
   async function sendMessage() {
     const body = messageBody.trim();
-    if (!body || (!selectedChannelID && !selectedDirectID)) return;
+    if (!body) return;
+    if (!selectedChannelID && !selectedDirectID) {
+      status = "pick or create a channel";
+      return;
+    }
     messageBody = "";
     const path = selectedDirectID ? `/api/dms/${selectedDirectID}/messages` : `/api/channels/${selectedChannelID}/messages`;
     const data = await api<{ message: Message }>(path, {
@@ -404,8 +409,8 @@
     <div class="messages" aria-live="polite">
       {#if messages.length === 0}
         <div class="empty">
-          <strong>Quiet tide.</strong>
-          <span>Start with Markdown. Threads open from any root message.</span>
+          <strong>{selectedChannelID || selectedDirectID ? "Quiet tide." : "No channel selected."}</strong>
+          <span>{selectedChannelID || selectedDirectID ? "Start with Markdown. Threads open from any root message." : "Create a workspace and channel before sending."}</span>
         </div>
       {/if}
       {#each messages as message (message.id)}
@@ -430,7 +435,12 @@
         void sendMessage();
       }}
     >
-      <textarea bind:value={messageBody} rows="3" placeholder="Message with Markdown" aria-label="Message body"></textarea>
+      <textarea
+        bind:value={messageBody}
+        rows="3"
+        placeholder={selectedChannelID || selectedDirectID ? "Message with Markdown" : "Create or select a channel first"}
+        aria-label="Message body"
+      ></textarea>
       <div class="composer-actions">
         <label class="upload-button">
           <input type="file" aria-label="Upload file" onchange={uploadFile} />

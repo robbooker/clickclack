@@ -476,6 +476,17 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 	}
 }
 
+func TestQueryHelpersParseValues(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequest(http.MethodGet, "/?limit=42&after_seq=123", nil)
+	if got := queryInt(req, "limit", 10); got != 42 {
+		t.Fatalf("unexpected int query value %d", got)
+	}
+	if got := queryInt64(req, "after_seq", 10); got != 123 {
+		t.Fatalf("unexpected int64 query value %d", got)
+	}
+}
+
 func readEventType(t *testing.T, conn *websocket.Conn, eventType string) store.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

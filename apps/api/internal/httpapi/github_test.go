@@ -264,7 +264,32 @@ func TestGitHubOAuthAllowedOrg(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("expected member callback redirect, got %s", resp.Status)
 	}
+	sessionCookie := findCookie(resp.Cookies(), "cc_session")
 	resp.Body.Close()
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie")
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/workspaces", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workspaces struct {
+		Workspaces []struct {
+			Name string `json:"name"`
+		} `json:"workspaces"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&workspaces); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || len(workspaces.Workspaces) != 1 || workspaces.Workspaces[0].Name != "ClickClack" {
+		t.Fatalf("expected default workspace membership, got %s %#v", resp.Status, workspaces.Workspaces)
+	}
 
 	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/auth/github/callback?code=denied&state="+stateCookie.Value, nil)
 	if err != nil {

@@ -104,6 +104,9 @@ from the request scheme/host. Configure GitHub with `<public-url>/api/auth/githu
 Org-gated deployments request `read:org`. GitHub only returns private org
 membership after the user grants that scope, so OpenClaw-only hosting should set
 `CLICKCLACK_GITHUB_ALLOWED_ORG=openclaw` and `CLICKCLACK_DEV_BOOTSTRAP=false`.
+When the org check passes, the user is automatically joined to the first
+workspace; if no workspace exists yet, ClickClack creates a default workspace
+with a `general` channel.
 
 ## Authorization
 
