@@ -1,0 +1,78 @@
+import type { Message } from "../types";
+
+export type MessageGroup = {
+  key: string;
+  dayLabel: string | null;
+  messages: Message[];
+  authorName: string;
+  authorHandle: string;
+  authorAvatarURL: string;
+  authorID: string;
+  timestamp: string;
+};
+
+export function quoteSnippet(text: string | undefined, max = 120): string {
+  if (!text) return "";
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > max ? collapsed.slice(0, max - 1) + "..." : collapsed;
+}
+
+export function quotedAuthorName(message: Message): string {
+  return message.quoted_author?.display_name || "Unknown";
+}
+
+export function threadSummary(message: Message, selectedThreadID?: string): string {
+  if (selectedThreadID === message.id) return "Open";
+  return "Thread";
+}
+
+export function dayLabel(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(date, today)) return "Today";
+  if (sameDay(date, yesterday)) return "Yesterday";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
+export function groupMessages(list: Message[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  let lastDay = "";
+  let lastAuthor = "";
+  let lastTime = 0;
+  for (const message of list) {
+    const created = new Date(message.created_at);
+    const dayKey = created.toDateString();
+    const authorID = message.author?.id || message.author_id || "local";
+    const dayChanged = dayKey !== lastDay;
+    const newAuthor = authorID !== lastAuthor;
+    const tooFarApart = created.getTime() - lastTime > 5 * 60 * 1000;
+    if (dayChanged || newAuthor || tooFarApart || groups.length === 0) {
+      groups.push({
+        key: message.id,
+        dayLabel: dayChanged ? dayLabel(message.created_at) : null,
+        messages: [message],
+        authorName: message.author?.display_name || "Local User",
+        authorHandle: message.author?.handle || "",
+        authorAvatarURL: message.author?.avatar_url || "",
+        authorID,
+        timestamp: message.created_at,
+      });
+    } else {
+      groups[groups.length - 1].messages.push(message);
+    }
+    lastDay = dayKey;
+    lastAuthor = authorID;
+    lastTime = created.getTime();
+  }
+  return groups;
+}

@@ -1,7 +1,22 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
+  import { autoGrow } from "./lib/actions/autogrow";
+  import { gifLibrary } from "./lib/gifs";
+  import { groupMessages, quoteSnippet, quotedAuthorName, threadSummary } from "./lib/chat/messages";
+  import {
+    avatarHue,
+    avatarInitial,
+    collectRecentPeople,
+    directConversationForUser,
+    dmAvatarUser,
+    dmTitle,
+    handleLabel,
+    workspaceInitial,
+  } from "./lib/chat/people";
+  import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
   import { markdown, time } from "./lib/format";
+  import { formatBytes, isImageUpload, uploadURL } from "./lib/uploads";
   import MediaAttachment from "./components/MediaAttachment.svelte";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
@@ -62,39 +77,6 @@
     const query = gifQuery.trim().toLowerCase();
     return !query || gif.title.toLowerCase().includes(query) || gif.tags.some((tag) => tag.includes(query));
   });
-
-  const gifLibrary = [
-    {
-      title: "Ship it",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYjJ1bm1meHE4N2x3bnN0djJkMWtjNGc5bXYzZDFiOHBsbG16M3F0ZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0HlHFRbmaZtBRhXG/giphy.gif",
-      tags: ["ship", "launch", "done"],
-    },
-    {
-      title: "Approved",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExazBpbzJ6ODZ3bXQ3OHBvNGJidWZoajc0cHV6YnVub3MzZ3c1a2Z2dSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/111ebonMs90YLu/giphy.gif",
-      tags: ["yes", "approved", "nice"],
-    },
-    {
-      title: "Deploy dance",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY3NkaTVmZW9ydWNnZnl0ZWQ5aHQyeGNrd2k3NG4wZWNqYzNmd3k1ZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/GeimqsH0TLDt4tScGw/giphy.gif",
-      tags: ["deploy", "dance", "celebrate"],
-    },
-    {
-      title: "Looking",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYWZ3emE0dm5mN2h0bGVsY2w0OXBodGd2cGJlNDRiZXo1YWNtdWRmZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26n6WywJyh39n1pBu/giphy.gif",
-      tags: ["search", "looking", "debug"],
-    },
-    {
-      title: "Typing faster",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOWFlbnJnbnIzbHYxcDIzdXZ3NGF3N2FocHNvMmR5enU3bHpycHBlZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/13HgwGsXF0aiGY/giphy.gif",
-      tags: ["typing", "code", "work"],
-    },
-    {
-      title: "Tiny victory",
-      url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdjJ2b2tqNmF4dG16NjE0eXhuc3h5bTlvamgwNTR0Zmd6ZjhtM2JuaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7abKhOpu0NwenH3O/giphy.gif",
-      tags: ["win", "victory", "celebrate"],
-    },
-  ];
 
   onMount(() => {
     void boot();
@@ -303,102 +285,8 @@
     activeComposerContext = context === "thread" ? "thread" : "message";
   }
 
-  const KEY_CONSUMING_ROLES = new Set([
-    "button",
-    "checkbox",
-    "combobox",
-    "link",
-    "listbox",
-    "menu",
-    "menubar",
-    "menuitem",
-    "menuitemcheckbox",
-    "menuitemradio",
-    "option",
-    "radio",
-    "radiogroup",
-    "slider",
-    "spinbutton",
-    "switch",
-    "tab",
-    "tablist",
-    "textbox",
-    "tree",
-    "treeitem",
-  ]);
-  const KEY_CONSUMING_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "DETAILS", "SUMMARY", "VIDEO", "AUDIO"]);
-
   function isModalOpen(): boolean {
     return selectedImage !== null || showProfileSettings;
-  }
-
-  function isEditableElement(el: HTMLElement | null): boolean {
-    if (!el) return false;
-    if (el.isContentEditable) return true;
-    if (el instanceof HTMLInputElement) {
-      const t = (el.type || "text").toLowerCase();
-      return t !== "checkbox" && t !== "radio" && t !== "button" && t !== "submit" && t !== "reset" && t !== "file";
-    }
-    if (el instanceof HTMLTextAreaElement) return true;
-    return false;
-  }
-
-  function consumesKeystrokes(el: HTMLElement | null): boolean {
-    if (!el) return false;
-    if (isChatSurfaceAction(el)) return false;
-    if (KEY_CONSUMING_TAGS.has(el.tagName)) return true;
-    const role = el.getAttribute("role");
-    if (role && KEY_CONSUMING_ROLES.has(role)) return true;
-    const tabindex = el.getAttribute("tabindex");
-    if (tabindex !== null && tabindex !== "-1" && el.hasAttribute("aria-keyshortcuts")) return true;
-    return false;
-  }
-
-  function isChatSurfaceAction(el: HTMLElement): boolean {
-    if (!el.closest(".messages, .thread")) return false;
-    if (el instanceof HTMLButtonElement || el instanceof HTMLAnchorElement) return true;
-    const role = el.getAttribute("role");
-    return role === "button" || role === "link";
-  }
-
-  function hasMessageTextSelection(): boolean {
-    const sel = typeof window !== "undefined" ? window.getSelection() : null;
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
-    const node = sel.getRangeAt(0).commonAncestorContainer;
-    if (!node) return false;
-    const host = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
-    return !!host?.closest(".messages, .thread, .markdown");
-  }
-
-  function shouldRedirectKeystroke(event: KeyboardEvent): boolean {
-    if (authRequired) return false;
-    if (isModalOpen()) return false;
-    if (event.defaultPrevented) return false;
-    if (event.isComposing || event.keyCode === 229) return false;
-    if (event.ctrlKey || event.metaKey || event.altKey) return false;
-    if (event.key.length !== 1) return false;
-    if (hasMessageTextSelection()) return false;
-    const active = document.activeElement as HTMLElement | null;
-    if (active === messageInput || active === replyInput) return false;
-    if (isEditableElement(active)) return false;
-    if (consumesKeystrokes(active)) return false;
-    return true;
-  }
-
-  function redirectTypingToComposer(event: KeyboardEvent) {
-    if (!shouldRedirectKeystroke(event)) return;
-    const target = activeComposerTarget();
-    if (!target || target.disabled || target.readOnly) return;
-    if (event.key === " ") event.preventDefault();
-    target.focus({ preventScroll: true });
-    const len = target.value.length;
-    target.setSelectionRange(len, len);
-    if (event.key === " ") {
-      const start = target.selectionStart ?? len;
-      const end = target.selectionEnd ?? len;
-      target.setRangeText(" ", start, end, "end");
-      target.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   }
 
   function activeComposerTarget(): HTMLTextAreaElement | null {
@@ -409,40 +297,6 @@
   function clearReplyTarget() {
     replyTarget = null;
     replyContext = null;
-  }
-
-  function autoGrow(node: HTMLTextAreaElement, _value: string) {
-    const resize = () => {
-      const previous = node.style.height;
-      node.style.height = "auto";
-      const next = `${node.scrollHeight}px`;
-      if (previous !== next) node.style.height = next;
-      else node.style.height = previous;
-    };
-    const onInput = () => resize();
-    const onWindowResize = () => resize();
-    requestAnimationFrame(resize);
-    node.addEventListener("input", onInput);
-    window.addEventListener("resize", onWindowResize);
-    return {
-      update() {
-        requestAnimationFrame(resize);
-      },
-      destroy() {
-        node.removeEventListener("input", onInput);
-        window.removeEventListener("resize", onWindowResize);
-      },
-    };
-  }
-
-  function quoteSnippet(text: string | undefined, max = 120): string {
-    if (!text) return "";
-    const collapsed = text.replace(/\s+/g, " ").trim();
-    return collapsed.length > max ? collapsed.slice(0, max - 1) + "…" : collapsed;
-  }
-
-  function quotedAuthorName(message: Message): string {
-    return message.quoted_author?.display_name || "Unknown";
   }
 
   async function jumpToQuotedMessage(message: Message) {
@@ -574,124 +428,10 @@
     }
   }
 
-  function workspaceInitial(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed) return "?";
-    const parts = trimmed.split(/\s+/);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return trimmed.slice(0, 2).toUpperCase();
-  }
-
-  function avatarInitial(name?: string | null) {
-    if (!name) return "?";
-    const trimmed = name.trim();
-    return trimmed ? trimmed[0].toUpperCase() : "?";
-  }
-
-  function handleLabel(value?: string | null) {
-    return value ? `@${value}` : "";
-  }
-
-  function dmAvatarUser(conversation: DirectConversation) {
-    return conversation.members.find((member) => member.id !== user?.id) || conversation.members[0];
-  }
-
-  function collectRecentPeople(
-    messageList: Message[],
-    conversations: DirectConversation[],
-    currentUserID: string,
-  ) {
-    const people = new Map<string, User>();
-    for (const conversation of conversations) {
-      for (const member of conversation.members) {
-        if (member.id && member.id !== currentUserID) people.set(member.id, member);
-      }
-    }
-    for (const message of [...messageList].reverse()) {
-      const author = message.author;
-      if (author?.id && author.id !== currentUserID) people.set(author.id, author);
-    }
-    return [...people.values()].slice(0, 12);
-  }
-
-  function directConversationForUser(memberID: string) {
-    return directConversations.find((conversation) =>
-      conversation.members.some((member) => member.id === memberID),
-    );
-  }
-
   function openUserProfile(profile?: User | null) {
     if (!profile) return;
     selectedThread = null;
     selectedProfile = profile;
-  }
-
-  function avatarHue(seed: string) {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-    return hash % 360;
-  }
-
-  function dayLabel(value: string) {
-    const date = new Date(value);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-    const sameDay = (a: Date, b: Date) =>
-      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    if (sameDay(date, today)) return "Today";
-    if (sameDay(date, yesterday)) return "Yesterday";
-    return new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(date);
-  }
-
-  type Group = {
-    key: string;
-    dayLabel: string | null;
-    messages: Message[];
-    authorName: string;
-    authorHandle: string;
-    authorAvatarURL: string;
-    authorID: string;
-    timestamp: string;
-  };
-
-  function groupMessages(list: Message[]): Group[] {
-    const groups: Group[] = [];
-    let lastDay = "";
-    let lastAuthor = "";
-    let lastTime = 0;
-    for (const message of list) {
-      const created = new Date(message.created_at);
-      const dayKey = created.toDateString();
-      const authorID = message.author?.id || message.author_id || "local";
-      const dayChanged = dayKey !== lastDay;
-      const newAuthor = authorID !== lastAuthor;
-      const tooFarApart = created.getTime() - lastTime > 5 * 60 * 1000;
-      if (dayChanged || newAuthor || tooFarApart || groups.length === 0) {
-        groups.push({
-          key: message.id,
-          dayLabel: dayChanged ? dayLabel(message.created_at) : null,
-          messages: [message],
-          authorName: message.author?.display_name || "Local User",
-          authorHandle: message.author?.handle || "",
-          authorAvatarURL: message.author?.avatar_url || "",
-          authorID,
-          timestamp: message.created_at,
-        });
-      } else {
-        groups[groups.length - 1].messages.push(message);
-      }
-      lastDay = dayKey;
-      lastAuthor = authorID;
-      lastTime = created.getTime();
-    }
-    return groups;
-  }
-
-  function dmTitle(conversation: DirectConversation) {
-    const others = conversation.members.filter((member) => member.id !== user?.id);
-    const list = others.length > 0 ? others : conversation.members;
-    return list.map((member) => member.display_name).join(", ");
   }
 
   function handleComposerKey(event: KeyboardEvent) {
@@ -718,10 +458,6 @@
     }
   }
 
-  function uploadURL(upload: Upload) {
-    return `/api/uploads/${encodeURIComponent(upload.id)}`;
-  }
-
   function openImageViewer(url: string, title: string) {
     selectedImage = { url, title };
   }
@@ -732,20 +468,6 @@
     if (!target.closest(".markdown")) return;
     event.preventDefault();
     openImageViewer(target.currentSrc || target.src, target.alt || "Image");
-  }
-
-  function isImageUpload(upload: Upload) {
-    return upload.content_type.startsWith("image/");
-  }
-
-  function isVideoUpload(upload: Upload) {
-    return upload.content_type.startsWith("video/");
-  }
-
-  function formatBytes(size: number) {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function appendToComposer(snippet: string) {
@@ -762,11 +484,6 @@
     appendToComposer(`![${title}](${url})`);
     showGifPicker = false;
     gifQuery = "";
-  }
-
-  function threadSummary(message: Message) {
-    if (selectedThread?.id === message.id) return "Open";
-    return "Thread";
   }
 
   function closeSidePanel() {
@@ -798,7 +515,13 @@
         return;
       }
     }
-    redirectTypingToComposer(event);
+    redirectTypingToComposer(event, {
+      authRequired,
+      isModalOpen,
+      messageInput,
+      replyInput,
+      target: activeComposerTarget,
+    });
   }}
 />
 
@@ -956,6 +679,7 @@
         </div>
         <div class="nav-list">
           {#each directConversations as conversation (conversation.id)}
+            {@const dmUser = dmAvatarUser(conversation, user?.id)}
             <button
               class="nav-item dm"
               class:active={conversation.id === selectedDirectID}
@@ -969,14 +693,14 @@
                 await loadMessages();
               }}
             >
-              <span class="dm-avatar" style="--hue: {avatarHue(dmAvatarUser(conversation)?.id || conversation.id)}deg">
-                {#if dmAvatarUser(conversation)?.avatar_url}
-                  <img src={dmAvatarUser(conversation)?.avatar_url} alt="" loading="lazy" />
+              <span class="dm-avatar" style="--hue: {avatarHue(dmUser?.id || conversation.id)}deg">
+                {#if dmUser?.avatar_url}
+                  <img src={dmUser.avatar_url} alt="" loading="lazy" />
                 {:else}
-                  {avatarInitial(dmAvatarUser(conversation)?.display_name)}
+                  {avatarInitial(dmUser?.display_name)}
                 {/if}
               </span>
-              <span class="nav-label">{dmTitle(conversation)}</span>
+              <span class="nav-label">{dmTitle(conversation, user?.id)}</span>
               <span class="presence-dot" aria-hidden="true"></span>
             </button>
           {/each}
@@ -1003,7 +727,7 @@
         </div>
         <div class="nav-list">
           {#each recentPeople as person (person.id)}
-            {@const conversation = directConversationForUser(person.id)}
+            {@const conversation = directConversationForUser(directConversations, person.id)}
             <button
               class="nav-item dm"
               class:active={conversation?.id === selectedDirectID || selectedProfile?.id === person.id}
@@ -1070,7 +794,7 @@
     <header class="topbar">
       <div class="topbar-title">
         {#if selectedDirect}
-          <h1 class="with-glyph dm">{`@${dmTitle(selectedDirect)}`}</h1>
+          <h1 class="with-glyph dm">{`@${dmTitle(selectedDirect, user?.id)}`}</h1>
         {:else if selectedChannel}
           <h1 class="with-glyph channel">{`#${selectedChannel.name}`}</h1>
         {:else}
@@ -1189,7 +913,7 @@
           </div>
           <strong>
             {#if selectedDirect}
-              This is the start of your conversation with {dmTitle(selectedDirect)}.
+              This is the start of your conversation with {dmTitle(selectedDirect, user?.id)}.
             {:else if selectedChannel}
               Welcome to #{selectedChannel.name}!
             {:else}
@@ -1280,7 +1004,7 @@
 	                    type="button"
 	                    aria-label="Open thread"
 	                    class="tooltip"
-	                    data-tooltip={threadSummary(message)}
+	                    data-tooltip={threadSummary(message, selectedThread?.id)}
 	                    onclick={() => openThread(message)}
 	                  >
 	                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -1353,7 +1077,7 @@
             bind:value={messageBody}
             use:autoGrow={messageBody}
             rows="1"
-            placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
+            placeholder={selectedDirect ? `Message ${dmTitle(selectedDirect, user?.id)}` : selectedChannel ? `Message #${selectedChannel.name}` : "Pick a channel to start"}
             aria-label="Message body"
             onfocus={() => (activeComposerContext = "message")}
             onkeydown={handleComposerKey}
