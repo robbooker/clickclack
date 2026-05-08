@@ -4,6 +4,7 @@
   import { gifLibrary } from "./lib/gifs";
   import { collectRecentPeople, dmTitle } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
+  import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
   import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList from "./components/messages/MessageList.svelte";
@@ -12,6 +13,7 @@
   import ProfilePane from "./components/profile/ProfilePane.svelte";
   import ProfileSettingsModal from "./components/profile/ProfileSettingsModal.svelte";
   import SearchResults from "./components/search/SearchResults.svelte";
+  import ThreadEmptyState from "./components/thread/ThreadEmptyState.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
@@ -47,9 +49,7 @@
   let profileStatusError = false;
   let status = "loading";
   let authRequired = false;
-  let socket: WebSocket | null = null;
-  let connected = false;
-  let reconnectTimer: number | undefined;
+  let socket: RealtimeConnection | null = null;
   let messageList: HTMLElement | null = null;
   let showWorkspaceCreate = false;
   let sidebarCollapsed = false;
@@ -61,6 +61,7 @@
   let activeComposerContext: "message" | "thread" = "message";
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
+  $: connected = socket?.connected ?? false;
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
   $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
@@ -78,11 +79,8 @@
   });
 
   onDestroy(() => {
-    const current = socket;
+    socket?.close();
     socket = null;
-    connected = false;
-    current?.close();
-    if (reconnectTimer) window.clearTimeout(reconnectTimer);
   });
 
   async function boot() {
@@ -146,7 +144,7 @@
     await loadChannels();
     await loadDirectConversations();
     if (workspaces.length === 0) status = "create a workspace";
-    connectRealtime();
+    connectRealtimeSocket();
   }
 
   async function createWorkspace() {
@@ -161,14 +159,14 @@
     selectedWorkspaceID = data.workspace.id;
     await loadChannels();
     await loadDirectConversations();
-    connectRealtime();
+    connectRealtimeSocket();
   }
 
   async function selectWorkspace(workspaceID: string) {
     selectedWorkspaceID = workspaceID;
     await loadChannels();
     await loadDirectConversations();
-    connectRealtime();
+    connectRealtimeSocket();
   }
 
   async function loadChannels() {
@@ -423,32 +421,13 @@
     await loadMessages();
   }
 
-  function connectRealtime() {
-    if (reconnectTimer) window.clearTimeout(reconnectTimer);
-    const previous = socket;
+  function connectRealtimeSocket() {
+    socket?.close();
     socket = null;
-    connected = false;
-    previous?.close();
     if (!selectedWorkspaceID) return;
-    const lastCursor = localStorage.getItem(`clickclack:${selectedWorkspaceID}:cursor`) || "";
-    const url = new URL("/api/realtime/ws", window.location.href);
-    url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    url.searchParams.set("workspace_id", selectedWorkspaceID);
-    if (lastCursor) url.searchParams.set("after_cursor", lastCursor);
-    const current = new WebSocket(url);
-    socket = current;
-    current.addEventListener("open", () => {
-      if (socket === current) connected = true;
-    });
-    current.addEventListener("message", (message) => {
-      const event = JSON.parse(String(message.data)) as RealtimeEvent;
-      if (event.cursor) localStorage.setItem(`clickclack:${selectedWorkspaceID}:cursor`, event.cursor);
-      void handleEvent(event);
-    });
-    current.addEventListener("close", () => {
-      if (socket !== current) return;
-      connected = false;
-      reconnectTimer = window.setTimeout(connectRealtime, 1200);
+    socket = connectRealtime({
+      workspaceID: selectedWorkspaceID,
+      onEvent: (event) => void handleEvent(event),
     });
   }
 
@@ -744,15 +723,7 @@
         onSetStatus={() => (status = "status messages are coming soon")}
       />
     {:else}
-      <div class="thread-empty">
-        <div class="thread-icon">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-11.6 7.16L3 21l1.84-6.4A8 8 0 1 1 21 12Z"/>
-          </svg>
-        </div>
-        <strong>No thread open</strong>
-        <span>Hover any message and tap the bubble to keep side conversations tidy.</span>
-      </div>
+      <ThreadEmptyState />
     {/if}
   </aside>
 </div>
