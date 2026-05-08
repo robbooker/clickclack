@@ -236,15 +236,18 @@
       method: "POST",
       body: JSON.stringify({ body })
     });
+    let message = data.message;
     if (pendingUpload) {
+      const upload = pendingUpload;
       await api(`/api/messages/${data.message.id}/attachments`, {
         method: "POST",
-        body: JSON.stringify({ upload_id: pendingUpload.id })
+        body: JSON.stringify({ upload_id: upload.id })
       });
       pendingUpload = null;
+      message = { ...message, attachments: [...(message.attachments || []), upload] };
     }
-    if (!messages.some((message) => message.id === data.message.id)) {
-      messages = [...messages, data.message];
+    if (!messages.some((existing) => existing.id === message.id)) {
+      messages = [...messages, message];
     }
     await scrollMessagesToBottom();
   }
