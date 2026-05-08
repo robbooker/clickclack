@@ -2,7 +2,6 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { gifLibrary } from "./lib/gifs";
-  import { quoteSnippet, quotedAuthorName } from "./lib/chat/messages";
   import {
     avatarHue,
     avatarInitial,
@@ -14,11 +13,13 @@
     workspaceInitial,
   } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
-  import { markdown, time } from "./lib/format";
-  import { uploadURL } from "./lib/uploads";
   import ChatComposer from "./components/composer/ChatComposer.svelte";
-  import MediaAttachment from "./components/MediaAttachment.svelte";
+  import ImageViewer from "./components/media/ImageViewer.svelte";
   import MessageList from "./components/messages/MessageList.svelte";
+  import ProfilePane from "./components/profile/ProfilePane.svelte";
+  import ProfileSettingsModal from "./components/profile/ProfileSettingsModal.svelte";
+  import ThreadPanel from "./components/thread/ThreadPanel.svelte";
+  import { time } from "./lib/format";
   import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   let user: User | null = null;
@@ -944,208 +945,35 @@
 
   <aside class="thread" class:open={sidePanelOpen} aria-label={selectedProfile ? "Profile pane" : "Thread pane"}>
     {#if selectedThread}
-      <header>
-        <div>
-          <p>Thread</p>
-          <strong>{selectedThreadState?.reply_count ?? replies.length} {(selectedThreadState?.reply_count ?? replies.length) === 1 ? "reply" : "replies"}</strong>
-        </div>
-        <button
-          class="close"
-          aria-label="Close thread"
-          onclick={() => {
-            closeSidePanel();
-          }}
-        >×</button>
-      </header>
-      <div
-        class="thread-scroll"
-        role="region"
-        aria-label="Thread messages"
-        onpointerdown={() => (activeComposerContext = "thread")}
-        onpointerup={handleInlineImagePointerUp}
-      >
-        <article class="thread-root" data-message-id={selectedThread.id}>
-          <div class="avatar" style="--hue: {avatarHue(selectedThread.author?.id || selectedThread.author_id || 'x')}deg">
-            {#if selectedThread.author?.avatar_url}
-              <img src={selectedThread.author.avatar_url} alt="" loading="lazy" />
-            {:else}
-              {avatarInitial(selectedThread.author?.display_name)}
-            {/if}
-          </div>
-          <div class="group-body">
-            <header>
-              <strong>{selectedThread.author?.display_name || "Local User"}</strong>
-              {#if selectedThread.author?.handle}<span>{handleLabel(selectedThread.author.handle)}</span>{/if}
-              <time>{time(selectedThread.created_at)}</time>
-              <button
-                type="button"
-	                class="reply-quote-btn"
-	                aria-label="Reply"
-	                data-tooltip="Reply"
-	                onclick={() => selectedThread && setReplyTarget(selectedThread, "thread")}
-	              >↩</button>
-            </header>
-            <div class="markdown">{@html markdown(selectedThread.body)}</div>
-            {#if selectedThread.attachments?.length}
-              <div class="attachment-grid compact" aria-label="Attachments">
-                {#each selectedThread.attachments as attachment (attachment.id)}
-                  <MediaAttachment
-                    upload={attachment}
-                    url={uploadURL(attachment)}
-                    onOpenImage={openImageViewer}
-                  />
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </article>
-        <div class="thread-divider"><span>{replies.length} {replies.length === 1 ? "reply" : "replies"}</span></div>
-        <div class="reply-list">
-          {#each replies as reply (reply.id)}
-            <article class="reply" data-message-id={reply.id}>
-              <div class="avatar small" style="--hue: {avatarHue(reply.author?.id || reply.author_id || 'x')}deg">
-                {#if reply.author?.avatar_url}
-                  <img src={reply.author.avatar_url} alt="" loading="lazy" />
-                {:else}
-                  {avatarInitial(reply.author?.display_name)}
-                {/if}
-              </div>
-              <div class="group-body">
-                <header>
-                  <strong>{reply.author?.display_name || "Local User"}</strong>
-                  {#if reply.author?.handle}<span>{handleLabel(reply.author.handle)}</span>{/if}
-                  <time>{time(reply.created_at)}</time>
-                  <button
-                    type="button"
-	                    class="reply-quote-btn"
-	                    aria-label="Reply"
-	                    data-tooltip="Reply"
-	                    onclick={() => setReplyTarget(reply, "thread")}
-	                  >↩</button>
-                </header>
-                {#if reply.quoted_message_id || reply.quoted_body_snapshot}
-                  <button
-                    type="button"
-                    class="quote-block"
-                    class:dangling={!reply.quoted_message_id}
-                    onclick={() => jumpToQuotedMessage(reply)}
-                    disabled={!reply.quoted_message_id}
-                    aria-label={reply.quoted_message_id ? `Jump to quoted message from ${quotedAuthorName(reply)}` : "Original message was deleted"}
-                  >
-                    <span class="quote-bar" aria-hidden="true"></span>
-                    <span class="quote-content">
-                      <span class="quote-author">{quotedAuthorName(reply)}</span>
-                      {#if reply.quoted_message_id}
-                        <span class="quote-snippet">{quoteSnippet(reply.quoted_body_snapshot)}</span>
-                      {:else}
-                        <span class="quote-snippet muted">[original deleted] {quoteSnippet(reply.quoted_body_snapshot)}</span>
-                      {/if}
-                    </span>
-                  </button>
-                {/if}
-                <div class="markdown">{@html markdown(reply.body)}</div>
-                {#if reply.attachments?.length}
-                  <div class="attachment-grid compact" aria-label="Attachments">
-                    {#each reply.attachments as attachment (attachment.id)}
-                      <MediaAttachment
-                        upload={attachment}
-                        url={uploadURL(attachment)}
-                        onOpenImage={openImageViewer}
-                      />
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            </article>
-          {/each}
-        </div>
-      </div>
-      <ChatComposer
-        value={replyBody}
-        placeholder="Reply in thread"
-        ariaLabel="Reply body"
-        submitLabel="Reply"
-        formClass="composer reply-composer"
+      <ThreadPanel
+        root={selectedThread}
+        {replies}
+        threadState={selectedThreadState}
+        {replyBody}
         replyTarget={replyTarget && replyContext === "thread" ? replyTarget : null}
-        onValue={(value) => (replyBody = value)}
-        onSubmit={() => void sendReply()}
-        onKeydown={handleReplyKey}
-        onFocus={() => (activeComposerContext = "thread")}
-        onInputRef={(node) => (replyInput = node)}
+        onClose={closeSidePanel}
+        onReplyBody={(value) => (replyBody = value)}
+        onSubmitReply={() => void sendReply()}
+        onReplyKeydown={handleReplyKey}
+        onReplyFocus={() => (activeComposerContext = "thread")}
+        onReplyInputRef={(node) => (replyInput = node)}
+        onSetReplyTarget={setReplyTarget}
         onClearReply={clearReplyTarget}
+        onActivateThreadComposer={() => (activeComposerContext = "thread")}
+        onInlineImagePointerUp={handleInlineImagePointerUp}
+        onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
+        onOpenImage={openImageViewer}
       />
     {:else if selectedProfile}
-      <header>
-        <div>
-          <p>Profile</p>
-          <strong>{selectedProfile.display_name}</strong>
-        </div>
-        <button class="close" aria-label="Close profile" onclick={closeSidePanel}>×</button>
-      </header>
-      <div class="profile-pane">
-        <div class="profile-hero" style="--hue: {avatarHue(selectedProfile.id)}deg">
-          <span class="profile-avatar">
-            {#if selectedProfile.avatar_url}
-              <img src={selectedProfile.avatar_url} alt="" loading="lazy" />
-            {:else}
-              {avatarInitial(selectedProfile.display_name)}
-            {/if}
-          </span>
-        </div>
-        <section class="profile-pane-body">
-          <div class="profile-pane-title">
-            <div>
-              <h2>{selectedProfile.display_name}</h2>
-              {#if selectedProfile.handle}<span>{handleLabel(selectedProfile.handle)}</span>{/if}
-            </div>
-            {#if user?.id === selectedProfile.id}
-              <button type="button" class="text-action" onclick={openProfileSettings}>Edit</button>
-            {/if}
-          </div>
-          <div class="profile-presence">
-            <span class="presence-dot active" aria-hidden="true"></span>
-            <span>Active</span>
-          </div>
-          <div class="profile-actions-row">
-            {#if user?.id !== selectedProfile.id}
-              <button type="button" class="primary-action" onclick={() => startDirectWithUser(selectedProfile?.id || "")}>
-                Message
-              </button>
-            {/if}
-            <button type="button" class="ghost-action" onclick={() => (status = "status messages are coming soon")}>
-              Set a status
-            </button>
-          </div>
-          <section class="profile-info">
-            <header>
-              <strong>Contact information</strong>
-              {#if user?.id === selectedProfile.id}
-                <button type="button" class="text-action" onclick={openProfileSettings}>Edit</button>
-              {/if}
-            </header>
-            <div class="profile-info-row">
-              <span class="info-icon" aria-hidden="true">@</span>
-              <div>
-                <small>Handle</small>
-                <span>{selectedProfile.handle ? handleLabel(selectedProfile.handle) : "No handle set"}</span>
-              </div>
-            </div>
-            <div class="profile-info-row">
-              <span class="info-icon" aria-hidden="true">ID</span>
-              <div>
-                <small>User ID</small>
-                <span>{selectedProfile.id}</span>
-              </div>
-            </div>
-          </section>
-          <section class="profile-info">
-            <header>
-              <strong>About</strong>
-            </header>
-            <p class="profile-note">Member of {selectedWorkspace?.name || "this workspace"}. Click Message to keep the conversation in your sidebar.</p>
-          </section>
-        </section>
-      </div>
+      <ProfilePane
+        profile={selectedProfile}
+        currentUser={user}
+        workspaceName={selectedWorkspace?.name}
+        onClose={closeSidePanel}
+        onEdit={openProfileSettings}
+        onMessage={(memberID) => void startDirectWithUser(memberID)}
+        onSetStatus={() => (status = "status messages are coming soon")}
+      />
     {:else}
       <div class="thread-empty">
         <div class="thread-icon">
@@ -1160,72 +988,21 @@
   </aside>
 </div>
 {#if showProfileSettings && user}
-  <div class="modal-scrim" role="presentation">
-    <button class="modal-backdrop" type="button" aria-label="Close account settings" onclick={closeModal}></button>
-    <section class="profile-modal" aria-label="Account settings">
-      <header>
-        <div>
-          <p>Account</p>
-          <h2>Profile settings</h2>
-        </div>
-        <button type="button" aria-label="Close account settings" onclick={closeModal}>×</button>
-      </header>
-      <form
-        class="profile-form"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void saveProfile();
-        }}
-      >
-        <div class="profile-preview">
-          <span class="avatar large" style="--hue: {avatarHue(user.id)}deg">
-            {#if profileAvatarURL}
-              <img src={profileAvatarURL} alt="" loading="lazy" />
-            {:else}
-              {avatarInitial(profileDisplayName)}
-            {/if}
-          </span>
-          <div>
-            <strong>{profileDisplayName || user.display_name}</strong>
-            <span>{profileHandle || handleLabel(user.handle) || "No handle set"}</span>
-          </div>
-        </div>
-        <label class="field">
-          <span>Display name</span>
-          <input bind:value={profileDisplayName} aria-label="Display name" maxlength="80" autocomplete="name" />
-        </label>
-        <label class="field">
-          <span>Handle</span>
-          <input bind:value={profileHandle} aria-label="Handle" placeholder="@steipete" autocomplete="username" />
-        </label>
-        <label class="field">
-          <span>Avatar URL</span>
-          <input bind:value={profileAvatarURL} aria-label="Avatar URL" placeholder="https://example.com/avatar.png" inputmode="url" />
-        </label>
-        {#if profileStatus}<p class="profile-status" class:error={profileStatusError}>{profileStatus}</p>{/if}
-        <div class="profile-actions">
-          <button type="button" class="ghost-action" onclick={closeModal}>Cancel</button>
-          <button type="submit" class="primary-action">Save profile</button>
-        </div>
-      </form>
-    </section>
-  </div>
+  <ProfileSettingsModal
+    {user}
+    displayName={profileDisplayName}
+    handle={profileHandle}
+    avatarURL={profileAvatarURL}
+    status={profileStatus}
+    statusError={profileStatusError}
+    onDisplayName={(value) => (profileDisplayName = value)}
+    onHandle={(value) => (profileHandle = value)}
+    onAvatarURL={(value) => (profileAvatarURL = value)}
+    onClose={closeModal}
+    onSave={() => void saveProfile()}
+  />
 {/if}
 {#if selectedImage}
-  <div class="modal-scrim image-viewer-scrim" role="presentation">
-    <button class="modal-backdrop" type="button" aria-label="Close image viewer" onclick={closeModal}></button>
-    <section class="image-viewer" aria-label="Image viewer">
-      <header>
-        <strong>{selectedImage.title}</strong>
-        <div>
-          <a href={selectedImage.url} target="_blank" rel="noreferrer">Open original</a>
-          <button type="button" aria-label="Close image viewer" onclick={closeModal}>×</button>
-        </div>
-      </header>
-      <div class="image-viewer-stage">
-        <img src={selectedImage.url} alt={selectedImage.title} />
-      </div>
-    </section>
-  </div>
+  <ImageViewer url={selectedImage.url} title={selectedImage.title} onClose={closeModal} />
 {/if}
 {/if}
