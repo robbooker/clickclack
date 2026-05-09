@@ -38,6 +38,7 @@ func TestHTTPUnauthorizedRoutes(t *testing.T) {
 		{http.MethodPost, "/api/workspaces/wsp_missing/channels", `{"name":"x"}`},
 		{http.MethodGet, "/api/channels/chn_missing/messages", ""},
 		{http.MethodPost, "/api/channels/chn_missing/messages", `{"body":"x"}`},
+		{http.MethodGet, "/api/messages/msg_missing", ""},
 		{http.MethodGet, "/api/messages/msg_missing/thread", ""},
 		{http.MethodPost, "/api/messages/msg_missing/thread/replies", `{"body":"x"}`},
 		{http.MethodPost, "/api/messages/msg_missing/reactions", `{"emoji":"x"}`},

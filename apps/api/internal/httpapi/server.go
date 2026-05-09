@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/channels/{channel_id}/messages", s.listMessages)
 		r.Post("/channels/{channel_id}/messages", s.createMessage)
 		r.Post("/channels/{channel_id}/read", s.markChannelRead)
+		r.Get("/messages/{message_id}", s.getMessage)
 		r.Patch("/messages/{message_id}", s.updateMessage)
 		r.Delete("/messages/{message_id}", s.deleteMessage)
 		r.Get("/messages/{message_id}/thread", s.getThread)
@@ -303,6 +304,16 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeMessageCreateResult(w, message, event, err)
+}
+
+func (s *Server) getMessage(w http.ResponseWriter, r *http.Request) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	message, err := s.store.GetMessage(r.Context(), chi.URLParam(r, "message_id"), user.ID)
+	writeResult(w, map[string]any{"message": message}, err)
 }
 
 func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {

@@ -44,7 +44,8 @@ export type Channel = {
 export type Message = {
   id: string;
   workspace_id: string;
-  channel_id: string;
+  channel_id?: string;
+  direct_conversation_id?: string;
   author_id: string;
   parent_message_id?: string;
   thread_root_id: string;
@@ -56,6 +57,7 @@ export type Message = {
   edited_at?: string;
   deleted_at?: string;
   author?: User;
+  attachments?: Upload[];
   quoted_message_id?: string;
   quoted_body_snapshot?: string;
   quoted_author_id?: string;
@@ -70,6 +72,9 @@ export type Upload = {
   filename: string;
   content_type: string;
   byte_size: number;
+  width?: number;
+  height?: number;
+  duration_ms?: number;
   created_at: string;
 };
 
@@ -236,6 +241,10 @@ export class ClickClackClient {
   };
 
   messages = {
+    get: async (messageId: string): Promise<Message> => {
+      const data = await this.request<{ message: Message }>(`/api/messages/${messageId}`);
+      return data.message;
+    },
     update: async (messageId: string, input: { body: string }): Promise<Message> => {
       const data = await this.request<{ message: Message }>(`/api/messages/${messageId}`, {
         method: "PATCH",

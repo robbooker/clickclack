@@ -312,6 +312,37 @@ func (s *Store) ListMessages(ctx context.Context, channelID, userID string, page
 	}, page)
 }
 
+func (s *Store) GetMessage(ctx context.Context, messageID, userID string) (store.Message, error) {
+	message, err := getMessage(ctx, s.db, messageID)
+	if err != nil {
+		return store.Message{}, err
+	}
+	if err := s.requireMessageAccess(ctx, message, userID); err != nil {
+		return store.Message{}, err
+	}
+	messages, err := s.hydrateAttachments(ctx, []store.Message{message})
+	if err != nil {
+		return store.Message{}, err
+	}
+	return messages[0], nil
+}
+
+func (s *Store) requireMessageAccess(ctx context.Context, message store.Message, userID string) error {
+	if message.DirectConversationID != "" {
+		return s.requireDirectMembership(ctx, message.DirectConversationID, userID)
+	}
+	if message.ParentMessageID != nil && message.ThreadRootID != "" && message.ChannelID == "" {
+		root, err := getMessage(ctx, s.db, message.ThreadRootID)
+		if err != nil {
+			return err
+		}
+		if root.DirectConversationID != "" {
+			return s.requireDirectMembership(ctx, root.DirectConversationID, userID)
+		}
+	}
+	return s.requireMembership(ctx, message.WorkspaceID, userID)
+}
+
 func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInput) (store.Message, store.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

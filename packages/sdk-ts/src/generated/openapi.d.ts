@@ -187,7 +187,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: operations["getMessage"];
     put?: never;
     post?: never;
     delete: operations["deleteMessage"];
@@ -935,6 +935,26 @@ export interface operations {
     };
     responses: {
       /** @description Updated channel read receipt */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        message_id: components["parameters"]["message_id"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Message visible to the current user */
       200: {
         headers: {
           [name: string]: unknown;

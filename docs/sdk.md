@@ -67,7 +67,7 @@ See [features/auth.md](features/auth.md).
 | `me()`, `updateMe()` | get or edit the current user's profile |
 | `workspaces`  | `list`, `create` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
-| `messages`    | `update`, `delete` |
+| `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |
 | `search(workspaceId, q)` | full-text search |
 | `uploads`     | `create(workspaceId, file)`, `attach(messageId, uploadId)` |

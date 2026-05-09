@@ -27,8 +27,10 @@
   messages no longer also highlight the inner text row.
 - Added cursor pagination for channel and DM history. Message lists now
   support latest, before, after, and around sequence windows with page
-  metadata, and the web chat loads older history as users scroll without
-  breaking the after-sequence API contract. Thanks @shakkernerd.
+  metadata, while the web chat keeps a bounded active message window, loads
+  older and newer history as users move through the timeline, and opens search
+  or quote targets with around-sequence context without breaking the
+  after-sequence API contract. Thanks @shakkernerd.
 - Added a persistent in-timeline "New" divider and unread bar for unread
   channel and DM messages. The divider anchors to the read boundary, the bar
   jumps back to that boundary, and users can explicitly mark the view read
@@ -49,8 +51,8 @@
   caret to the active composer — the thread reply textarea when a thread pane
   is open, otherwise the channel/DM composer — so the keystroke lands as the
   next character of your draft. The composer also auto-grows as the draft
-  spans multiple lines (Discord-style), capped at half the viewport before a
-  scrollbar appears, and shrinks back to a single row after sending. IME
+  spans multiple lines, capped at half the viewport before a scrollbar appears,
+  and shrinks back to a single row after sending. IME
   composition, modifier shortcuts, text fields, menus, media controls, and
   active text selections inside messages or threads are preserved untouched.
   Thanks @shakkernerd.
@@ -64,7 +66,7 @@
   the snapshot survives). The `clickclack send` and `clickclack threads
   reply` CLI commands gain `--reply-to msg_...` flags. See
   [docs/features/replies.md](docs/features/replies.md). Thanks @shakkernerd.
-- Refined the chat app shell with denser Slack/Discord-style navigation,
+- Refined the chat app shell with denser chat navigation,
   grouped message timelines, clearer empty states, responsive sidebars, and a
   send button that no longer appears active for attachment-only drafts.
 - Added richer Slack-like chat affordances: animated sidebar/thread panels,

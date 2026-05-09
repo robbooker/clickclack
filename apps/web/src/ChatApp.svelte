@@ -3,6 +3,14 @@
   import { APIError, api } from "./lib/api";
   import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
+  import {
+    INITIAL_MESSAGE_LIMIT,
+    MAX_RETAINED_MESSAGE_WINDOWS,
+    MAX_RETAINED_SCROLL_STATES,
+    PAGE_MESSAGE_LIMIT,
+    trimMessageWindow as trimMessageWindowMessages,
+    type MessageWindowDirection,
+  } from "./lib/chat/messageWindow";
   import { collectRecentPeople, dmTitle } from "./lib/chat/people";
   import { redirectTypingToComposer } from "./lib/chat/typeToFocus";
   import { connectRealtime, type RealtimeConnection } from "./lib/realtime.svelte";
@@ -12,6 +20,7 @@
   import MessageList, {
     type MessageListHandle,
     type MessageListState,
+    type MessageListViewportState,
   } from "./components/messages/MessageList.svelte";
   import TypingIndicator, { TYPING_TTL_MS, type TypingEntry } from "./components/messages/TypingIndicator.svelte";
   import CreateChannelModal from "./components/navigation/CreateChannelModal.svelte";
@@ -65,12 +74,21 @@
   let socket: RealtimeConnection | null = null;
   let messageList: MessageListHandle | null = null;
   let scrollMemory = new Map<string, MessageListState>();
-  let messagePages = new Map<string, Omit<MessagePage, "messages">>();
-  let olderMessagesLoading = new Set<string>();
-  let unreadAnchors = new Map<string, string>();
-  let unreadAnchorMessageID = "";
+  let messageWindows = new Map<string, MessageWindow>();
+  let loadingMessagePages = new Set<string>();
+  let olderPageState: HistoryEdgeState = "idle";
+  let newerPageState: HistoryEdgeState = "idle";
+  let pendingOlderPageIntent = false;
+  let pendingNewerPageIntent = false;
+  let activeHasOlder = false;
+  let activeHasNewer = false;
+  let activeLoadingOlder = false;
+  let activeLoadingNewer = false;
+  let unreadMarkers = new Map<string, UnreadMarker>();
+  let suppressAutoReadUntil = 0;
   let viewKey = "";
   let viewRestoreState: MessageListState | undefined = undefined;
+  let activeConversationKey = "";
   let messagesLoading = true;
   let showWorkspaceCreate = false;
   let sidebarCollapsed = false;
@@ -83,9 +101,33 @@
   let typingEntries: TypingEntry[] = [];
   let typingSweeper: number | undefined;
 
+  type MessageWindow = Omit<MessagePage, "messages"> & {
+    messages: Message[];
+  };
+
+  type HistoryEdgeState = "idle" | "loading" | "settling";
+  type UnreadMarker = {
+    boundarySeq: number;
+    since: string;
+  };
+
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
   $: selectedChannel = channels.find((channel) => channel.id === selectedChannelID);
   $: selectedDirect = directConversations.find((conversation) => conversation.id === selectedDirectID);
+  $: activeConversationKey = selectedDirectID || selectedChannelID || "";
+  $: activeUnreadState = selectedDirectID
+    ? directConversations.find((conversation) => conversation.id === selectedDirectID) || {}
+    : selectedChannelID
+      ? channels.find((channel) => channel.id === selectedChannelID) || {}
+      : {};
+  $: activeUnreadCount = unreadCountForKey(activeConversationKey, activeUnreadState);
+  $: activeUnreadBoundarySeq = activeUnreadCount > 0 ? activeUnreadState.last_read_seq || 0 : 0;
+  $: activeUnreadBoundaryLoaded = activeUnreadCount > 0
+    ? unreadBoundaryLoadedForKey(activeConversationKey, activeUnreadBoundarySeq, messageWindows)
+    : false;
+  $: activeUnreadSince = activeUnreadCount > 0
+    ? unreadSinceForKey(activeConversationKey, activeUnreadBoundarySeq, messageWindows)
+    : "";
   $: sidePanelOpen = selectedThread !== null || selectedProfile !== null;
   $: recentPeople = collectRecentPeople(messages, directConversations, user?.id || "");
   $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
@@ -155,9 +197,9 @@
         }),
       });
       user = data.user;
-      messages = messages.map((message) =>
+      setActiveMessages(messages.map((message) =>
         message.author?.id === user?.id ? { ...message, author: data.user } : message,
-      );
+      ));
       replies = replies.map((reply) =>
         reply.author?.id === user?.id ? { ...reply, author: data.user } : reply,
       );
@@ -214,7 +256,6 @@
     activeComposerContext = "message";
     replies = [];
     await loadMessages();
-    if (selectedChannelID && !selectedDirectID) void markChannelRead(selectedChannelID);
   }
 
   async function createChannel() {
@@ -239,35 +280,62 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
-    void markChannelRead(channelID);
   }
 
   async function loadMessages() {
     captureScrollMemory();
     const targetKey = currentConversationKey();
     const isSwitching = targetKey !== viewKey;
-    if (isSwitching) messagesLoading = true;
+    if (isSwitching) {
+      resetHistoryPaging();
+      messagesLoading = true;
+    }
     try {
       if (!selectedDirectID && !selectedChannelID) {
-        commitView("", []);
-        messagePages.delete("");
+        commitMessageWindow("", pageToWindow({ messages: [], oldest_seq: 0, newest_seq: 0, has_older: false, has_newer: false }), "replace");
         return;
       }
       const data = await api<MessagePage>(messagePagePath(initialMessagePageQuery()));
       if (currentConversationKey() !== targetKey) return;
-      commitPage(targetKey, data);
+      commitMessageWindow(targetKey, pageToWindow(data), "replace");
+    } finally {
+      if (currentConversationKey() === targetKey) messagesLoading = false;
+    }
+  }
+
+  async function loadLatestMessages() {
+    const targetKey = currentConversationKey();
+    if (!targetKey) return;
+    resetHistoryPaging();
+    messagesLoading = true;
+    scrollMemory.set(targetKey, { atBottom: true });
+    try {
+      const data = await api<MessagePage>(messagePagePath(`limit=${INITIAL_MESSAGE_LIMIT}`));
+      if (currentConversationKey() !== targetKey) return;
+      commitMessageWindow(targetKey, pageToWindow(data), "replace");
     } finally {
       if (currentConversationKey() === targetKey) messagesLoading = false;
     }
   }
 
   function initialMessagePageQuery(): string {
-    const unreadCount = selectedDirectID ? selectedDirect?.unread_count || 0 : selectedChannel?.unread_count || 0;
-    const lastReadSeq = selectedDirectID ? selectedDirect?.last_read_seq || 0 : selectedChannel?.last_read_seq || 0;
+    const unreadState = activeConversationUnreadState();
+    const unreadCount = unreadState.unread_count || 0;
+    const lastReadSeq = unreadState.last_read_seq || 0;
     if (unreadCount > 0) {
-      return `around_seq=${encodeURIComponent(String(lastReadSeq + 1))}&limit=100`;
+      return `around_seq=${encodeURIComponent(String(lastReadSeq + 1))}&limit=${INITIAL_MESSAGE_LIMIT}`;
     }
-    return "limit=100";
+    return `limit=${INITIAL_MESSAGE_LIMIT}`;
+  }
+
+  function activeConversationUnreadState(): { unread_count?: number; last_read_seq?: number; last_seq?: number } {
+    if (selectedDirectID) {
+      return directConversations.find((conversation) => conversation.id === selectedDirectID) || {};
+    }
+    if (selectedChannelID) {
+      return channels.find((channel) => channel.id === selectedChannelID) || {};
+    }
+    return {};
   }
 
   function messagePagePath(query: string): string {
@@ -277,16 +345,103 @@
     return query ? `${base}?${query}` : base;
   }
 
-  function commitPage(key: string, page: MessagePage) {
-    if (key) {
-      messagePages.set(key, {
-        oldest_seq: page.oldest_seq,
-        newest_seq: page.newest_seq,
-        has_older: page.has_older,
-        has_newer: page.has_newer,
-      });
+  function pageToWindow(page: MessagePage): MessageWindow {
+    return {
+      messages: page.messages,
+      oldest_seq: page.oldest_seq,
+      newest_seq: page.newest_seq,
+      has_older: page.has_older,
+      has_newer: page.has_newer,
+    };
+  }
+
+  function commitMessageWindow(
+    key: string,
+    window: MessageWindow,
+    direction: MessageWindowDirection,
+  ) {
+    const trimmedMessages = trimMessageWindow(key, window.messages, direction);
+    const firstSeq = trimmedMessages[0]?.channel_seq || 0;
+    const lastSeq = trimmedMessages[trimmedMessages.length - 1]?.channel_seq || 0;
+    const droppedOlder = firstSeq > (window.messages[0]?.channel_seq || firstSeq);
+    const droppedNewer = lastSeq < (window.messages[window.messages.length - 1]?.channel_seq || lastSeq);
+    const nextWindow: MessageWindow = {
+      messages: trimmedMessages,
+      oldest_seq: firstSeq,
+      newest_seq: lastSeq,
+      has_older: window.has_older || droppedOlder,
+      has_newer: window.has_newer || droppedNewer,
+    };
+    rememberMessageWindow(key, nextWindow);
+    updateActiveMessageWindowFlags(key, nextWindow);
+    commitView(key, trimmedMessages);
+  }
+
+  function rememberMessageWindow(key: string, window: MessageWindow) {
+    if (!key) return;
+    messageWindows.delete(key);
+    messageWindows.set(key, window);
+    pruneInactiveMessageWindows(key);
+    pruneInactiveScrollMemory(key);
+    messageWindows = new Map(messageWindows);
+  }
+
+  function pruneInactiveMessageWindows(activeKey: string) {
+    let remainingPasses = messageWindows.size + 1;
+    while (messageWindows.size > MAX_RETAINED_MESSAGE_WINDOWS && remainingPasses > 0) {
+      remainingPasses--;
+      const oldestKey = messageWindows.keys().next().value;
+      if (!oldestKey) return;
+      if (oldestKey === activeKey) {
+        const activeWindow = messageWindows.get(oldestKey);
+        messageWindows.delete(oldestKey);
+        if (activeWindow) messageWindows.set(oldestKey, activeWindow);
+        continue;
+      }
+      messageWindows.delete(oldestKey);
     }
-    commitView(key, page.messages);
+  }
+
+  function pruneInactiveScrollMemory(activeKey: string) {
+    let remainingPasses = scrollMemory.size + 1;
+    while (scrollMemory.size > MAX_RETAINED_SCROLL_STATES && remainingPasses > 0) {
+      remainingPasses--;
+      const oldestKey = scrollMemory.keys().next().value;
+      if (!oldestKey) return;
+      if (oldestKey === activeKey) {
+        const activeState = scrollMemory.get(oldestKey);
+        scrollMemory.delete(oldestKey);
+        if (activeState) scrollMemory.set(oldestKey, activeState);
+        continue;
+      }
+      scrollMemory.delete(oldestKey);
+    }
+  }
+
+  function updateActiveMessageWindowFlags(key: string, window = messageWindows.get(key)) {
+    if (key !== currentConversationKey()) return;
+    activeHasOlder = window?.has_older || false;
+    activeHasNewer = window?.has_newer || false;
+  }
+
+  function setHistoryEdgeState(direction: "older" | "newer", state: HistoryEdgeState) {
+    if (direction === "older") {
+      olderPageState = state;
+      activeLoadingOlder = state === "loading";
+    } else {
+      newerPageState = state;
+      activeLoadingNewer = state === "loading";
+    }
+  }
+
+  function resetHistoryPaging() {
+    loadingMessagePages = new Set();
+    olderPageState = "idle";
+    newerPageState = "idle";
+    pendingOlderPageIntent = false;
+    pendingNewerPageIntent = false;
+    activeLoadingOlder = false;
+    activeLoadingNewer = false;
   }
 
   function mergeMessageWindows(left: Message[], right: Message[]): Message[] {
@@ -297,55 +452,155 @@
     return [...byID.values()].sort((a, b) => (a.channel_seq || 0) - (b.channel_seq || 0));
   }
 
+  function protectedMessageIDs(key: string): Set<string> {
+    const ids = new Set<string>();
+    const unreadBoundary = unreadBoundarySeqForKey(key);
+    if (unreadBoundary >= 0) {
+      const firstUnread = firstUnreadMessageForKey(key, messages, unreadBoundary);
+      if (firstUnread) ids.add(firstUnread.id);
+    }
+    const scrollAnchor = scrollMemory.get(key)?.anchorMessageID;
+    if (scrollAnchor) ids.add(scrollAnchor);
+    if (selectedThread && belongsToView(selectedThread, key)) ids.add(selectedThread.id);
+    if (replyTarget && belongsToView(replyTarget, key)) ids.add(replyTarget.id);
+    for (const message of messages) {
+      if ((message.status === "pending" || message.status === "failed") && belongsToView(message, key)) {
+        ids.add(message.id);
+      }
+    }
+    return ids;
+  }
+
+  function trimMessageWindow(key: string, list: Message[], direction: MessageWindowDirection): Message[] {
+    return trimMessageWindowMessages(list, direction, protectedMessageIDs(key));
+  }
+
+  function requestOlderMessages() {
+    if (olderPageState !== "idle") {
+      pendingOlderPageIntent = true;
+      return;
+    }
+    void loadOlderMessages();
+  }
+
+  function requestNewerMessages() {
+    if (newerPageState !== "idle") {
+      pendingNewerPageIntent = true;
+      return;
+    }
+    void loadNewerMessages();
+  }
+
   async function loadOlderMessages() {
     const key = currentConversationKey();
-    const page = messagePages.get(key);
-    if (!key || !page?.has_older || page.oldest_seq <= 0 || olderMessagesLoading.has(key)) return;
-    olderMessagesLoading.add(key);
+    const window = messageWindows.get(key);
+    const loadKey = `${key}:older`;
+    if (olderPageState !== "idle") {
+      pendingOlderPageIntent = true;
+      return;
+    }
+    if (!key || !window?.has_older || window.oldest_seq <= 0 || loadingMessagePages.has(loadKey)) return;
+    loadingMessagePages.add(loadKey);
+    pendingOlderPageIntent = false;
+    setHistoryEdgeState("older", "loading");
     captureScrollMemory();
+    let committed = false;
     try {
-      const data = await api<MessagePage>(messagePagePath(`before_seq=${encodeURIComponent(String(page.oldest_seq))}&limit=50`));
+      const data = await api<MessagePage>(messagePagePath(`before_seq=${encodeURIComponent(String(window.oldest_seq))}&limit=${PAGE_MESSAGE_LIMIT}`));
       if (currentConversationKey() !== key) return;
       const merged = mergeMessageWindows(data.messages, messages);
-      messagePages.set(key, {
-        oldest_seq: data.oldest_seq || page.oldest_seq,
-        newest_seq: page.newest_seq,
+      commitMessageWindow(key, {
+        messages: merged,
+        oldest_seq: data.oldest_seq || window.oldest_seq,
+        newest_seq: window.newest_seq,
         has_older: data.has_older,
-        has_newer: page.has_newer,
-      });
-      commitView(key, merged);
+        has_newer: window.has_newer,
+      }, "prepend");
+      committed = true;
+      setHistoryEdgeState("older", "settling");
+    } catch (error) {
+      if (currentConversationKey() === key) {
+        status = error instanceof Error ? error.message : "Could not load older messages";
+      }
     } finally {
-      olderMessagesLoading.delete(key);
+      loadingMessagePages.delete(loadKey);
+      if (currentConversationKey() === key && !committed) setHistoryEdgeState("older", "idle");
     }
   }
 
   async function loadNewerMessages() {
     const key = currentConversationKey();
-    const page = messagePages.get(key);
-    if (!key || !page || page.newest_seq <= 0) {
+    const window = messageWindows.get(key);
+    const loadKey = `${key}:newer`;
+    if (newerPageState !== "idle") {
+      pendingNewerPageIntent = true;
+      return;
+    }
+    if (!key || loadingMessagePages.has(loadKey)) return;
+    if (!window || window.newest_seq <= 0) {
       await loadMessages();
       return;
     }
-    const data = await api<MessagePage>(messagePagePath(`after_seq=${encodeURIComponent(String(page.newest_seq))}&limit=50`));
-    if (currentConversationKey() !== key) return;
-    if (data.messages.length === 0) return;
-    const merged = mergeMessageWindows(messages, data.messages);
-    messagePages.set(key, {
-      oldest_seq: page.oldest_seq,
-      newest_seq: data.newest_seq || page.newest_seq,
-      has_older: page.has_older,
-      has_newer: data.has_newer,
-    });
-    commitView(key, merged);
+    loadingMessagePages.add(loadKey);
+    pendingNewerPageIntent = false;
+    setHistoryEdgeState("newer", "loading");
+    let committed = false;
+    try {
+      const data = await api<MessagePage>(messagePagePath(`after_seq=${encodeURIComponent(String(window.newest_seq))}&limit=${PAGE_MESSAGE_LIMIT}`));
+      if (currentConversationKey() !== key) return;
+      if (data.messages.length === 0) {
+        commitMessageWindow(key, { ...window, has_newer: data.has_newer }, "append");
+        committed = true;
+        setHistoryEdgeState("newer", "settling");
+        return;
+      }
+      const merged = mergeMessageWindows(messages, data.messages);
+      commitMessageWindow(
+        key,
+        {
+          messages: merged,
+          oldest_seq: window.oldest_seq,
+          newest_seq: data.newest_seq || window.newest_seq,
+          has_older: window.has_older,
+          has_newer: data.has_newer,
+        },
+        "append",
+      );
+      committed = true;
+      setHistoryEdgeState("newer", "settling");
+    } catch (error) {
+      if (currentConversationKey() === key) {
+        status = error instanceof Error ? error.message : "Could not load newer messages";
+      }
+    } finally {
+      loadingMessagePages.delete(loadKey);
+      if (currentConversationKey() === key && !committed) setHistoryEdgeState("newer", "idle");
+    }
+  }
+
+  function handleHistorySettled(state: MessageListViewportState) {
+    const shouldLoadOlder =
+      olderPageState === "settling" && pendingOlderPageIntent && state.nearOlder && activeHasOlder;
+    const shouldLoadNewer =
+      newerPageState === "settling" && pendingNewerPageIntent && state.nearNewer && activeHasNewer;
+
+    if (olderPageState === "settling") setHistoryEdgeState("older", "idle");
+    if (newerPageState === "settling") setHistoryEdgeState("newer", "idle");
+
+    pendingOlderPageIntent = false;
+    pendingNewerPageIntent = false;
+
+    if (shouldLoadOlder) requestOlderMessages();
+    if (shouldLoadNewer) requestNewerMessages();
   }
 
   function currentConversationKey(): string {
     return selectedDirectID || selectedChannelID || "";
   }
 
-  function maxChannelSeq(channelID: string): number {
+  function maxChannelSeq(channelID: string, list = messages): number {
     let max = 0;
-    for (const m of messages) {
+    for (const m of list) {
       if (m.channel_id !== channelID) continue;
       if (m.parent_message_id) continue;
       if (typeof m.channel_seq === "number" && m.channel_seq > max) max = m.channel_seq;
@@ -353,28 +608,36 @@
     return max;
   }
 
-  function maxDirectSeq(conversationID: string): number {
+  function maxDirectSeq(conversationID: string, list = messages): number {
     let max = 0;
-    for (const m of messages) {
+    for (const m of list) {
       if (m.direct_conversation_id !== conversationID) continue;
       if (typeof m.channel_seq === "number" && m.channel_seq > max) max = m.channel_seq;
     }
     return max;
   }
 
-  async function markChannelRead(channelID: string) {
+  function unreadCountForKey(
+    key: string,
+    state: { unread_count?: number; last_read_seq?: number; last_seq?: number },
+  ): number {
+    if (!key) return 0;
+    return state.unread_count || 0;
+  }
+
+  async function markChannelRead(channelID: string, seq: number) {
     const channel = channels.find((c) => c.id === channelID);
     if (!channel) return;
-    const seq = Math.max(channel.last_seq || 0, maxChannelSeq(channelID));
-    if (seq <= 0 || seq <= (channel.last_read_seq || 0)) {
-      // Still optimistically zero local unread count.
-      if ((channel.unread_count || 0) > 0) {
-        channels = channels.map((c) => (c.id === channelID ? { ...c, unread_count: 0 } : c));
-      }
-      return;
-    }
+    if (seq <= 0 || seq <= (channel.last_read_seq || 0)) return;
     channels = channels.map((c) =>
-      c.id === channelID ? { ...c, unread_count: 0, last_read_seq: seq } : c,
+      c.id === channelID
+        ? {
+            ...c,
+            last_seq: Math.max(c.last_seq || 0, seq),
+            unread_count: Math.max(0, Math.max(c.last_seq || 0, seq) - seq),
+            last_read_seq: seq,
+          }
+        : c,
     );
     try {
       await api(`/api/channels/${channelID}/read`, { method: "POST", body: JSON.stringify({ seq }) });
@@ -383,20 +646,19 @@
     }
   }
 
-  async function markDirectRead(conversationID: string) {
+  async function markDirectRead(conversationID: string, seq: number) {
     const dm = directConversations.find((c) => c.id === conversationID);
     if (!dm) return;
-    const seq = Math.max(dm.last_seq || 0, maxDirectSeq(conversationID));
-    if (seq <= 0 || seq <= (dm.last_read_seq || 0)) {
-      if ((dm.unread_count || 0) > 0) {
-        directConversations = directConversations.map((c) =>
-          c.id === conversationID ? { ...c, unread_count: 0 } : c,
-        );
-      }
-      return;
-    }
+    if (seq <= 0 || seq <= (dm.last_read_seq || 0)) return;
     directConversations = directConversations.map((c) =>
-      c.id === conversationID ? { ...c, unread_count: 0, last_read_seq: seq } : c,
+      c.id === conversationID
+        ? {
+            ...c,
+            last_seq: Math.max(c.last_seq || 0, seq),
+            unread_count: Math.max(0, Math.max(c.last_seq || 0, seq) - seq),
+            last_read_seq: seq,
+          }
+        : c,
     );
     try {
       await api(`/api/dms/${conversationID}/read`, { method: "POST", body: JSON.stringify({ seq }) });
@@ -405,21 +667,82 @@
     }
   }
 
-  function markActiveViewRead() {
-    if (selectedDirectID) {
-      void markDirectRead(selectedDirectID);
+  function latestReadSeqForKey(key: string): number {
+    const windowNewestSeq = messageWindows.get(key)?.newest_seq || 0;
+    const channel = channels.find((c) => c.id === key);
+    if (channel) {
+      return Math.max(
+        channel.last_seq || 0,
+        (channel.last_read_seq || 0) + (channel.unread_count || 0),
+        maxChannelSeq(key),
+        windowNewestSeq,
+      );
+    }
+    const dm = directConversations.find((c) => c.id === key);
+    if (dm) {
+      return Math.max(
+        dm.last_seq || 0,
+        (dm.last_read_seq || 0) + (dm.unread_count || 0),
+        maxDirectSeq(key),
+        windowNewestSeq,
+      );
+    }
+    return 0;
+  }
+
+  function reachedReadSeqForKey(key: string): number {
+    const window = messageWindows.get(key);
+    if (!window || window.has_newer) return 0;
+    const channel = channels.find((c) => c.id === key);
+    if (channel) return maxChannelSeq(key);
+    const dm = directConversations.find((c) => c.id === key);
+    if (dm) return maxDirectSeq(key);
+    return 0;
+  }
+
+  function markActiveViewRead(options: { all?: boolean; seq?: number } = {}) {
+    if (!options.all && Date.now() < suppressAutoReadUntil) return;
+    const key = currentConversationKey() || viewKey;
+    if (!key) return;
+    const seq = options.all
+      ? Math.max(options.seq || 0, latestReadSeqForKey(key))
+      : options.seq || reachedReadSeqForKey(key);
+    if (seq <= 0) return;
+    const isDirect = directConversations.some((conversation) => conversation.id === key);
+    if (isDirect) {
+      void markDirectRead(key, seq);
+      if (options.all) clearUnreadLocally(key, seq);
       return;
     }
-    if (selectedChannelID) {
-      void markChannelRead(selectedChannelID);
+    if (channels.some((channel) => channel.id === key)) {
+      void markChannelRead(key, seq);
+      if (options.all) clearUnreadLocally(key, seq);
     }
   }
 
-  function clearActiveUnreadBoundary() {
-    const key = currentConversationKey();
-    if (!key) return;
-    unreadAnchors.delete(key);
-    if (key === viewKey) unreadAnchorMessageID = "";
+  function clearUnreadLocally(key: string, seq: number) {
+    unreadMarkers.delete(key);
+    unreadMarkers = new Map(unreadMarkers);
+    channels = channels.map((c) =>
+      c.id === key
+        ? {
+            ...c,
+            last_seq: Math.max(c.last_seq || 0, seq),
+            last_read_seq: Math.max(c.last_read_seq || 0, seq),
+            unread_count: 0,
+          }
+        : c,
+    );
+    directConversations = directConversations.map((c) =>
+      c.id === key
+        ? {
+            ...c,
+            last_seq: Math.max(c.last_seq || 0, seq),
+            last_read_seq: Math.max(c.last_read_seq || 0, seq),
+            unread_count: 0,
+          }
+        : c,
+    );
   }
 
   function lastReadSeqForKey(key: string): number {
@@ -429,28 +752,117 @@
     return dm?.last_read_seq || 0;
   }
 
-  function firstUnreadAnchorFor(key: string, list: Message[], lastReadSeq: number): string {
+  function unreadBoundarySeqForKey(key: string): number {
+    const channel = channels.find((c) => c.id === key);
+    if (channel) return unreadCountForKey(key, channel) > 0 ? channel.last_read_seq || 0 : -1;
+    const dm = directConversations.find((c) => c.id === key);
+    return dm && unreadCountForKey(key, dm) > 0 ? dm.last_read_seq || 0 : -1;
+  }
+
+  function firstUnreadMessageForKey(key: string, list: Message[], lastReadSeq: number): Message | null {
     for (const message of list) {
       if (!belongsToView(message, key)) continue;
       if (message.parent_message_id) continue;
       if (message.author?.id === user?.id || message.author_id === user?.id) continue;
       const seq = message.channel_seq;
-      if (typeof seq === "number" && seq > lastReadSeq) return message.id;
+      if (typeof seq === "number" && seq > lastReadSeq) return message;
     }
-    return "";
+    return null;
   }
 
-  function ensureUnreadAnchor(key: string, lastReadSeq: number) {
+  function rememberUnreadMarkerForMessages(key: string, list: Message[]) {
     if (!key) return;
-    const existing = unreadAnchors.get(key);
-    if (existing && messages.some((m) => m.id === existing)) {
-      if (key === viewKey) unreadAnchorMessageID = existing;
+    const state = unreadStateForKey(key);
+    const unreadCount = unreadCountForKey(key, state);
+    if (unreadCount <= 0) {
+      unreadMarkers.delete(key);
+      unreadMarkers = new Map(unreadMarkers);
       return;
     }
-    const anchor = firstUnreadAnchorFor(key, messages, lastReadSeq);
-    if (anchor) unreadAnchors.set(key, anchor);
-    else unreadAnchors.delete(key);
-    if (key === viewKey) unreadAnchorMessageID = anchor;
+    const boundarySeq = state.last_read_seq || 0;
+    const existing = unreadMarkers.get(key);
+    if (existing?.boundarySeq === boundarySeq && existing.since) return;
+    if (!unreadBoundaryLoadedForKey(key, boundarySeq)) return;
+    const firstUnread = firstUnreadMessageForKey(key, list, boundarySeq);
+    if (!firstUnread) return;
+    unreadMarkers = new Map(unreadMarkers).set(key, {
+      boundarySeq,
+      since: formatMessageClock(firstUnread.created_at),
+    });
+  }
+
+  function rememberUnreadMarkerFromEvent(key: string, boundarySeq: number, createdAt: string) {
+    if (!key || !createdAt) return;
+    const existing = unreadMarkers.get(key);
+    if (existing?.boundarySeq === boundarySeq && existing.since) return;
+    unreadMarkers = new Map(unreadMarkers).set(key, {
+      boundarySeq,
+      since: formatMessageClock(createdAt),
+    });
+  }
+
+  function eventMessageSeq(event: RealtimeEvent): number {
+    const payload = event.payload as Record<string, unknown>;
+    const seqRaw = event.seq ?? payload.channel_seq ?? payload.seq;
+    return typeof seqRaw === "number" ? seqRaw : Number(seqRaw) || 0;
+  }
+
+  function messageEventScope(event: RealtimeEvent): { channelID: string; dmID: string } {
+    const payload = event.payload as Record<string, unknown>;
+    return {
+      channelID: event.channel_id || (typeof payload.channel_id === "string" ? payload.channel_id : ""),
+      dmID: typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "",
+    };
+  }
+
+  function messageEventAlreadyAccounted(event: RealtimeEvent): boolean {
+    if (event.type !== "message.created") return false;
+    const seq = eventMessageSeq(event);
+    if (seq <= 0) return false;
+    const { channelID, dmID } = messageEventScope(event);
+    if (channelID) {
+      const channel = channels.find((c) => c.id === channelID);
+      return seq <= (channel?.last_seq || 0);
+    }
+    if (dmID) {
+      const dm = directConversations.find((c) => c.id === dmID);
+      return seq <= (dm?.last_seq || 0);
+    }
+    return false;
+  }
+
+  function unreadStateForKey(key: string): { unread_count?: number; last_read_seq?: number; last_seq?: number } {
+    return channels.find((c) => c.id === key) || directConversations.find((c) => c.id === key) || {};
+  }
+
+  function unreadBoundaryLoadedForKey(
+    key: string,
+    boundarySeq: number,
+    windows = messageWindows,
+  ): boolean {
+    if (!key || boundarySeq < 0) return false;
+    const window = windows.get(key);
+    if (!window || window.messages.length === 0) return false;
+    const targetSeq = boundarySeq + 1;
+    return window.oldest_seq <= targetSeq && window.newest_seq >= targetSeq;
+  }
+
+  function unreadSinceForKey(key: string, lastReadSeq: number, windows = messageWindows): string {
+    const marker = unreadMarkers.get(key);
+    if (marker?.boundarySeq === lastReadSeq) return marker.since;
+    if (!unreadBoundaryLoadedForKey(key, lastReadSeq, windows)) return "";
+    const firstUnread = firstUnreadMessageForKey(key, messages, lastReadSeq);
+    if (!firstUnread) return "";
+    return formatMessageClock(firstUnread.created_at);
+  }
+
+  function formatMessageClock(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
   }
 
   function captureScrollMemory() {
@@ -462,10 +874,6 @@
   function commitView(key: string, msgs: Message[]) {
     // Update viewKey + messages atomically so MessageList sees the swap as one tick.
     const switchingView = key !== viewKey;
-    // Capture at-bottom BEFORE mutating `messages` so the read reflects the
-    // user's pre-event state (DOM hasn't re-rendered yet either way, but
-    // making the order explicit avoids regressions).
-    const wasAtBottomBeforeCommit = !switchingView && messageList?.isAtBottom() !== false;
     viewRestoreState = scrollMemory.get(key);
     // Preserve outgoing optimistic placeholders for this view that the server
     // hasn't echoed yet. Without this the placeholder would flicker out when a
@@ -504,33 +912,43 @@
     );
     messages = preserve.length > 0 ? [...merged, ...preserve] : merged;
     viewKey = key;
+    rememberUnreadMarkerForMessages(key, messages);
     if (switchingView) {
       typingEntries = [];
       stopTyping();
-      const anchor = key ? firstUnreadAnchorFor(key, messages, lastReadSeqForKey(key)) : "";
-      if (anchor) unreadAnchors.set(key, anchor);
-      else unreadAnchors.delete(key);
-      unreadAnchorMessageID = anchor;
-    } else {
-      // Same view. The divider exists to mark "stuff you missed" — so if the
-      // user is actively at the bottom when a new message arrives, they're
-      // reading it live and the divider has no purpose. Clear it (and any
-      // stale prior divider, since burying it under live-read content would
-      // be misleading). Only when the user is scrolled up do we create or
-      // preserve an anchor.
-      if (wasAtBottomBeforeCommit) {
-        unreadAnchors.delete(key);
-        unreadAnchorMessageID = "";
-      } else {
-        const existing = unreadAnchors.get(key);
-        const stillVisible = existing && messages.some((m) => m.id === existing);
-        if (stillVisible) {
-          unreadAnchorMessageID = existing as string;
-        } else {
-          ensureUnreadAnchor(key, lastReadSeqForKey(key));
-        }
-      }
     }
+  }
+
+  function setActiveMessages(nextMessages: Message[], direction: MessageWindowDirection = "append") {
+    const key = currentConversationKey();
+    const window = key ? messageWindows.get(key) : undefined;
+    if (!key || !window) {
+      messages = nextMessages;
+      return;
+    }
+    const scopedMessages = nextMessages.filter((message) => belongsToView(message, key));
+    const trimmedMessages = trimMessageWindow(key, scopedMessages, direction);
+    const sequencedMessages = trimmedMessages.filter((message) => (message.channel_seq || 0) > 0);
+    const oldestSeq = sequencedMessages[0]?.channel_seq || window.oldest_seq;
+    const newestSeq = sequencedMessages[sequencedMessages.length - 1]?.channel_seq || window.newest_seq;
+    const droppedOlder = messageSeq(trimmedMessages[0]) > messageSeq(scopedMessages[0]);
+    const droppedNewer =
+      messageSeq(trimmedMessages[trimmedMessages.length - 1]) <
+      messageSeq(scopedMessages[scopedMessages.length - 1]);
+    messages = trimmedMessages;
+    rememberMessageWindow(key, {
+      ...window,
+      messages: trimmedMessages,
+      oldest_seq: oldestSeq,
+      newest_seq: newestSeq,
+      has_older: window.has_older || droppedOlder,
+      has_newer: window.has_newer || droppedNewer,
+    });
+    updateActiveMessageWindowFlags(key);
+  }
+
+  function messageSeq(message: Message | undefined): number {
+    return message?.channel_seq || 0;
   }
 
   function belongsToView(message: Message, key: string): boolean {
@@ -540,7 +958,17 @@
 
   async function scrollMessagesToBottom() {
     await tick();
-    messageList?.scrollToBottom();
+    await messageList?.scrollToBottom();
+  }
+
+  async function jumpToLiveChat() {
+    try {
+      if (activeHasNewer || activeUnreadCount > 0) await loadLatestMessages();
+      await scrollMessagesToBottom();
+      markActiveViewRead({ all: true });
+    } catch (error) {
+      status = error instanceof Error ? error.message : "Could not jump to latest messages";
+    }
   }
 
   type OutgoingDraft = {
@@ -614,11 +1042,10 @@
     pendingDrafts.set(nonce, draft);
     const placeholder = buildOptimisticMessage(nonce, draft, localID);
     if (existingNonce) {
-      messages = messages.map((m) => (m.id === localID ? placeholder : m));
+      setActiveMessages(messages.map((m) => (m.id === localID ? placeholder : m)));
     } else if (currentConversationKey() === draft.viewKey) {
       const wasAtBottom = messageList?.isAtBottom() !== false;
-      messages = [...messages, placeholder];
-      clearActiveUnreadBoundary();
+      setActiveMessages([...messages, placeholder]);
       if (wasAtBottom) void scrollMessagesToBottom();
     }
     const path = draft.directConversationID
@@ -650,7 +1077,7 @@
             status: "failed",
             attachments: draft.upload ? [...(message.attachments || []), draft.upload] : message.attachments,
           };
-          messages = messages.map((m) => (m.id === localID ? failedMessage : m));
+          setActiveMessages(messages.map((m) => (m.id === localID ? failedMessage : m)));
           return;
         }
       }
@@ -659,20 +1086,20 @@
       // realtime reload already removed our placeholder).
       const tmpIndex = messages.findIndex((m) => m.id === localID);
       if (tmpIndex >= 0) {
-        messages = messages.map((m) => (m.id === localID ? message : m));
+        setActiveMessages(messages.map((m) => (m.id === localID ? message : m)));
       } else if (messages.some((m) => m.id === message.id)) {
-        messages = messages.map((m) => (m.id === message.id ? message : m));
+        setActiveMessages(messages.map((m) => (m.id === message.id ? message : m)));
       } else if (
         belongsToView(message, currentConversationKey()) &&
         !messages.some((m) => m.id === message.id)
       ) {
-        messages = [...messages, message];
+        setActiveMessages([...messages, message]);
       }
     } catch (err) {
       console.warn("send failed", err);
-      messages = messages.map((m) =>
+      setActiveMessages(messages.map((m) =>
         m.id === localID ? { ...m, status: "failed" as const } : m,
-      );
+      ));
     }
   }
 
@@ -691,7 +1118,7 @@
 
   function discardFailedMessage(message: Message) {
     if (message.nonce) pendingDrafts.delete(message.nonce);
-    messages = messages.filter((m) => m.id !== message.id);
+    setActiveMessages(messages.filter((m) => m.id !== message.id));
   }
 
   async function openThread(message: Message) {
@@ -746,9 +1173,38 @@
     const targetID = message.quoted_message_id;
     if (!targetID) return;
     const scrolled = messageList?.scrollToMessage(targetID) ?? false;
-    if (!scrolled) return;
+    if (scrolled) {
+      await highlightMessage(targetID);
+      return;
+    }
+    const data = await api<{ message: Message }>(`/api/messages/${targetID}`);
+    if (!belongsToView(data.message, currentConversationKey())) return;
+    await loadMessagesAround(data.message);
+  }
+
+  async function jumpToUnreadBoundary() {
+    suppressAutoReadUntil = Date.now() + 1200;
+    if (activeUnreadBoundaryLoaded && messageList?.scrollToDivider(false)) return;
+    await loadUnreadBoundaryAround();
+  }
+
+  async function loadUnreadBoundaryAround() {
+    const key = currentConversationKey();
+    if (!key) return;
+    suppressAutoReadUntil = Date.now() + 1200;
+    const lastReadSeq = lastReadSeqForKey(key);
+    const marker = unreadMarkers.get(key);
+    const boundarySeq = marker?.boundarySeq === lastReadSeq ? marker.boundarySeq : lastReadSeq;
+    const seq = boundarySeq + 1;
+    if (seq <= 0) return;
+    await loadMessagesAroundSeq(seq);
     await tick();
-    const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(targetID)}"]`);
+    messageList?.scrollToDivider(false);
+  }
+
+  async function highlightMessage(messageID: string) {
+    await tick();
+    const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageID)}"]`);
     if (!node) return;
     node.classList.add("highlight");
     window.setTimeout(() => node.classList.remove("highlight"), 1500);
@@ -775,16 +1231,46 @@
     if (result.message.channel_id) {
       selectedChannelID = result.message.channel_id;
       selectedDirectID = "";
-      await loadMessages();
+      await loadMessagesAround(result.message);
     }
     if (result.message.direct_conversation_id) {
       selectedDirectID = result.message.direct_conversation_id;
       selectedChannelID = "";
-      if (event.type === "message.created") {
-        await loadNewerMessages();
-      } else {
-        await loadMessages();
+      await loadMessagesAround(result.message);
+    }
+  }
+
+  async function loadMessagesAround(target: Message) {
+    const seq = target.channel_seq || 0;
+    if (seq <= 0) {
+      await loadMessages();
+      return;
+    }
+    await loadMessagesAroundSeq(seq, target.id);
+  }
+
+  async function loadMessagesAroundSeq(seq: number, targetMessageID = "") {
+    const targetKey = currentConversationKey();
+    if (!targetKey) return;
+    if (targetMessageID) {
+      scrollMemory.set(targetKey, { atBottom: false, anchorMessageID: targetMessageID, anchorPixelOffset: 0 });
+    }
+    const isSwitching = targetKey !== viewKey;
+    if (isSwitching) {
+      resetHistoryPaging();
+      messagesLoading = true;
+    }
+    try {
+      const data = await api<MessagePage>(messagePagePath(`around_seq=${encodeURIComponent(String(seq))}&limit=${INITIAL_MESSAGE_LIMIT}`));
+      if (currentConversationKey() !== targetKey) return;
+      commitMessageWindow(targetKey, pageToWindow(data), "around");
+      await tick();
+      if (targetMessageID) {
+        messageList?.scrollToMessage(targetMessageID);
+        await highlightMessage(targetMessageID);
       }
+    } finally {
+      if (currentConversationKey() === targetKey) messagesLoading = false;
     }
   }
 
@@ -845,7 +1331,6 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
-    void markDirectRead(conversationID);
   }
 
   async function startDirectWithUser(memberID: string) {
@@ -862,7 +1347,6 @@
       activeComposerContext = "message";
       mobileNavOpen = false;
       await loadMessages();
-      void markDirectRead(existing.id);
       return;
     }
     const data = await api<{ conversation: DirectConversation }>("/api/dms", {
@@ -877,7 +1361,6 @@
     activeComposerContext = "message";
     mobileNavOpen = false;
     await loadMessages();
-    void markDirectRead(data.conversation.id);
   }
 
   function connectRealtimeSocket() {
@@ -905,6 +1388,7 @@
       await loadChannels();
       return;
     }
+    if (messageEventAlreadyAccounted(event)) return;
     const affectsActiveView =
       event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID;
     if (event.type === "message.created" && !affectsActiveView) {
@@ -924,9 +1408,14 @@
       // reload completes, virtua's scrollSize grows while offset is unchanged
       // and the cached atBottom flag flips to false — we'd lose the signal.
       const wasAtBottom = messageList?.isAtBottom() !== false;
-      await loadMessages();
       if (event.type === "message.created") {
-        handleUnreadBump(event);
+        if (!wasAtBottom) suppressAutoReadUntil = Date.now() + 1200;
+        await loadNewerMessages();
+      } else {
+        await loadMessages();
+      }
+      if (event.type === "message.created") {
+        handleUnreadBump(event, wasAtBottom);
       }
       // Drive the scroll explicitly from here rather than relying on the
       // MessageList $effect: its cached atBottom may already have flipped.
@@ -934,11 +1423,7 @@
         void scrollMessagesToBottom();
       }
       if (event.type === "message.created" && wasAtBottom) {
-        if (selectedChannelID && event.channel_id === selectedChannelID) {
-          void markChannelRead(selectedChannelID);
-        } else if (selectedDirectID && event.payload.direct_conversation_id === selectedDirectID) {
-          void markDirectRead(selectedDirectID);
-        }
+        markActiveViewRead();
       }
     }
     const rootID = event.payload.root_message_id || event.payload.message_id;
@@ -972,44 +1457,54 @@
     }
   }
 
-  function handleUnreadBump(event: RealtimeEvent) {
+  function handleUnreadBump(event: RealtimeEvent, activeWasAtBottom?: boolean) {
     const payload = event.payload as Record<string, unknown>;
     // Don't bump for own messages.
     const authorID = typeof payload.author_id === "string" ? payload.author_id : "";
     if (authorID && authorID === user?.id) return;
     // Threaded replies don't affect channel unread (channel_seq isn't assigned).
     if (payload.parent_message_id) return;
-    const seqRaw = event.seq ?? payload.channel_seq ?? payload.seq;
-    const seq = typeof seqRaw === "number" ? seqRaw : Number(seqRaw) || 0;
-    const channelID = event.channel_id || (typeof payload.channel_id === "string" ? payload.channel_id : "");
-    const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
+    const seq = eventMessageSeq(event);
+    const { channelID, dmID } = messageEventScope(event);
     if (channelID) {
       const isActive = channelID === selectedChannelID && !selectedDirectID;
-      const activeAtBottom = messageList?.isAtBottom() !== false;
+      const activeAtBottom = isActive
+        ? activeWasAtBottom ?? messageList?.isAtBottom() !== false
+        : false;
       const channel = channels.find((c) => c.id === channelID);
       const incomingSeq = seq > 0 ? seq : (channel?.last_seq || 0) + 1;
-      if (isActive && !activeAtBottom) {
-        ensureUnreadAnchor(channelID, channel?.last_read_seq || 0);
+      if (isActive && !activeAtBottom && (channel?.unread_count || 0) === 0) {
+        rememberUnreadMarkerFromEvent(channelID, channel?.last_read_seq || 0, event.created_at);
       }
       channels = channels.map((c) => {
         if (c.id !== channelID) return c;
         const lastSeq = Math.max(c.last_seq || 0, incomingSeq);
-        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - (c.last_read_seq || 0));
-        return { ...c, last_seq: lastSeq, unread_count: unread };
+        const lastReadSeq =
+          isActive && !activeAtBottom && (c.unread_count || 0) === 0
+            ? Math.max(c.last_read_seq || 0, incomingSeq - 1)
+            : c.last_read_seq || 0;
+        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - lastReadSeq);
+        return { ...c, last_seq: lastSeq, last_read_seq: lastReadSeq, unread_count: unread };
       });
     } else if (dmID) {
       const isActive = dmID === selectedDirectID;
-      const activeAtBottom = messageList?.isAtBottom() !== false;
+      const activeAtBottom = isActive
+        ? activeWasAtBottom ?? messageList?.isAtBottom() !== false
+        : false;
       const dm = directConversations.find((c) => c.id === dmID);
       const incomingSeq = seq > 0 ? seq : (dm?.last_seq || 0) + 1;
-      if (isActive && !activeAtBottom) {
-        ensureUnreadAnchor(dmID, dm?.last_read_seq || 0);
+      if (isActive && !activeAtBottom && (dm?.unread_count || 0) === 0) {
+        rememberUnreadMarkerFromEvent(dmID, dm?.last_read_seq || 0, event.created_at);
       }
       directConversations = directConversations.map((c) => {
         if (c.id !== dmID) return c;
         const lastSeq = Math.max(c.last_seq || 0, incomingSeq);
-        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - (c.last_read_seq || 0));
-        return { ...c, last_seq: lastSeq, unread_count: unread };
+        const lastReadSeq =
+          isActive && !activeAtBottom && (c.unread_count || 0) === 0
+            ? Math.max(c.last_read_seq || 0, incomingSeq - 1)
+            : c.last_read_seq || 0;
+        const unread = isActive && activeAtBottom ? c.unread_count || 0 : Math.max(0, lastSeq - lastReadSeq);
+        return { ...c, last_seq: lastSeq, last_read_seq: lastReadSeq, unread_count: unread };
       });
     }
   }
@@ -1170,11 +1665,10 @@
         clearReplyTarget();
         return;
       } else {
-        // Discord parity: Esc with no modal/reply jumps you to live chat.
-        // Clear any divider, mark the view read, and scroll to bottom.
-        if (unreadAnchorMessageID) clearActiveUnreadBoundary();
-        markActiveViewRead();
-        void scrollMessagesToBottom();
+        // Esc with no modal/reply jumps you to live chat.
+        event.preventDefault();
+        void jumpToLiveChat();
+        return;
       }
     }
     redirectTypingToComposer(event, {
@@ -1298,8 +1792,15 @@
       restoreState={viewRestoreState}
       {viewKey}
       loading={messagesLoading}
-      unreadCount={(selectedChannel?.unread_count || selectedDirect?.unread_count || 0)}
-      {unreadAnchorMessageID}
+      unreadCount={activeUnreadCount}
+      unreadBoundarySeq={activeUnreadBoundarySeq}
+      unreadBoundaryLoaded={activeUnreadBoundaryLoaded}
+      unreadSince={activeUnreadSince}
+      hasOlder={activeHasOlder}
+      hasNewer={activeHasNewer}
+      loadingOlder={activeLoadingOlder}
+      loadingNewer={activeLoadingNewer}
+      prepending={olderPageState !== "idle"}
       selectedThreadID={selectedThread?.id}
       currentUserID={user?.id}
       onListRef={(handle) => (messageList = handle)}
@@ -1310,11 +1811,13 @@
       onOpenThread={openThread}
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
-      onLoadOlder={() => void loadOlderMessages()}
+      onLoadOlder={requestOlderMessages}
+      onLoadNewer={() => requestNewerMessages()}
+      onJumpToUnread={() => void jumpToUnreadBoundary()}
+      onHistorySettled={handleHistorySettled}
       onReachedBottom={markActiveViewRead}
-      onMarkRead={() => {
-        markActiveViewRead();
-        clearActiveUnreadBoundary();
+      onMarkRead={(readThroughSeq) => {
+        markActiveViewRead({ all: true, seq: readThroughSeq });
       }}
       onRetry={retryFailedMessage}
       onDiscard={discardFailedMessage}

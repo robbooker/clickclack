@@ -9,24 +9,26 @@ read_when:
 
 Channel messages are the core durable object. Every message is Markdown text
 with optional attachments. Threads are modelled as messages with a non-null
-`parent_message_id` (see [threads.md](threads.md)). Inline quote-replies —
-the lightweight Discord/Telegram-style "reply with quote" pattern — live on
-the same row via `quoted_message_id` and friends, documented in
+`parent_message_id` (see [threads.md](threads.md)). Inline quote-replies live
+on the same row via `quoted_message_id` and friends, documented in
 [replies.md](replies.md).
 
 ## Endpoints
 
 ```http
-GET    /api/channels/{channel_id}/messages?after_seq=&limit=
+GET    /api/channels/{channel_id}/messages?after_seq=&before_seq=&around_seq=&limit=
 POST   /api/channels/{channel_id}/messages
 POST   /api/channels/{channel_id}/read
+GET    /api/messages/{message_id}
 PATCH  /api/messages/{message_id}
 DELETE /api/messages/{message_id}
 ```
 
 - `GET` returns root messages only (`parent_message_id IS NULL`) for the
-  channel, ordered by `channel_seq` ascending. `after_seq` is exclusive;
-  `limit` is clamped to `1..200` (default 100).
+  channel, ordered by `channel_seq` ascending. `after_seq` and `before_seq` are
+  exclusive cursor windows; `around_seq` returns context around a target
+  sequence. Cursor params are mutually exclusive, and `limit` is clamped to
+  `1..200` (default 100).
 - `POST /messages` accepts `{body, quoted_message_id?, nonce?}`. Empty bodies
   are rejected. `nonce` is an optional client idempotency key; replaying the
   same nonce with the same body and quote returns the existing message with
@@ -34,6 +36,8 @@ DELETE /api/messages/{message_id}
 - `POST /read` accepts `{seq}` and updates the caller's monotonic read pointer
   for the channel. The server caps `seq` to the channel's current last root
   message sequence.
+- `GET /api/messages/{message_id}` returns a single message visible to the
+  current user. DM messages require direct conversation membership.
 - `PATCH` accepts `{body}` and only the original author can edit. Sets
   `edited_at`.
 - `DELETE` is a soft delete — sets `deleted_at`, keeps the row and the

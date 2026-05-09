@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
@@ -243,6 +245,64 @@ func TestStoreMessagePageCursors(t *testing.T) {
 	}
 }
 
+func TestStoreMessagePageLargeHistorySmoke(t *testing.T) {
+	if os.Getenv("CLICKCLACK_LARGE_HISTORY") != "1" {
+		t.Skip("set CLICKCLACK_LARGE_HISTORY=1 to run the 100k-message paging smoke")
+	}
+	t.Parallel()
+	ctx, st, owner, workspace, channel := seededStore(t)
+	start := time.Now()
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at)
+		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, NULL, ?, 'markdown', ?)`)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	createdAt := now()
+	for i := 1; i <= 100000; i++ {
+		id := fmt.Sprintf("msg_large_%06d", i)
+		if _, err := stmt.ExecContext(ctx, id, workspace.ID, channel.ID, owner.ID, id, i, fmt.Sprintf("large history %06d", i), createdAt); err != nil {
+			_ = stmt.Close()
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
+	}
+	if err := stmt.Close(); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("seeded 100k messages in %s", time.Since(start))
+
+	for _, tc := range []struct {
+		name        string
+		req         store.MessagePageRequest
+		first, last int64
+	}{
+		{"latest", store.MessagePageRequest{Limit: 50}, 99951, 100000},
+		{"before", store.MessagePageRequest{BeforeSeq: int64Ptr(50000), Limit: 50}, 49950, 49999},
+		{"after", store.MessagePageRequest{AfterSeq: int64Ptr(50000), Limit: 50}, 50001, 50050},
+		{"around", store.MessagePageRequest{AroundSeq: int64Ptr(50000), Limit: 51}, 49975, 50025},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			page, err := st.ListMessages(ctx, channel.ID, owner.ID, tc.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s page loaded in %s", tc.name, time.Since(start))
+			expectSeqs(t, page.Messages, tc.first, tc.last)
+		})
+	}
+}
+
 func TestStoreAccessErrors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -297,6 +357,10 @@ func TestStoreAccessErrors(t *testing.T) {
 		}},
 		{"list messages denied", func() error {
 			_, err := st.ListMessages(ctx, channels[0].ID, outsider.ID, store.MessagePageRequest{Limit: 10})
+			return err
+		}},
+		{"get message denied", func() error {
+			_, err := st.GetMessage(ctx, root.ID, outsider.ID)
 			return err
 		}},
 		{"create message denied", func() error {
@@ -465,6 +529,23 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 	}
 	if len(after.Messages) != 0 {
 		t.Fatalf("expected no direct messages after seq, got %#v", after)
+	}
+	gotDM, err := st.GetMessage(ctx, msg.ID, third.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotDM.ID != msg.ID || gotDM.DirectConversationID != dm.ID {
+		t.Fatalf("unexpected direct message lookup: %#v", gotDM)
+	}
+	workspaceOnly, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Workspace Only", Email: "workspace-only@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, workspaceOnly.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetMessage(ctx, msg.ID, workspaceOnly.ID); err == nil {
+		t.Fatal("expected direct message lookup to reject workspace member outside the DM")
 	}
 
 	errorCases := []struct {

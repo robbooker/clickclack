@@ -116,6 +116,12 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	} else if payload, ok := event.Payload.(map[string]any); !ok || payload["author_id"] != owner.ID || event.Seq == nil || *event.Seq != 1 {
 		t.Fatalf("unexpected message.created event payload: %#v", event)
 	}
+	messageLookup := getJSON[struct {
+		Message store.Message `json:"message"`
+	}](t, server.URL+"/api/messages/"+created.Message.ID)
+	if messageLookup.Message.ID != created.Message.ID || messageLookup.Message.ChannelID != channel.ID {
+		t.Fatalf("unexpected message lookup payload: %#v", messageLookup.Message)
+	}
 	nonceCreated, nonceStatus := postJSONWithStatus[struct {
 		Message store.Message `json:"message"`
 		Event   *store.Event  `json:"event,omitempty"`

@@ -197,6 +197,13 @@ paths:
         "200":
           description: Updated channel read receipt
   /api/messages/{message_id}:
+    get:
+      operationId: getMessage
+      parameters:
+        - $ref: "#/components/parameters/message_id"
+      responses:
+        "200":
+          description: Message visible to the current user
     patch:
       operationId: updateMessage
       parameters:
