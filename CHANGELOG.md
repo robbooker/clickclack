@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Polished profile pane actions and contact rows so profile buttons share the
+  same height and contact icons are centered in stable icon cells.
 - Added retry-safe optimistic sends, per-user unread/read receipts for
   channels and DMs, private read events, and member-scoped DM typing
   indicators. The chat UI now shows unread badges and jump-to-bottom unread

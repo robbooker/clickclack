@@ -64,14 +64,31 @@
         {/if}
       </header>
       <div class="profile-info-row">
-        <span class="info-icon" aria-hidden="true">@</span>
+        <span class="info-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18">
+            <path
+              d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4.1 8.1"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+            />
+            <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2" />
+          </svg>
+        </span>
         <div>
           <small>Handle</small>
           <span>{profile.handle ? handleLabel(profile.handle) : "No handle set"}</span>
         </div>
       </div>
       <div class="profile-info-row">
-        <span class="info-icon" aria-hidden="true">ID</span>
+        <span class="info-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18">
+            <rect x="4" y="5" width="16" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2" />
+            <path d="M8 10h8M8 14h5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" />
+          </svg>
+        </span>
         <div>
           <small>User ID</small>
           <span>{profile.id}</span>
