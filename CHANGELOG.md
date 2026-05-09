@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Forced Playwright E2E runs to stay headless by default across local and CI
+  invocations.
 - Moved channel and direct-message creation into modal flows opened from
   right-aligned sidebar section plus buttons, removing the always-visible
   inline create fields.

@@ -8,6 +8,7 @@ export default defineConfig({
   },
   use: {
     baseURL: "http://127.0.0.1:18082",
+    headless: true,
     trace: "on-first-retry",
   },
   webServer: {
