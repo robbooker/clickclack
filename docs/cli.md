@@ -143,7 +143,7 @@ Creates a `kind=bot` user, adds it to the workspace, and mints a scoped
 `ccb_...` bot token. `--owner` makes it a user-owned bot; omitting `--owner`
 makes it an independent service bot. Plain output prints only the raw token.
 JSON output includes `{bot, bot_token, token}`. See
-[features/bots.md](features/bots.md).
+[features/bots.md](features/bots.md) and [bot-installs.md](bot-installs.md).
 
 ### `admin magic-link create`
 

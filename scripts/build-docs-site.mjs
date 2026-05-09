@@ -30,6 +30,7 @@ const sections = [
     "features/search.md",
     "features/uploads.md",
     "features/dms.md",
+    "features/bots.md",
     "features/integrations.md",
   ]],
   ["Operate", [
@@ -37,6 +38,7 @@ const sections = [
     "agent-friendly-cli.md",
     "configuration.md",
     "deployment.md",
+    "bot-installs.md",
     "development.md",
     "releasing.md",
     "sdk.md",

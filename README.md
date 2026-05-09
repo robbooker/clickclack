@@ -125,7 +125,8 @@ pnpm --filter @clickclack/example-bot start
 ```
 
 Create bot tokens with `clickclack admin bot create`. See
-[docs/features/bots.md](docs/features/bots.md) and [docs/sdk.md](docs/sdk.md).
+[docs/features/bots.md](docs/features/bots.md),
+[docs/bot-installs.md](docs/bot-installs.md), and [docs/sdk.md](docs/sdk.md).
 
 ## Auth
 

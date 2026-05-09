@@ -145,7 +145,7 @@ Persist `event.cursor` after each handled event and reconnect with
 `afterCursor` for exactly-once-ish processing. Ignore events whose
 `payload.author_id` matches the bot's own user ID to avoid loops.
 
-See [features/bots.md](features/bots.md).
+See [features/bots.md](features/bots.md) and [bot-installs.md](bot-installs.md).
 
 ## Example package
 

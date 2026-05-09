@@ -58,6 +58,7 @@ it for anything that isn't a local clone.
 | Local file uploads + message attachments | [Uploads](features/uploads.md) |
 | Workspace-scoped direct messages | [Direct messages](features/dms.md) |
 | Human and bot identities | [Bots](features/bots.md) |
+| Creating and installing bot tokens | [Bot installs](bot-installs.md) |
 | Profile settings, handles, avatars | [Profiles](features/profiles.md) |
 | Magic-link auth, GitHub OAuth, dev fallback | [Auth](features/auth.md) |
 | Mattermost-shaped webhooks and slash commands | [Integrations](features/integrations.md) |
@@ -71,6 +72,8 @@ it for anything that isn't a local clone.
   for humans, agents, and CI jobs.
 - [Configuration](configuration.md) — flag/env/file precedence.
 - [Deployment](deployment.md) — single binary, Docker, data layout, OAuth.
+- [Bot installs](bot-installs.md) — create bot identities and wire their
+  tokens into OpenClaw or SDK runtimes.
 - [Development](development.md) — pnpm scripts, monorepo layout, gates.
 - [Releasing](releasing.md) — GoReleaser targets, artifacts, and tag flow.
 

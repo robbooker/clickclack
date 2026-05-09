@@ -188,6 +188,9 @@ clickclack admin bot create \
 Plain output returns the raw token only. JSON output returns `{bot, token,
 bot_token}`.
 
+For the practical install flow, including Docker commands and OpenClaw
+configuration, see [Bot installs](../bot-installs.md).
+
 Follow-up API/UI:
 
 - `POST /api/workspaces/{workspace_id}/bots`
