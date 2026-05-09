@@ -298,30 +298,18 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 	return ch, event, tx.Commit()
 }
 
-func (s *Store) ListMessages(ctx context.Context, channelID, userID string, afterSeq int64, limit int) ([]store.Message, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 100
-	}
+func (s *Store) ListMessages(ctx context.Context, channelID, userID string, page store.MessagePageRequest) (store.MessagePage, error) {
 	var workspaceID string
 	if err := s.db.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = ?`, channelID).Scan(&workspaceID); err != nil {
-		return nil, err
+		return store.MessagePage{}, err
 	}
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
-		return nil, err
+		return store.MessagePage{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, messageSelect()+`
-		WHERE m.channel_id = ? AND m.parent_message_id IS NULL AND m.channel_seq > ?
-		ORDER BY m.channel_seq
-		LIMIT ?`, channelID, afterSeq, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	messages, err := scanMessages(rows)
-	if err != nil {
-		return nil, err
-	}
-	return s.hydrateAttachments(ctx, messages)
+	return s.listMessagePage(ctx, messagePageScope{
+		where: "m.channel_id = ? AND m.parent_message_id IS NULL",
+		args:  []any{channelID},
+	}, page)
 }
 
 func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInput) (store.Message, store.Event, error) {

@@ -254,6 +254,129 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await expect(page.locator(".markdown").filter({ hasText: "private playwright" })).toBeVisible();
 });
 
+test("unread bar jumps to the new-message divider across repeated unread cycles", async ({
+  page,
+}) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };
+  const workspaceId = workspaces.workspaces[0].id;
+  const channelName = `unread-jump-${Date.now()}`;
+  const channelResponse = await page.request.post(`/api/workspaces/${workspaceId}/channels`, {
+    data: { name: channelName, kind: "public" },
+  });
+  const channel = (await channelResponse.json()) as { channel: { id: string; name: string } };
+
+  for (let i = 0; i < 36; i++) {
+    const response = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
+      data: {
+        body: `read history ${i} ${"with enough text to create scrollable history ".repeat(3)}`,
+      },
+    });
+    expect(response.ok()).toBe(true);
+  }
+
+  const email = `${channelName}@example.com`;
+  clickclack([
+    "admin",
+    "user",
+    "create",
+    "--data",
+    "./data/e2e",
+    "--workspace",
+    workspaceId,
+    "--name",
+    "Unread Sender",
+    "--email",
+    email,
+  ]);
+  const magicToken = clickclack([
+    "admin",
+    "magic-link",
+    "create",
+    "--data",
+    "./data/e2e",
+    "--email",
+    email,
+    "--name",
+    "Unread Sender",
+  ]);
+  const senderToken = clickclack([
+    "--server",
+    serverURL,
+    "login",
+    "--magic-token",
+    magicToken,
+    "--plain",
+    "--no-store",
+  ]);
+
+  await page.goto("/app");
+  await page.getByRole("button", { name: `# ${channel.channel.name}` }).click();
+  await expect(page.getByRole("heading", { name: `#${channel.channel.name}` })).toBeVisible();
+  await expect(page.locator(".markdown").filter({ hasText: "read history 35" })).toBeVisible();
+
+  const scrollport = page.locator(".messages-scroll");
+  await expect
+    .poll(() => scrollport.evaluate((el) => el.scrollHeight > el.clientHeight + 120))
+    .toBe(true);
+  await scrollport.evaluate((el) => {
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  clickclack([
+    "--server",
+    serverURL,
+    "--token",
+    senderToken,
+    "send",
+    "--workspace",
+    workspaceId,
+    "--channel",
+    channel.channel.id,
+    "--plain",
+    "unread after scroll",
+  ]);
+
+  const jump = page.getByRole("button", { name: "Jump to 1 new message" });
+  await expect(jump).toBeVisible();
+  await jump.click();
+
+  await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
+  await expect(page.locator(".markdown").filter({ hasText: "unread after scroll" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Mark as read" }).click();
+  await expect(page.getByRole("separator", { name: "New messages" })).toHaveCount(0);
+
+  await scrollport.evaluate((el) => {
+    el.scrollTop = 0;
+    el.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  clickclack([
+    "--server",
+    serverURL,
+    "--token",
+    senderToken,
+    "send",
+    "--workspace",
+    workspaceId,
+    "--channel",
+    channel.channel.id,
+    "--plain",
+    "second unread after clear",
+  ]);
+
+  const secondJump = page.getByRole("button", { name: "Jump to 1 new message" });
+  await expect(secondJump).toBeVisible();
+  await secondJump.click();
+
+  await expect(page.getByRole("separator", { name: "New messages" })).toBeVisible();
+  await expect(
+    page.locator(".markdown").filter({ hasText: "second unread after clear" }),
+  ).toBeVisible();
+});
+
 test("CLI supports multiple accounts chatting in one channel", async ({ page }) => {
   const workspacesResponse = await page.request.get("/api/workspaces");
   const workspaces = (await workspacesResponse.json()) as { workspaces: { id: string }[] };

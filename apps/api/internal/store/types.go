@@ -14,6 +14,10 @@ var ErrQuotedMessageOutOfScope = errors.New("quoted message is not in this chann
 // for a different message request.
 var ErrClientNonceConflict = errors.New("client nonce was already used for a different message")
 
+// ErrInvalidMessagePage is returned when a message-history request combines
+// mutually exclusive cursors or uses an invalid cursor value.
+var ErrInvalidMessagePage = errors.New("invalid message page request")
+
 type User struct {
 	ID                   string                `json:"id"`
 	Kind                 string                `json:"kind"`
@@ -86,6 +90,21 @@ type Message struct {
 	// the server response to a pending placeholder and safely retry after a lost
 	// response.
 	Nonce string `json:"nonce,omitempty"`
+}
+
+type MessagePageRequest struct {
+	Limit     int
+	BeforeSeq *int64
+	AfterSeq  *int64
+	AroundSeq *int64
+}
+
+type MessagePage struct {
+	Messages  []Message `json:"messages"`
+	OldestSeq int64     `json:"oldest_seq"`
+	NewestSeq int64     `json:"newest_seq"`
+	HasOlder  bool      `json:"has_older"`
+	HasNewer  bool      `json:"has_newer"`
 }
 
 type ThreadState struct {
@@ -328,7 +347,7 @@ type Store interface {
 	ListChannels(ctx context.Context, workspaceID, userID string) ([]Channel, error)
 	CreateChannel(ctx context.Context, input CreateChannelInput) (Channel, Event, error)
 	UpdateChannel(ctx context.Context, input UpdateChannelInput) (Channel, Event, error)
-	ListMessages(ctx context.Context, channelID, userID string, afterSeq int64, limit int) ([]Message, error)
+	ListMessages(ctx context.Context, channelID, userID string, page MessagePageRequest) (MessagePage, error)
 	CreateMessage(ctx context.Context, input CreateMessageInput) (Message, Event, error)
 	UpdateMessage(ctx context.Context, input UpdateMessageInput) (Message, Event, error)
 	DeleteMessage(ctx context.Context, input DeleteMessageInput) (Message, Event, error)
@@ -344,7 +363,7 @@ type Store interface {
 	ListDirectConversations(ctx context.Context, workspaceID, userID string) ([]DirectConversation, error)
 	GetDirectConversation(ctx context.Context, conversationID, userID string) (DirectConversation, error)
 	CreateDirectConversation(ctx context.Context, input CreateDirectConversationInput) (DirectConversation, error)
-	ListDirectMessages(ctx context.Context, conversationID, userID string, afterSeq int64, limit int) ([]Message, error)
+	ListDirectMessages(ctx context.Context, conversationID, userID string, page MessagePageRequest) (MessagePage, error)
 	CreateDirectMessage(ctx context.Context, input CreateDirectMessageInput) (Message, Event, error)
 	MarkChannelRead(ctx context.Context, channelID, userID string, seq int64) (ReadReceipt, Event, error)
 	MarkDirectRead(ctx context.Context, conversationID, userID string, seq int64) (ReadReceipt, Event, error)

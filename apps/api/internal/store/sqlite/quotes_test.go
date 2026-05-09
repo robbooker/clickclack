@@ -107,10 +107,11 @@ func TestCreateMessageWithQuotePersistsSnapshot(t *testing.T) {
 		t.Fatalf("expected hydrated quoted author, got %#v", reply.QuotedAuthor)
 	}
 
-	listed, err := f.store.ListMessages(ctx, f.channelA.ID, f.owner.ID, 0, 100)
+	page, err := f.store.ListMessages(ctx, f.channelA.ID, f.owner.ID, store.MessagePageRequest{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
+	listed := page.Messages
 	var found bool
 	for _, m := range listed {
 		if m.ID == reply.ID {

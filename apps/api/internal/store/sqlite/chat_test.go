@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -88,18 +89,19 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 		t.Fatalf("expected nonce conflict, got %v", err)
 	}
 
-	messages, err := st.ListMessages(ctx, channel.ID, owner.ID, 0, 0)
+	page, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	messages := page.Messages
 	if len(messages) != 2 || messages[0].ID != root.ID || messages[1].ID != idempotent.ID || messages[1].Nonce != "client-nonce-1" {
 		t.Fatalf("unexpected messages: %#v", messages)
 	}
-	after, err := st.ListMessages(ctx, channel.ID, owner.ID, *root.ChannelSeq, 10)
+	after, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{AfterSeq: int64Ptr(*root.ChannelSeq), Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != 1 || after[0].ID != idempotent.ID {
+	if len(after.Messages) != 1 || after.Messages[0].ID != idempotent.ID {
 		t.Fatalf("expected idempotent message after root seq, got %#v", after)
 	}
 
@@ -165,10 +167,11 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
 		t.Fatal(err)
 	}
-	withAttachment, err := st.ListMessages(ctx, channel.ID, owner.ID, 0, 10)
+	withAttachmentPage, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
+	withAttachment := withAttachmentPage.Messages
 	if len(withAttachment[0].Attachments) != 1 {
 		t.Fatalf("expected attachment on message, got %#v", withAttachment[0])
 	}
@@ -183,6 +186,60 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	}
 	if added.Type != "reaction.added" || removed.Type != "reaction.removed" {
 		t.Fatalf("unexpected reaction events: %#v %#v", added, removed)
+	}
+}
+
+func TestStoreMessagePageCursors(t *testing.T) {
+	t.Parallel()
+	ctx, st, owner, _, channel := seededStore(t)
+	for i := 1; i <= 125; i++ {
+		if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{
+			ChannelID: channel.ID,
+			AuthorID:  owner.ID,
+			Body:      fmt.Sprintf("page message %03d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	latest, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectSeqs(t, latest.Messages, 106, 125)
+	if !latest.HasOlder || latest.HasNewer || latest.OldestSeq != 106 || latest.NewestSeq != 125 {
+		t.Fatalf("unexpected latest metadata: %#v", latest)
+	}
+
+	after, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{AfterSeq: int64Ptr(10), Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectSeqs(t, after.Messages, 11, 15)
+	if !after.HasOlder || !after.HasNewer {
+		t.Fatalf("unexpected after metadata: %#v", after)
+	}
+
+	before, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{BeforeSeq: int64Ptr(106), Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectSeqs(t, before.Messages, 101, 105)
+	if !before.HasOlder || !before.HasNewer {
+		t.Fatalf("unexpected before metadata: %#v", before)
+	}
+
+	around, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{AroundSeq: int64Ptr(60), Limit: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectSeqs(t, around.Messages, 56, 64)
+	if !around.HasOlder || !around.HasNewer {
+		t.Fatalf("unexpected around metadata: %#v", around)
+	}
+
+	if _, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{BeforeSeq: int64Ptr(20), AfterSeq: int64Ptr(10)}); !errors.Is(err, store.ErrInvalidMessagePage) {
+		t.Fatalf("expected invalid page request, got %v", err)
 	}
 }
 
@@ -239,7 +296,7 @@ func TestStoreAccessErrors(t *testing.T) {
 			return err
 		}},
 		{"list messages denied", func() error {
-			_, err := st.ListMessages(ctx, channels[0].ID, outsider.ID, 0, 10)
+			_, err := st.ListMessages(ctx, channels[0].ID, outsider.ID, store.MessagePageRequest{Limit: 10})
 			return err
 		}},
 		{"create message denied", func() error {
@@ -394,18 +451,19 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected too-long dm nonce to be rejected")
 	}
-	messages, err := st.ListDirectMessages(ctx, dm.ID, third.ID, 0, 0)
+	page, err := st.ListDirectMessages(ctx, dm.ID, third.ID, store.MessagePageRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	messages := page.Messages
 	if len(messages) != 1 || messages[0].Body != "direct hello" {
 		t.Fatalf("unexpected direct messages: %#v", messages)
 	}
-	after, err := st.ListDirectMessages(ctx, dm.ID, third.ID, *messages[0].ChannelSeq, 10)
+	after, err := st.ListDirectMessages(ctx, dm.ID, third.ID, store.MessagePageRequest{AfterSeq: int64Ptr(*messages[0].ChannelSeq), Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != 0 {
+	if len(after.Messages) != 0 {
 		t.Fatalf("expected no direct messages after seq, got %#v", after)
 	}
 
@@ -434,7 +492,7 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 			return err
 		}},
 		{"missing dm", func() error {
-			_, err := st.ListDirectMessages(ctx, "dm_missing", owner.ID, 0, 10)
+			_, err := st.ListDirectMessages(ctx, "dm_missing", owner.ID, store.MessagePageRequest{Limit: 10})
 			return err
 		}},
 	}
@@ -514,7 +572,7 @@ func TestStoreBranchCases(t *testing.T) {
 	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: "chn_missing", AuthorID: owner.ID, Body: "x"}); err == nil {
 		t.Fatal("expected missing channel error")
 	}
-	if _, err := st.ListMessages(ctx, "chn_missing", owner.ID, 0, 10); err == nil {
+	if _, err := st.ListMessages(ctx, "chn_missing", owner.ID, store.MessagePageRequest{Limit: 10}); err == nil {
 		t.Fatal("expected missing channel list error")
 	}
 	if results, err := st.SearchMessages(ctx, workspace.ID, owner.ID, "missingterm", 999); err != nil || len(results) != 0 {
@@ -562,5 +620,21 @@ func TestStoreBranchCases(t *testing.T) {
 	}
 	if _, _, err := st.ConsumeMagicLink(ctx, expired.Token); err == nil {
 		t.Fatal("expected expired magic link error")
+	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
+
+func expectSeqs(t *testing.T, messages []store.Message, first, last int64) {
+	t.Helper()
+	wantLen := int(last - first + 1)
+	if len(messages) != wantLen {
+		t.Fatalf("expected %d messages from seq %d to %d, got %d: %#v", wantLen, first, last, len(messages), messages)
+	}
+	for i, message := range messages {
+		want := first + int64(i)
+		if message.ChannelSeq == nil || *message.ChannelSeq != want {
+			t.Fatalf("message %d: expected seq %d, got %#v", i, want, message.ChannelSeq)
+		}
 	}
 }

@@ -24,7 +24,7 @@
   import ThreadEmptyState from "./components/thread/ThreadEmptyState.svelte";
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
-  import type { Channel, DirectConversation, Message, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+  import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   let user: User | null = null;
   let workspaces: Workspace[] = [];
@@ -65,6 +65,8 @@
   let socket: RealtimeConnection | null = null;
   let messageList: MessageListHandle | null = null;
   let scrollMemory = new Map<string, MessageListState>();
+  let messagePages = new Map<string, Omit<MessagePage, "messages">>();
+  let olderMessagesLoading = new Set<string>();
   let unreadAnchors = new Map<string, string>();
   let unreadAnchorMessageID = "";
   let viewKey = "";
@@ -246,22 +248,95 @@
     const isSwitching = targetKey !== viewKey;
     if (isSwitching) messagesLoading = true;
     try {
-      if (selectedDirectID) {
-        const data = await api<{ messages: Message[] }>(`/api/dms/${selectedDirectID}/messages`);
-        if (currentConversationKey() !== targetKey) return;
-        commitView(targetKey, data.messages);
-        return;
-      }
-      if (!selectedChannelID) {
+      if (!selectedDirectID && !selectedChannelID) {
         commitView("", []);
+        messagePages.delete("");
         return;
       }
-      const data = await api<{ messages: Message[] }>(`/api/channels/${selectedChannelID}/messages`);
+      const data = await api<MessagePage>(messagePagePath(initialMessagePageQuery()));
       if (currentConversationKey() !== targetKey) return;
-      commitView(targetKey, data.messages);
+      commitPage(targetKey, data);
     } finally {
       if (currentConversationKey() === targetKey) messagesLoading = false;
     }
+  }
+
+  function initialMessagePageQuery(): string {
+    const unreadCount = selectedDirectID ? selectedDirect?.unread_count || 0 : selectedChannel?.unread_count || 0;
+    const lastReadSeq = selectedDirectID ? selectedDirect?.last_read_seq || 0 : selectedChannel?.last_read_seq || 0;
+    if (unreadCount > 0) {
+      return `around_seq=${encodeURIComponent(String(lastReadSeq + 1))}&limit=100`;
+    }
+    return "limit=100";
+  }
+
+  function messagePagePath(query: string): string {
+    const base = selectedDirectID
+      ? `/api/dms/${selectedDirectID}/messages`
+      : `/api/channels/${selectedChannelID}/messages`;
+    return query ? `${base}?${query}` : base;
+  }
+
+  function commitPage(key: string, page: MessagePage) {
+    if (key) {
+      messagePages.set(key, {
+        oldest_seq: page.oldest_seq,
+        newest_seq: page.newest_seq,
+        has_older: page.has_older,
+        has_newer: page.has_newer,
+      });
+    }
+    commitView(key, page.messages);
+  }
+
+  function mergeMessageWindows(left: Message[], right: Message[]): Message[] {
+    const byID = new Map<string, Message>();
+    for (const message of [...left, ...right]) {
+      byID.set(message.id, message);
+    }
+    return [...byID.values()].sort((a, b) => (a.channel_seq || 0) - (b.channel_seq || 0));
+  }
+
+  async function loadOlderMessages() {
+    const key = currentConversationKey();
+    const page = messagePages.get(key);
+    if (!key || !page?.has_older || page.oldest_seq <= 0 || olderMessagesLoading.has(key)) return;
+    olderMessagesLoading.add(key);
+    captureScrollMemory();
+    try {
+      const data = await api<MessagePage>(messagePagePath(`before_seq=${encodeURIComponent(String(page.oldest_seq))}&limit=50`));
+      if (currentConversationKey() !== key) return;
+      const merged = mergeMessageWindows(data.messages, messages);
+      messagePages.set(key, {
+        oldest_seq: data.oldest_seq || page.oldest_seq,
+        newest_seq: page.newest_seq,
+        has_older: data.has_older,
+        has_newer: page.has_newer,
+      });
+      commitView(key, merged);
+    } finally {
+      olderMessagesLoading.delete(key);
+    }
+  }
+
+  async function loadNewerMessages() {
+    const key = currentConversationKey();
+    const page = messagePages.get(key);
+    if (!key || !page || page.newest_seq <= 0) {
+      await loadMessages();
+      return;
+    }
+    const data = await api<MessagePage>(messagePagePath(`after_seq=${encodeURIComponent(String(page.newest_seq))}&limit=50`));
+    if (currentConversationKey() !== key) return;
+    if (data.messages.length === 0) return;
+    const merged = mergeMessageWindows(messages, data.messages);
+    messagePages.set(key, {
+      oldest_seq: page.oldest_seq,
+      newest_seq: data.newest_seq || page.newest_seq,
+      has_older: page.has_older,
+      has_newer: data.has_newer,
+    });
+    commitView(key, merged);
   }
 
   function currentConversationKey(): string {
@@ -705,7 +780,11 @@
     if (result.message.direct_conversation_id) {
       selectedDirectID = result.message.direct_conversation_id;
       selectedChannelID = "";
-      await loadMessages();
+      if (event.type === "message.created") {
+        await loadNewerMessages();
+      } else {
+        await loadMessages();
+      }
     }
   }
 
@@ -1231,6 +1310,7 @@
       onOpenThread={openThread}
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
+      onLoadOlder={() => void loadOlderMessages()}
       onReachedBottom={markActiveViewRead}
       onMarkRead={() => {
         markActiveViewRead();

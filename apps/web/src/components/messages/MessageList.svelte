@@ -46,6 +46,7 @@
     onOpenThread: (message: Message) => void;
     onJumpToQuote: (message: Message) => void;
     onOpenImage: (url: string, title: string) => void;
+    onLoadOlder?: () => void;
     onReachedBottom?: () => void;
     onMarkRead?: () => void;
     onRetry?: (message: Message) => void;
@@ -71,6 +72,7 @@
     onOpenThread,
     onJumpToQuote,
     onOpenImage,
+    onLoadOlder,
     onReachedBottom,
     onMarkRead,
     onRetry,
@@ -362,6 +364,7 @@
     shouldStickToBottom = sticky;
     const wasAtBottom = atBottom;
     atBottom = sticky;
+    if (!sticky && scrollEl.scrollTop <= 160) onLoadOlder?.();
     if (sticky && !wasAtBottom) notifyReachedBottom();
   }
 </script>

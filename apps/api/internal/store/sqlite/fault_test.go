@@ -47,7 +47,7 @@ func TestStoreFaultBranches(t *testing.T) {
 		if _, err := st.db.ExecContext(ctx, `DROP TABLE message_attachments`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.ListMessages(ctx, channel.ID, owner.ID, 0, 10); err == nil {
+		if _, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{Limit: 10}); err == nil {
 			t.Fatal("expected attachment hydration failure")
 		}
 	})
@@ -159,7 +159,7 @@ func TestStoreFaultBranches(t *testing.T) {
 		if _, err := st.db.ExecContext(ctx, `DROP TABLE messages`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.ListMessages(ctx, channel.ID, owner.ID, 0, 10); err == nil {
+		if _, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{Limit: 10}); err == nil {
 			t.Fatal("expected list messages failure")
 		}
 		if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "x"}); err == nil {
@@ -262,7 +262,7 @@ func TestStoreFaultBranches(t *testing.T) {
 		if _, err := st.db.ExecContext(ctx, `DROP TABLE messages`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.ListDirectMessages(ctx, dm.ID, owner.ID, 0, 10); err == nil {
+		if _, err := st.ListDirectMessages(ctx, dm.ID, owner.ID, store.MessagePageRequest{Limit: 10}); err == nil {
 			t.Fatal("expected direct list failure")
 		}
 		if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: owner.ID, Body: "x"}); err == nil {

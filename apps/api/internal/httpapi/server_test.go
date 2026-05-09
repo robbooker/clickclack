@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -228,6 +229,71 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if len(events.Events) == 0 {
 		t.Fatal("expected recoverable events after cursor")
 	}
+}
+
+func TestMessagePageHTTPCursors(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspaces[0].ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
+	for i := 1; i <= 12; i++ {
+		if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{
+			ChannelID: channel.ID,
+			AuthorID:  owner.ID,
+			Body:      fmt.Sprintf("http page %02d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
+	t.Cleanup(server.Close)
+	base := server.URL + "/api/channels/" + channel.ID + "/messages"
+
+	latest := getJSON[store.MessagePage](t, base+"?limit=5")
+	expectHTTPSeqs(t, latest.Messages, 8, 12)
+	if !latest.HasOlder || latest.HasNewer {
+		t.Fatalf("unexpected latest metadata: %#v", latest)
+	}
+
+	after := getJSON[store.MessagePage](t, base+"?after_seq=3&limit=4")
+	expectHTTPSeqs(t, after.Messages, 4, 7)
+	if !after.HasOlder || !after.HasNewer {
+		t.Fatalf("unexpected after metadata: %#v", after)
+	}
+
+	before := getJSON[store.MessagePage](t, base+"?before_seq=8&limit=3")
+	expectHTTPSeqs(t, before.Messages, 5, 7)
+	if !before.HasOlder || !before.HasNewer {
+		t.Fatalf("unexpected before metadata: %#v", before)
+	}
+
+	around := getJSON[store.MessagePage](t, base+"?around_seq=6&limit=5")
+	expectHTTPSeqs(t, around.Messages, 4, 8)
+	if !around.HasOlder || !around.HasNewer {
+		t.Fatalf("unexpected around metadata: %#v", around)
+	}
+
+	expectStatus(t, http.MethodGet, base+"?before_seq=4&after_seq=7", nil, http.StatusBadRequest)
 }
 
 func TestReadEventsArePrivateAcrossWebSocketAndHTTPReplay(t *testing.T) {
@@ -458,10 +524,11 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected bot message success, got %s %s", resp.Status, string(body))
 	}
 	resp.Body.Close()
-	messages, err := st.ListMessages(context.Background(), channel.ID, owner.ID, 0, 10)
+	page, err := st.ListMessages(context.Background(), channel.ID, owner.ID, store.MessagePageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
+	messages := page.Messages
 	if messages[len(messages)-1].AuthorID != bot.ID || messages[len(messages)-1].Author == nil || messages[len(messages)-1].Author.Kind != "bot" {
 		t.Fatalf("expected bot-authored message, got %#v", messages[len(messages)-1])
 	}
@@ -835,6 +902,20 @@ func readEventType(t *testing.T, conn *websocket.Conn, eventType string) store.E
 		}
 		if event.Type == eventType {
 			return event
+		}
+	}
+}
+
+func expectHTTPSeqs(t *testing.T, messages []store.Message, first, last int64) {
+	t.Helper()
+	wantLen := int(last - first + 1)
+	if len(messages) != wantLen {
+		t.Fatalf("expected %d messages from seq %d to %d, got %d: %#v", wantLen, first, last, len(messages), messages)
+	}
+	for i, message := range messages {
+		want := first + int64(i)
+		if message.ChannelSeq == nil || *message.ChannelSeq != want {
+			t.Fatalf("message %d: expected seq %d, got %#v", i, want, message.ChannelSeq)
 		}
 	}
 }

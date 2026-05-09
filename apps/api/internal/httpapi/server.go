@@ -269,8 +269,13 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	messages, err := s.store.ListMessages(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
-	writeResult(w, map[string]any{"messages": messages}, err)
+	page, err := parseMessagePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	messages, err := s.store.ListMessages(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, page)
+	writeMessagePage(w, messages, err)
 }
 
 func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
@@ -654,6 +659,56 @@ func queryInt64(r *http.Request, key string, fallback int64) int64 {
 		return fallback
 	}
 	return value
+}
+
+func parseMessagePageRequest(r *http.Request) (store.MessagePageRequest, error) {
+	values := r.URL.Query()
+	req := store.MessagePageRequest{Limit: queryInt(r, "limit", 100)}
+	cursorCount := 0
+	for _, cursor := range []struct {
+		key string
+		set func(int64)
+	}{
+		{"before_seq", func(v int64) { req.BeforeSeq = &v }},
+		{"after_seq", func(v int64) { req.AfterSeq = &v }},
+		{"around_seq", func(v int64) { req.AroundSeq = &v }},
+	} {
+		raw, ok := values[cursor.key]
+		if !ok {
+			continue
+		}
+		cursorCount++
+		if len(raw) == 0 || strings.TrimSpace(raw[0]) == "" {
+			return req, fmt.Errorf("%w: %s is required", store.ErrInvalidMessagePage, cursor.key)
+		}
+		value, err := strconv.ParseInt(raw[0], 10, 64)
+		if err != nil || value < 0 {
+			return req, fmt.Errorf("%w: %s must be a non-negative integer", store.ErrInvalidMessagePage, cursor.key)
+		}
+		cursor.set(value)
+	}
+	if cursorCount > 1 {
+		return req, fmt.Errorf("%w: before_seq, after_seq, and around_seq are mutually exclusive", store.ErrInvalidMessagePage)
+	}
+	if mode := values.Get("mode"); mode != "" {
+		if mode != "latest" {
+			return req, fmt.Errorf("%w: unsupported message page mode %q", store.ErrInvalidMessagePage, mode)
+		}
+		if cursorCount > 0 {
+			return req, fmt.Errorf("%w: mode and cursor params are mutually exclusive", store.ErrInvalidMessagePage)
+		}
+	}
+	return req, nil
+}
+
+func writeMessagePage(w http.ResponseWriter, page store.MessagePage, err error) {
+	writeResult(w, map[string]any{
+		"messages":   page.Messages,
+		"oldest_seq": page.OldestSeq,
+		"newest_seq": page.NewestSeq,
+		"has_older":  page.HasOlder,
+		"has_newer":  page.HasNewer,
+	}, err)
 }
 
 func ListenAndServe(ctx context.Context, addr string, handler http.Handler) error {

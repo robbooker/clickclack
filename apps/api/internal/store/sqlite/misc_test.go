@@ -181,10 +181,11 @@ func TestStoreMiscBranches(t *testing.T) {
 	if _, err := st.db.ExecContext(ctx, `UPDATE messages SET edited_at = created_at, deleted_at = created_at WHERE id = ?`, root.ID); err != nil {
 		t.Fatal(err)
 	}
-	messages, err := st.ListMessages(ctx, channels[0].ID, owner.ID, 0, 10)
+	page, err := st.ListMessages(ctx, channels[0].ID, owner.ID, store.MessagePageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
+	messages := page.Messages
 	if messages[0].EditedAt == nil || messages[0].DeletedAt == nil {
 		t.Fatalf("expected edited/deleted fields, got %#v", messages[0])
 	}

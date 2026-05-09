@@ -115,26 +115,14 @@ func (s *Store) CreateDirectConversation(ctx context.Context, input store.Create
 	return dm, nil
 }
 
-func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID string, afterSeq int64, limit int) ([]store.Message, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 100
-	}
+func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID string, page store.MessagePageRequest) (store.MessagePage, error) {
 	if err := s.requireDirectMembership(ctx, conversationID, userID); err != nil {
-		return nil, err
+		return store.MessagePage{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, messageSelect()+`
-		WHERE m.direct_conversation_id = ? AND m.channel_seq > ?
-		ORDER BY m.channel_seq
-		LIMIT ?`, conversationID, afterSeq, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	messages, err := scanMessages(rows)
-	if err != nil {
-		return nil, err
-	}
-	return s.hydrateAttachments(ctx, messages)
+	return s.listMessagePage(ctx, messagePageScope{
+		where: "m.direct_conversation_id = ?",
+		args:  []any{conversationID},
+	}, page)
 }
 
 func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirectMessageInput) (store.Message, store.Event, error) {

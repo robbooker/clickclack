@@ -244,8 +244,13 @@ func (s *Server) listDirectMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	messages, err := s.store.ListDirectMessages(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, queryInt64(r, "after_seq", 0), queryInt(r, "limit", 100))
-	writeResult(w, map[string]any{"messages": messages}, err)
+	page, err := parseMessagePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	messages, err := s.store.ListDirectMessages(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, page)
+	writeMessagePage(w, messages, err)
 }
 
 func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {

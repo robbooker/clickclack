@@ -61,6 +61,14 @@ export type Message = {
   status?: "pending" | "failed";
 };
 
+export type MessagePage = {
+  messages: Message[];
+  oldest_seq: number;
+  newest_seq: number;
+  has_older: boolean;
+  has_newer: boolean;
+};
+
 export type Upload = {
   id: string;
   workspace_id: string;
