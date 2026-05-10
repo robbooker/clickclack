@@ -75,14 +75,20 @@ func TestMutationsCreateDurableEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updatedDM, dmEvent, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: dmMessage.ID, UserID: second.ID, Body: "dm after"})
+	if _, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: dmMessage.ID, UserID: second.ID, Body: "dm after"}); err == nil {
+		t.Fatal("expected non-author DM member update to be rejected")
+	}
+	updatedDM, dmEvent, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: dmMessage.ID, UserID: owner.ID, Body: "dm after"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updatedDM.DirectConversationID != dm.ID || dmEvent.ChannelID != "" {
 		t.Fatalf("unexpected dm update: %#v %#v", updatedDM, dmEvent)
 	}
-	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: dmMessage.ID, UserID: second.ID}); err != nil {
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: dmMessage.ID, UserID: second.ID}); err == nil {
+		t.Fatal("expected non-author DM member delete to be rejected")
+	}
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: dmMessage.ID, UserID: owner.ID}); err != nil {
 		t.Fatal(err)
 	}
 	events, err := st.ListEventsAfter(ctx, workspaces[0].ID, owner.ID, "", 20)
@@ -144,6 +150,19 @@ func TestMutationsRejectInvalidInput(t *testing.T) {
 	}
 	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: message.ID, UserID: outsider.ID}); err == nil {
 		t.Fatal("expected outsider message delete error")
+	}
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Member", Email: "member-mutations@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspaces[0].ID, member.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: message.ID, UserID: member.ID, Body: "nope"}); err == nil {
+		t.Fatal("expected non-author member message update error")
+	}
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: message.ID, UserID: member.ID}); err == nil {
+		t.Fatal("expected non-author member message delete error")
 	}
 }
 

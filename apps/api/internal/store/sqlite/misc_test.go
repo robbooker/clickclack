@@ -235,7 +235,7 @@ func TestStoreMiscBranches(t *testing.T) {
 	if replies[len(replies)-1].EditedAt == nil || replies[len(replies)-1].DeletedAt == nil {
 		t.Fatalf("expected edited/deleted reply fields, got %#v", replies[len(replies)-1])
 	}
-	results, err := st.SearchMessages(ctx, workspaces[0].ID, owner.ID, "reply", 10)
+	results, err := st.SearchMessages(ctx, workspaces[0].ID, "", owner.ID, "reply", 10)
 	if err != nil {
 		t.Fatal(err)
 	}

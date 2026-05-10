@@ -50,10 +50,10 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 		channelID, userID, seq, at); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, channelID, "channel.read", &seq, map[string]string{
+	event, err := insertEventWithRecipients(ctx, tx, workspaceID, channelID, "channel.read", &seq, map[string]string{
 		"channel_id": channelID,
 		"user_id":    userID,
-	})
+	}, []string{userID})
 	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
@@ -78,7 +78,7 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	var lastSeq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(channel_seq), 0) FROM messages WHERE direct_conversation_id = ?`, conversationID).Scan(&lastSeq); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(channel_seq), 0) FROM messages WHERE direct_conversation_id = ? AND parent_message_id IS NULL`, conversationID).Scan(&lastSeq); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if seq > lastSeq {
@@ -98,10 +98,10 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		conversationID, userID, seq, at); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, "", "dm.read", &seq, map[string]string{
+	event, err := insertEventWithRecipients(ctx, tx, workspaceID, "", "dm.read", &seq, map[string]string{
 		"direct_conversation_id": conversationID,
 		"user_id":                userID,
-	})
+	}, []string{userID})
 	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}

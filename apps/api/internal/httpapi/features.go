@@ -84,7 +84,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	results, err := s.store.SearchMessages(r.Context(), workspaceID, act.user.ID, r.URL.Query().Get("q"), queryInt(r, "limit", 50))
+	results, err := s.store.SearchMessages(r.Context(), workspaceID, r.URL.Query().Get("channel_id"), act.user.ID, r.URL.Query().Get("q"), queryInt(r, "limit", 50))
 	writeResult(w, map[string]any{"results": results}, err)
 }
 

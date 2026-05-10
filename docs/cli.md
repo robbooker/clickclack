@@ -17,7 +17,7 @@ clickclack <command> [flags]
 Commands:
   serve      run the HTTP/WebSocket server (default if no command given)
   migrate    apply embedded SQL migrations
-  admin      bootstrap, user create, invite create, magic-link create
+  admin      bootstrap, user create, invite create, bot create, events prune, magic-link create
   backup     write a SQLite backup file
   export     write a JSON dump to a file or stdout
   login      consume a magic-link token and store/print a session token
@@ -154,6 +154,21 @@ clickclack admin magic-link create --email steipete@gmail.com --name "Peter"
 Mints a magic-link token. Hand it to the user; they POST it to
 `/api/auth/magic/consume` to get a session. See
 [features/auth.md](features/auth.md).
+
+### `admin events prune`
+
+```sh
+clickclack admin events prune \
+  --workspace wsp_... \
+  --older-than-days 30 \
+  --keep-latest 10000
+```
+
+Deletes old durable realtime events for one workspace. At least one retention
+bound is required: `--older-than-days`, `--before RFC3339`, or
+`--keep-latest`. `--keep-latest` preserves the newest N events by cursor even
+when they are older than the cutoff. Private event recipient rows are deleted
+by cascade with their events.
 
 ## `backup`
 

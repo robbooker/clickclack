@@ -37,6 +37,7 @@ channels
 messages                           thread_state
 reactions
 events                             auth_magic_links / sessions
+event_recipients
 uploads                            message_attachments
 direct_conversations               direct_conversation_members
 invites
@@ -56,9 +57,11 @@ For any row in `messages`:
   `channel_seq IS NOT NULL`, `thread_seq IS NULL`.
 - Reply: `parent_message_id = root.id`, `thread_root_id = root.id`,
   `channel_seq IS NULL`, `thread_seq IS NOT NULL`.
-- DM: `direct_conversation_id IS NOT NULL`, `channel_id IS NULL`,
+- DM root: `direct_conversation_id IS NOT NULL`, `channel_id IS NULL`,
   `parent_message_id IS NULL`, `channel_seq` used as the per-conversation
   sequence.
+- DM reply: `direct_conversation_id IS NOT NULL`, `channel_id IS NULL`,
+  `parent_message_id IS NOT NULL`, `channel_seq IS NULL`, `thread_seq IS NOT NULL`.
 
 Nested replies are forbidden — the API rejects replies to non-root messages.
 
@@ -70,6 +73,14 @@ Nested replies are forbidden — the API rejects replies to non-root messages.
   for replies.
 - `events.cursor`: globally sortable opaque cursor used by realtime
   recovery.
+
+## Private durable events
+
+`events.is_private` is the durable privacy bit for replay filtering.
+`event_recipients(event_id, user_id)` is the allow-list for private durable
+events. Public events have `is_private = 0`; private events have
+`is_private = 1` and are returned only to listed users during replay. Recipient
+rows cascade when old events are pruned.
 
 ## Soft-deletes
 

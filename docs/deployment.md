@@ -127,6 +127,19 @@ of that org. See [features/auth.md](features/auth.md).
 unexpected tables. Migrations live in
 `apps/api/internal/store/sqlite/migrations/` and are append-only.
 
+## Event retention
+
+The durable realtime event log is for reconnect recovery, not permanent
+message history. Message history stays in `messages`; old events can be
+removed after the offline-recovery window you operate against:
+
+```sh
+clickclack admin events prune --workspace wsp_... --older-than-days 30 --keep-latest 10000
+```
+
+Run this from maintenance automation after backups. Clients with cursors older
+than the retained event window should resync through the message APIs.
+
 ## Backups and restore
 
 ```sh

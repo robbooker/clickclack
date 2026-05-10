@@ -1222,9 +1222,13 @@
       searchResults = [];
       return;
     }
-    const data = await api<{ results: SearchResult[] }>(
-      `/api/search?workspace_id=${encodeURIComponent(selectedWorkspaceID)}&q=${encodeURIComponent(searchQuery.trim())}`
-    );
+    if (selectedDirectID) {
+      searchResults = [];
+      return;
+    }
+    const params = new URLSearchParams({ workspace_id: selectedWorkspaceID, q: searchQuery.trim() });
+    if (selectedChannelID) params.set("channel_id", selectedChannelID);
+    const data = await api<{ results: SearchResult[] }>(`/api/search?${params.toString()}`);
     searchResults = data.results;
   }
 

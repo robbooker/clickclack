@@ -126,7 +126,7 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 		t.Fatalf("unexpected thread: %#v %#v %#v", threadRoot, replies, threadState)
 	}
 
-	results, err := st.SearchMessages(ctx, workspace.ID, owner.ID, "searchable", 10)
+	results, err := st.SearchMessages(ctx, workspace.ID, "", owner.ID, "searchable", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,7 +656,7 @@ func TestStoreBranchCases(t *testing.T) {
 	if _, err := st.ListMessages(ctx, "chn_missing", owner.ID, store.MessagePageRequest{Limit: 10}); err == nil {
 		t.Fatal("expected missing channel list error")
 	}
-	if results, err := st.SearchMessages(ctx, workspace.ID, owner.ID, "missingterm", 999); err != nil || len(results) != 0 {
+	if results, err := st.SearchMessages(ctx, workspace.ID, "", owner.ID, "missingterm", 999); err != nil || len(results) != 0 {
 		t.Fatalf("expected no search results, got %#v err=%v", results, err)
 	}
 	if _, err := st.ListEventsAfter(ctx, workspace.ID, owner.ID, "", 999); err != nil {
@@ -669,7 +669,7 @@ func TestStoreBranchCases(t *testing.T) {
 	if _, err := st.CreateInvite(ctx, workspace.ID, outsider.ID); err == nil {
 		t.Fatal("expected invite membership error")
 	}
-	if _, err := st.SearchMessages(ctx, workspace.ID, outsider.ID, "root", 10); err == nil {
+	if _, err := st.SearchMessages(ctx, workspace.ID, "", outsider.ID, "root", 10); err == nil {
 		t.Fatal("expected search membership error")
 	}
 

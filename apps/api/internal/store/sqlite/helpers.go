@@ -233,10 +233,15 @@ func updateThreadState(ctx context.Context, tx *sql.Tx, rootID, authorID, create
 }
 
 func insertEvent(ctx context.Context, tx *sql.Tx, workspaceID, channelID, eventType string, seq *int64, payload any) (store.Event, error) {
+	return insertEventWithRecipients(ctx, tx, workspaceID, channelID, eventType, seq, payload, nil)
+}
+
+func insertEventWithRecipients(ctx context.Context, tx *sql.Tx, workspaceID, channelID, eventType string, seq *int64, payload any, recipientUserIDs []string) (store.Event, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return store.Event{}, err
 	}
+	recipients := compactStrings(recipientUserIDs)
 	event := store.Event{
 		ID:          newID("evt"),
 		Cursor:      newID("cur"),
@@ -248,8 +253,18 @@ func insertEvent(ctx context.Context, tx *sql.Tx, workspaceID, channelID, eventT
 		PayloadJSON: string(payloadJSON),
 		Payload:     payload,
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, event.ID, event.Cursor, event.WorkspaceID, nullableString(event.ChannelID), event.Type, event.Seq, event.PayloadJSON, event.CreatedAt); err != nil {
+	isPrivate := 0
+	if len(recipients) > 0 {
+		isPrivate = 1
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.ID, event.Cursor, event.WorkspaceID, nullableString(event.ChannelID), event.Type, event.Seq, event.PayloadJSON, event.CreatedAt, isPrivate); err != nil {
 		return store.Event{}, err
+	}
+	for _, userID := range recipients {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO event_recipients (event_id, user_id) VALUES (?, ?)`, event.ID, userID); err != nil {
+			return store.Event{}, err
+		}
+		event.RecipientUserIDs = append(event.RecipientUserIDs, userID)
 	}
 	return event, nil
 }

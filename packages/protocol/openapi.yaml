@@ -349,6 +349,11 @@ paths:
           required: true
           schema:
             type: string
+        - name: channel_id
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Search results

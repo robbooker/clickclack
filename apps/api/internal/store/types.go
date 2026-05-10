@@ -360,7 +360,7 @@ type Store interface {
 	CreateUpload(ctx context.Context, input CreateUploadInput) (Upload, error)
 	GetUpload(ctx context.Context, uploadID, userID string) (Upload, error)
 	AttachUpload(ctx context.Context, input AttachUploadInput) error
-	SearchMessages(ctx context.Context, workspaceID, userID, query string, limit int) ([]SearchResult, error)
+	SearchMessages(ctx context.Context, workspaceID, channelID, userID, query string, limit int) ([]SearchResult, error)
 	ListDirectConversations(ctx context.Context, workspaceID, userID string) ([]DirectConversation, error)
 	GetDirectConversation(ctx context.Context, conversationID, userID string) (DirectConversation, error)
 	CreateDirectConversation(ctx context.Context, input CreateDirectConversationInput) (DirectConversation, error)

@@ -331,16 +331,14 @@ func (s *Store) requireMessageAccess(ctx context.Context, message store.Message,
 	if message.DirectConversationID != "" {
 		return s.requireDirectMembership(ctx, message.DirectConversationID, userID)
 	}
-	if message.ParentMessageID != nil && message.ThreadRootID != "" && message.ChannelID == "" {
-		root, err := getMessage(ctx, s.db, message.ThreadRootID)
-		if err != nil {
-			return err
-		}
-		if root.DirectConversationID != "" {
-			return s.requireDirectMembership(ctx, root.DirectConversationID, userID)
-		}
-	}
 	return s.requireMembership(ctx, message.WorkspaceID, userID)
+}
+
+func requireMessageAccessTx(ctx context.Context, tx *sql.Tx, message store.Message, userID string) error {
+	if message.DirectConversationID != "" {
+		return requireDirectMembershipTx(ctx, tx, message.DirectConversationID, userID)
+	}
+	return requireMembershipTx(ctx, tx, message.WorkspaceID, userID)
 }
 
 func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInput) (store.Message, store.Event, error) {
@@ -424,7 +422,7 @@ func (s *Store) GetThread(ctx context.Context, rootMessageID, userID string, lim
 	if root.ParentMessageID != nil {
 		return store.Message{}, nil, store.ThreadState{}, errors.New("thread root must be a root message")
 	}
-	if err := s.requireMembership(ctx, root.WorkspaceID, userID); err != nil {
+	if err := s.requireMessageAccess(ctx, root, userID); err != nil {
 		return store.Message{}, nil, store.ThreadState{}, err
 	}
 	roots, err := s.hydrateAttachments(ctx, []store.Message{root})
@@ -465,7 +463,7 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	if root.ParentMessageID != nil {
 		return store.Message{}, store.ThreadState{}, nil, errors.New("nested thread replies are not supported")
 	}
-	if err := requireMembershipTx(ctx, tx, root.WorkspaceID, input.AuthorID); err != nil {
+	if err := requireMessageAccessTx(ctx, tx, root, input.AuthorID); err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	var seq int64
@@ -488,20 +486,38 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		quotedSnapshot = snap
 		quotedAuthorID = authorID
 	}
+	var channelID any
+	var directConversationID any
+	if root.DirectConversationID != "" {
+		directConversationID = root.DirectConversationID
+	} else {
+		channelID = root.ChannelID
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-		VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, 'markdown', ?, ?, ?, ?)`, id, root.WorkspaceID, root.ChannelID, input.AuthorID, root.ID, root.ID, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'markdown', ?, ?, ?, ?)`, id, root.WorkspaceID, channelID, directConversationID, input.AuthorID, root.ID, root.ID, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	state, err := updateThreadState(ctx, tx, root.ID, input.AuthorID, createdAt)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
-	replyEvent, err := insertEvent(ctx, tx, root.WorkspaceID, root.ChannelID, "thread.reply_created", nil, map[string]string{"message_id": id, "root_message_id": root.ID})
+	replyPayload := map[string]string{"message_id": id, "root_message_id": root.ID}
+	statePayload := map[string]string{"root_message_id": root.ID}
+	var recipients []string
+	if root.DirectConversationID != "" {
+		replyPayload["direct_conversation_id"] = root.DirectConversationID
+		statePayload["direct_conversation_id"] = root.DirectConversationID
+		recipients, err = directConversationMemberIDsTx(ctx, tx, root.DirectConversationID)
+		if err != nil {
+			return store.Message{}, store.ThreadState{}, nil, err
+		}
+	}
+	replyEvent, err := insertEventWithRecipients(ctx, tx, root.WorkspaceID, root.ChannelID, "thread.reply_created", nil, replyPayload, recipients)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
-	stateEvent, err := insertEvent(ctx, tx, root.WorkspaceID, root.ChannelID, "thread.state_updated", nil, map[string]string{"root_message_id": root.ID})
+	stateEvent, err := insertEventWithRecipients(ctx, tx, root.WorkspaceID, root.ChannelID, "thread.state_updated", nil, statePayload, recipients)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
@@ -528,11 +544,15 @@ func (s *Store) ListEventsAfter(ctx context.Context, workspaceID, userID, cursor
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, cursor, workspace_id, COALESCE(channel_id, ''), type, seq, payload_json, created_at
-		FROM events
-		WHERE workspace_id = ? AND cursor > ?
-		ORDER BY cursor
-		LIMIT ?`, workspaceID, cursor, limit)
+		SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, ''), e.type, e.seq, e.payload_json, e.created_at
+		FROM events e
+		WHERE e.workspace_id = ? AND e.cursor > ?
+		  AND (
+		    e.is_private = 0
+		    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = ?)
+		  )
+		ORDER BY e.cursor
+		LIMIT ?`, workspaceID, cursor, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +570,7 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 	if err != nil {
 		return store.Event{}, err
 	}
-	if err := requireMembershipTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
+	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return store.Event{}, err
 	}
 	if add {
@@ -565,7 +585,15 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 	if !add {
 		eventType = "reaction.removed"
 	}
-	event, err := insertEvent(ctx, tx, msg.WorkspaceID, msg.ChannelID, eventType, msg.ChannelSeq, map[string]string{"message_id": input.MessageID, "emoji": input.Emoji})
+	payload := map[string]string{"message_id": input.MessageID, "emoji": input.Emoji}
+	if msg.DirectConversationID != "" {
+		payload["direct_conversation_id"] = msg.DirectConversationID
+	}
+	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
+	if err != nil {
+		return store.Event{}, err
+	}
+	event, err := insertEventWithRecipients(ctx, tx, msg.WorkspaceID, msg.ChannelID, eventType, msg.ChannelSeq, payload, recipients)
 	if err != nil {
 		return store.Event{}, err
 	}

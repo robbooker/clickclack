@@ -10,13 +10,15 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
 
+const directConversationMemberHydrationBatchSize = 500
+
 func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID string) ([]store.DirectConversation, error) {
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT dc.id, dc.workspace_id, dc.created_at,
-		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id), 0) AS last_seq,
+		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
 		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
@@ -43,12 +45,16 @@ func (s *Store) ListDirectConversations(ctx context.Context, workspaceID, userID
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
+	ids := make([]string, 0, len(out))
+	for _, dm := range out {
+		ids = append(ids, dm.ID)
+	}
+	membersByConversation, err := s.directConversationMembersByConversationIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
-		members, err := s.directConversationMembers(ctx, out[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		out[i].Members = members
+		out[i].Members = membersByConversation[out[i].ID]
 	}
 	return out, nil
 }
@@ -57,7 +63,7 @@ func (s *Store) GetDirectConversation(ctx context.Context, conversationID, userI
 	var dm store.DirectConversation
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT dc.id, dc.workspace_id, dc.created_at,
-		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id), 0) AS last_seq,
+		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS last_seq,
 		       COALESCE((SELECT last_read_seq FROM direct_reads WHERE conversation_id = dc.id AND user_id = ?), 0) AS last_read_seq
 		FROM direct_conversations dc
 		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
@@ -120,7 +126,7 @@ func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID s
 		return store.MessagePage{}, err
 	}
 	return s.listMessagePage(ctx, messagePageScope{
-		where: "m.direct_conversation_id = ?",
+		where: "m.direct_conversation_id = ? AND m.parent_message_id IS NULL",
 		args:  []any{conversationID},
 	}, page)
 }
@@ -184,7 +190,11 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, "", "message.created", &seq, eventPayload(map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID, "author_id": input.AuthorID}, nonce))
+	recipients, err := directConversationMemberIDsTx(ctx, tx, input.ConversationID)
+	if err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	event, err := insertEventWithRecipients(ctx, tx, workspaceID, "", "message.created", &seq, eventPayload(map[string]string{"message_id": id, "direct_conversation_id": input.ConversationID, "author_id": input.AuthorID}, nonce), recipients)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
@@ -203,6 +213,27 @@ func (s *Store) requireDirectMembership(ctx context.Context, conversationID, use
 func requireDirectMembershipTx(ctx context.Context, tx *sql.Tx, conversationID, userID string) error {
 	var one int
 	return tx.QueryRowContext(ctx, `SELECT 1 FROM direct_conversation_members WHERE conversation_id = ? AND user_id = ?`, conversationID, userID).Scan(&one)
+}
+
+func directConversationMemberIDsTx(ctx context.Context, tx *sql.Tx, conversationID string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT user_id
+		FROM direct_conversation_members
+		WHERE conversation_id = ?
+		ORDER BY user_id`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *Store) directConversationMembers(ctx context.Context, conversationID string) ([]store.User, error) {
@@ -225,6 +256,52 @@ func (s *Store) directConversationMembers(ctx context.Context, conversationID st
 		members = append(members, member)
 	}
 	return members, rows.Err()
+}
+
+func (s *Store) directConversationMembersByConversationIDs(ctx context.Context, conversationIDs []string) (map[string][]store.User, error) {
+	out := map[string][]store.User{}
+	if len(conversationIDs) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(conversationIDs); start += directConversationMemberHydrationBatchSize {
+		end := min(start+directConversationMemberHydrationBatchSize, len(conversationIDs))
+		batch := conversationIDs[start:end]
+		placeholders := strings.TrimRight(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, 0, len(batch))
+		for _, id := range batch {
+			args = append(args, id)
+		}
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT dcm.conversation_id, u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+			FROM direct_conversation_members dcm
+			JOIN users u ON u.id = dcm.user_id
+			WHERE dcm.conversation_id IN (`+placeholders+`)
+			ORDER BY dcm.conversation_id, u.display_name`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var conversationID string
+			var owner sql.NullString
+			var member store.User
+			if err := rows.Scan(&conversationID, &member.ID, &member.Kind, &owner, &member.DisplayName, &member.Handle, &member.AvatarURL, &member.CreatedAt); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			if owner.Valid {
+				member.OwnerUserID = owner.String
+			}
+			out[conversationID] = append(out[conversationID], member)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func compactStrings(values []string) []string {

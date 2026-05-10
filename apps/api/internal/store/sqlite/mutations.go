@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -64,8 +65,11 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	if err := requireMembershipTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
+	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return store.Message{}, store.Event{}, err
+	}
+	if msg.AuthorID != input.UserID {
+		return store.Message{}, store.Event{}, errors.New("only the author can edit a message")
 	}
 	body := strings.TrimSpace(input.Body)
 	if body == "" {
@@ -76,7 +80,11 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 		return store.Message{}, store.Event{}, err
 	}
 	payload := messagePayload(msg)
-	event, err := insertEvent(ctx, tx, msg.WorkspaceID, msg.ChannelID, "message.updated", msg.ChannelSeq, payload)
+	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
+	if err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	event, err := insertEventWithRecipients(ctx, tx, msg.WorkspaceID, msg.ChannelID, "message.updated", msg.ChannelSeq, payload, recipients)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
@@ -95,14 +103,21 @@ func (s *Store) DeleteMessage(ctx context.Context, input store.DeleteMessageInpu
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	if err := requireMembershipTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
+	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return store.Message{}, store.Event{}, err
+	}
+	if msg.AuthorID != input.UserID {
+		return store.Message{}, store.Event{}, errors.New("only the author can delete a message")
 	}
 	deletedAt := now()
 	if _, err := tx.ExecContext(ctx, `UPDATE messages SET body = '', deleted_at = ? WHERE id = ?`, deletedAt, msg.ID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, msg.WorkspaceID, msg.ChannelID, "message.deleted", msg.ChannelSeq, messagePayload(msg))
+	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
+	if err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	event, err := insertEventWithRecipients(ctx, tx, msg.WorkspaceID, msg.ChannelID, "message.deleted", msg.ChannelSeq, messagePayload(msg), recipients)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
@@ -117,4 +132,11 @@ func messagePayload(msg store.Message) map[string]string {
 		payload["direct_conversation_id"] = msg.DirectConversationID
 	}
 	return payload
+}
+
+func eventRecipientsForMessageTx(ctx context.Context, tx *sql.Tx, msg store.Message) ([]string, error) {
+	if msg.DirectConversationID == "" {
+		return nil, nil
+	}
+	return directConversationMemberIDsTx(ctx, tx, msg.DirectConversationID)
 }

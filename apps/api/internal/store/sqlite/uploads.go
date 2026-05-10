@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
@@ -55,7 +56,7 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	if err != nil {
 		return err
 	}
-	if err := requireMembershipTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
+	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return err
 	}
 	var uploadWorkspace string
@@ -79,31 +80,42 @@ func scanUpload(row scanner) (store.Upload, error) {
 }
 
 func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message) ([]store.Message, error) {
-	for i := range messages {
-		rows, err := s.db.QueryContext(ctx, `
-			SELECT u.id, u.workspace_id, u.owner_id, u.filename, u.content_type, u.byte_size, u.width, u.height, u.duration_ms, u.storage_path, u.created_at
-			FROM uploads u
-			JOIN message_attachments ma ON ma.upload_id = u.id
-			WHERE ma.message_id = ?
-			ORDER BY ma.created_at`, messages[i].ID)
-		if err != nil {
+	if len(messages) == 0 {
+		return messages, nil
+	}
+	ids := make([]string, 0, len(messages))
+	indexByID := make(map[string]int, len(messages))
+	for i, message := range messages {
+		ids = append(ids, message.ID)
+		indexByID[message.ID] = i
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ma.message_id, u.id, u.workspace_id, u.owner_id, u.filename, u.content_type, u.byte_size, u.width, u.height, u.duration_ms, u.storage_path, u.created_at
+		FROM message_attachments ma
+		JOIN uploads u ON u.id = ma.upload_id
+		WHERE ma.message_id IN (`+placeholders+`)
+		ORDER BY ma.message_id, ma.created_at`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var messageID string
+		var upload store.Upload
+		if err := rows.Scan(&messageID, &upload.ID, &upload.WorkspaceID, &upload.OwnerID, &upload.Filename, &upload.ContentType, &upload.ByteSize, &upload.Width, &upload.Height, &upload.DurationMS, &upload.StoragePath, &upload.CreatedAt); err != nil {
 			return nil, err
 		}
-		uploads := []store.Upload{}
-		for rows.Next() {
-			upload, err := scanUpload(rows)
-			if err != nil {
-				_ = rows.Close()
-				return nil, err
-			}
-			uploads = append(uploads, upload)
+		if index, ok := indexByID[messageID]; ok {
+			messages[index].Attachments = append(messages[index].Attachments, upload)
 		}
-		if err := rows.Close(); err != nil {
-			return nil, err
-		}
-		if len(uploads) > 0 {
-			messages[i].Attachments = uploads
-		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return messages, nil
 }

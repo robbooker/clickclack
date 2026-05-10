@@ -10,7 +10,7 @@ Workspace-scoped full-text search backed by SQLite FTS5.
 ## Endpoint
 
 ```http
-GET /api/search?workspace_id=&q=&limit=
+GET /api/search?workspace_id=&channel_id=&q=&limit=
 ```
 
 Returns:
@@ -21,6 +21,10 @@ Returns:
 
 `limit` is clamped to `1..100` (default 50). Empty `q` returns an empty list
 without hitting FTS. Membership is required for `workspace_id`.
+
+Search is channel-message-only. DM rows are explicitly excluded from this
+endpoint. When `channel_id` is supplied, results are limited to that channel;
+without it, results span channel messages in the workspace.
 
 ## Indexing
 
@@ -45,7 +49,7 @@ return an error from SQLite — clients should sanitise user input or
 ## What is intentionally missing
 
 - Cross-workspace global search.
-- Per-channel scoping at the API layer (filter client-side from
-  `result.message.channel_id`).
+- DM search. It needs a separate endpoint scoped to direct conversation
+  membership.
 - Highlighting/snippet generation. Add `snippet(messages_fts, ...)` if/when
   the UI needs it.

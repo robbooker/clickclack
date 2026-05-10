@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/config"
 	"github.com/openclaw/clickclack/apps/api/internal/httpapi"
@@ -270,6 +271,64 @@ func admin(args []string) error {
 			return nil
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"bot": bot, "bot_token": token, "token": token.Token})
+	case "events":
+		if len(args) < 2 || args[1] != "prune" {
+			return fmt.Errorf("usage: clickclack admin events prune --workspace WORKSPACE_ID [--older-than-days DAYS | --before RFC3339] [--keep-latest N]")
+		}
+		flags := flag.NewFlagSet("admin events prune", flag.ExitOnError)
+		data := flags.String("data", "./data", "data directory")
+		dbURL := flags.String("db", "", "database URL")
+		workspaceID := flags.String("workspace", "", "workspace id")
+		olderThanDays := flags.Int("older-than-days", 0, "delete events older than this many days")
+		before := flags.String("before", "", "delete events created before this RFC3339 timestamp")
+		keepLatest := flags.Int("keep-latest", 0, "always keep the latest N events in the workspace")
+		if err := flags.Parse(args[2:]); err != nil {
+			return err
+		}
+		if *workspaceID == "" {
+			return fmt.Errorf("--workspace is required")
+		}
+		if *olderThanDays < 0 {
+			return fmt.Errorf("--older-than-days must be non-negative")
+		}
+		if *keepLatest < 0 {
+			return fmt.Errorf("--keep-latest must be non-negative")
+		}
+		if *olderThanDays > 0 && strings.TrimSpace(*before) != "" {
+			return fmt.Errorf("--older-than-days and --before are mutually exclusive")
+		}
+		cutoff := strings.TrimSpace(*before)
+		if cutoff != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, cutoff)
+			if err != nil {
+				return fmt.Errorf("--before must be RFC3339: %w", err)
+			}
+			cutoff = parsed.UTC().Format(time.RFC3339Nano)
+		}
+		if *olderThanDays > 0 {
+			cutoff = time.Now().UTC().Add(-time.Duration(*olderThanDays) * 24 * time.Hour).Format(time.RFC3339Nano)
+		}
+		if cutoff == "" && *keepLatest == 0 {
+			return fmt.Errorf("provide --older-than-days, --before, or --keep-latest")
+		}
+		if err := ensureDirs(*data); err != nil {
+			return err
+		}
+		st, err := sqlitestore.Open(resolveDB(*data, *dbURL))
+		if err != nil {
+			return err
+		}
+		defer st.Close()
+		ctx := context.Background()
+		if err := st.Migrate(ctx); err != nil {
+			return err
+		}
+		pruned, err := st.PruneEvents(ctx, *workspaceID, *keepLatest, cutoff)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("pruned %d events\n", pruned)
+		return nil
 	case "magic-link":
 		if len(args) < 2 || args[1] != "create" {
 			return fmt.Errorf("usage: clickclack admin magic-link create --email EMAIL [--name NAME]")

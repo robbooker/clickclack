@@ -279,10 +279,10 @@ export class ClickClackClient {
     },
   };
 
-  search = async (workspaceId: string, query: string) => {
-    return this.request(
-      `/api/search?workspace_id=${encodeURIComponent(workspaceId)}&q=${encodeURIComponent(query)}`,
-    );
+  search = async (workspaceId: string, query: string, options: { channelId?: string } = {}) => {
+    const params = new URLSearchParams({ workspace_id: workspaceId, q: query });
+    if (options.channelId) params.set("channel_id", options.channelId);
+    return this.request(`/api/search?${params.toString()}`);
   };
 
   uploads = {

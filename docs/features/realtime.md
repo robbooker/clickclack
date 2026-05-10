@@ -18,6 +18,8 @@ to drop events.
   send.
 - `events` table — append-only log scoped to a workspace, with a sortable
   `cursor`.
+- `event_recipients` table — optional per-event recipient rows for durable
+  private events such as DMs and read receipts.
 - `httpapi.websocket` — accepts a connection, validates membership, drains
   backlog from `events`, then forwards live publishes from the hub.
 
@@ -67,7 +69,8 @@ Inserted in the same transaction as the underlying mutation:
 - `reaction.added`, `reaction.removed`
 
 Direct messages also publish into the workspace event stream so DM lists stay
-fresh.
+fresh, but they are persisted with recipient rows and replay only to direct
+conversation members.
 
 `message.created` carries the message sequence in top-level `seq` and includes
 `message_id`, `author_id`, optional `direct_conversation_id`, and optional
@@ -100,6 +103,10 @@ payload with `user_id` from the caller before publishing.
 - The websocket itself does not drop durable events — they are always in
   `events`. A buffered hub channel that overflows simply stops receiving live
   events; the next reconnect with `after_cursor` will fill in.
+- Operators can prune old durable events with
+  `clickclack admin events prune`. Message history is not stored in the event
+  log, so clients with cursors outside the retained window should reload
+  through the message APIs.
 
 ## Implementation pointers
 

@@ -8,7 +8,7 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
 
-func (s *Store) SearchMessages(ctx context.Context, workspaceID, userID, query string, limit int) ([]store.SearchResult, error) {
+func (s *Store) SearchMessages(ctx context.Context, workspaceID, channelID, userID, query string, limit int) ([]store.SearchResult, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -19,6 +19,13 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, userID, query s
 	if query == "" {
 		return []store.SearchResult{}, nil
 	}
+	channelWhere := ""
+	args := []any{workspaceID, query}
+	if channelID != "" {
+		channelWhere = " AND m.channel_id = ?"
+		args = append(args, channelID)
+	}
+	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
@@ -30,9 +37,13 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, userID, query s
 		JOIN messages m ON m.id = messages_fts.message_id
 		JOIN users u ON u.id = m.author_id
 		LEFT JOIN users qu ON qu.id = m.quoted_author_id
-		WHERE messages_fts.workspace_id = ? AND messages_fts MATCH ?
+		WHERE messages_fts.workspace_id = ?
+		  AND messages_fts MATCH ?
+		  AND m.direct_conversation_id IS NULL
+		  AND m.channel_id IS NOT NULL
+		  `+channelWhere+`
 		ORDER BY rank
-		LIMIT ?`, workspaceID, query, limit)
+		LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}

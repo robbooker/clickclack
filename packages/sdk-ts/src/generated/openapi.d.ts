@@ -1190,6 +1190,7 @@ export interface operations {
       query: {
         workspace_id: string;
         q: string;
+        channel_id?: string;
       };
       header?: never;
       path?: never;
