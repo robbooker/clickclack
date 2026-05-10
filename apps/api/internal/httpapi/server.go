@@ -442,6 +442,8 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	events, unsubscribe := s.hub.Subscribe(workspaceID)
+	defer unsubscribe()
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -453,7 +455,11 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusPolicyViolation, err.Error())
 		return
 	}
+	sent := make(map[string]struct{}, len(backlog))
 	for _, event := range backlog {
+		if event.ID != "" {
+			sent[event.ID] = struct{}{}
+		}
 		if !shouldDeliverEvent(event, act.user.ID) {
 			continue
 		}
@@ -461,13 +467,16 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	events, unsubscribe := s.hub.Subscribe(workspaceID)
-	defer unsubscribe()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case event := <-events:
+			if event.ID != "" {
+				if _, ok := sent[event.ID]; ok {
+					continue
+				}
+			}
 			if !shouldDeliverEvent(event, act.user.ID) {
 				continue
 			}
