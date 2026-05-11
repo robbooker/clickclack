@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Set the web app favicon to the ClickClack icon. Thanks @shakkernerd.
 - Added short public route IDs for workspace, channel, DM, and thread URLs while
   preserving internal IDs and canonicalizing older copied links. Thanks
   @shakkernerd.
