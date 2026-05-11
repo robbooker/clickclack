@@ -267,20 +267,45 @@ func TestHTTPServesEmbeddedAsset(t *testing.T) {
 	server := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
 	t.Cleanup(server.Close)
 
-	assets, err := fs.ReadDir(webassets.Dist, "dist/assets")
-	if err != nil {
+	var assetPath string
+	if err := fs.WalkDir(webassets.Dist, "dist/_app/immutable", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		assetPath = strings.TrimPrefix(path, "dist/")
+		return fs.SkipAll
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(assets) == 0 {
-		t.Fatal("expected embedded assets")
+	if assetPath == "" {
+		t.Fatal("expected embedded SvelteKit assets")
 	}
-	resp, err := http.Get(server.URL + "/assets/" + assets[0].Name())
+	resp, err := http.Get(server.URL + "/" + assetPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected asset response, got %s", resp.Status)
+	}
+
+	deepResp, err := http.Get(server.URL + "/app/wsp_missing/chn_missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deepResp.Body.Close()
+	if deepResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected deep app route fallback, got %s", deepResp.Status)
+	}
+	body, err := io.ReadAll(deepResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte("_app/immutable")) {
+		t.Fatal("expected SvelteKit fallback HTML")
 	}
 }
 

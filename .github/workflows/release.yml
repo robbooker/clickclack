@@ -54,6 +54,9 @@ jobs:
       - name: Run local gate
         run: pnpm check
 
+      - name: Set web asset version
+        run: echo "CLICKCLACK_WEB_VERSION=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

@@ -14,7 +14,8 @@ Actions publisher is `.github/workflows/release.yml`.
 ```sh
 pnpm install
 goreleaser check
-goreleaser release --snapshot --clean
+CLICKCLACK_WEB_VERSION="$(git rev-parse --short=12 HEAD)" \
+  goreleaser release --snapshot --clean
 ```
 
 The snapshot build runs `pnpm build`, then cross-compiles `clickclack` for:
@@ -40,7 +41,8 @@ git push origin v0.1.0
 ```
 
 The release workflow checks out the tag, installs Go and pnpm, runs
-`pnpm check`, then runs `goreleaser release --clean` with `GITHUB_TOKEN`.
+`pnpm check`, sets `CLICKCLACK_WEB_VERSION` to the checked-out commit, then
+runs `goreleaser release --clean` with `GITHUB_TOKEN`.
 
 Manual release dispatch is available for an existing tag through the
 `release` workflow's `tag_name` input.

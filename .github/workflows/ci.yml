@@ -90,11 +90,12 @@ jobs:
       - name: Typecheck workspaces
         run: pnpm -r typecheck
 
-      - name: Build embedded app
-        run: pnpm build
-
-      - name: Verify embedded assets are current
-        run: git diff --exit-code -- apps/api/internal/webassets/dist
+      - name: Verify embedded app build is current and repeatable
+        run: |
+          pnpm build
+          git diff --exit-code -- apps/api/internal/webassets/dist
+          pnpm build
+          git diff --exit-code -- apps/api/internal/webassets/dist
 
       - name: Build docs site
         run: pnpm docs:site

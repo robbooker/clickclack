@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
   import { probeMediaDimensions } from "./lib/media";
@@ -34,6 +35,9 @@
   import ThreadPanel from "./components/thread/ThreadPanel.svelte";
   import Topbar from "./components/topbar/Topbar.svelte";
   import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
+
+  export let routeWorkspaceID = "";
+  export let routeTargetID = "";
 
   let user: User | null = null;
   let workspaces: Workspace[] = [];
@@ -100,6 +104,8 @@
   let activeComposerContext: "message" | "thread" = "message";
   let typingEntries: TypingEntry[] = [];
   let typingSweeper: number | undefined;
+  let appliedRouteKey = "";
+  let routeApplySerial = 0;
 
   type MessageWindow = Omit<MessagePage, "messages"> & {
     messages: Message[];
@@ -133,6 +139,9 @@
   $: if (replyContext === "channel" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
   $: if (replyContext === "dm" && replyTarget && !messages.some((m) => m.id === replyTarget?.id)) clearReplyTarget();
   $: if (replyContext === "thread" && replyTarget && selectedThread && replyTarget.id !== selectedThread.id && !replies.some((r) => r.id === replyTarget?.id)) clearReplyTarget();
+  $: if (status === "ready" && user && routeKey(routeWorkspaceID, routeTargetID) !== appliedRouteKey) {
+    void applyRoute(routeWorkspaceID, routeTargetID);
+  }
   $: filteredGifs = showGifPicker
     ? gifLibrary.filter((gif) => {
         const query = gifQuery.trim().toLowerCase();
@@ -157,6 +166,11 @@
       const me = await api<{ user: User }>("/api/me");
       user = me.user;
       await loadWorkspaces();
+      if (workspaces.length === 0) {
+        status = "create a workspace";
+        return;
+      }
+      await applyRoute(routeWorkspaceID, routeTargetID);
       status = "ready";
     } catch (error) {
       if (error instanceof APIError && (error.status === 401 || error.status === 403)) {
@@ -215,11 +229,150 @@
   async function loadWorkspaces() {
     const data = await api<{ workspaces: Workspace[] }>("/api/workspaces");
     workspaces = data.workspaces;
-    selectedWorkspaceID = selectedWorkspaceID || workspaces[0]?.id || "";
-    await loadChannels();
-    await loadDirectConversations();
-    if (workspaces.length === 0) status = "create a workspace";
-    connectRealtimeSocket();
+  }
+
+  function routeKey(workspaceID = "", targetID = ""): string {
+    return `${workspaceID || ""}/${targetID || ""}`;
+  }
+
+  function appHref(workspaceID = selectedWorkspaceID, targetID = ""): string {
+    if (!workspaceID) return "/app";
+    const workspacePath = `/app/${encodeURIComponent(workspaceID)}`;
+    return targetID ? `${workspacePath}/${encodeURIComponent(targetID)}` : workspacePath;
+  }
+
+  async function navigateToApp(workspaceID = selectedWorkspaceID, targetID = "", replaceState = false) {
+    const path = appHref(workspaceID, targetID);
+    if (window.location.pathname === path) {
+      await applyRoute(workspaceID, targetID);
+      return;
+    }
+    await goto(path, { replaceState, noScroll: true, keepFocus: true });
+  }
+
+  function defaultTargetID(): string {
+    return channels[0]?.id || directConversations[0]?.id || "";
+  }
+
+  async function applyRoute(workspaceIDParam = "", targetIDParam = "") {
+    const serial = ++routeApplySerial;
+    const requestedRouteKey = routeKey(workspaceIDParam, targetIDParam);
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceIDParam) || workspaces[0];
+    if (!workspace) {
+      commitMessageWindow("", pageToWindow({ messages: [], oldest_seq: 0, newest_seq: 0, has_older: false, has_newer: false }), "replace");
+      appliedRouteKey = requestedRouteKey;
+      return;
+    }
+
+    const workspaceChanged = selectedWorkspaceID !== workspace.id;
+    if (workspaceChanged) {
+      captureScrollMemory();
+      selectedWorkspaceID = workspace.id;
+      selectedChannelID = "";
+      selectedDirectID = "";
+      selectedThread = null;
+      selectedThreadState = null;
+      selectedProfile = null;
+      activeComposerContext = "message";
+      replies = [];
+      resetSearch();
+      resetHistoryPaging();
+      messagesLoading = true;
+      connectRealtimeSocket();
+    }
+
+    if (workspaceChanged || channels.length === 0) await loadChannels(false, false);
+    if (serial !== routeApplySerial) return;
+    if (workspaceChanged || directConversations.length === 0) await loadDirectConversations();
+    if (serial !== routeApplySerial) return;
+
+    const targetID = targetIDParam.trim();
+    if (targetID.startsWith("chn_") && channels.some((channel) => channel.id === targetID)) {
+      selectedChannelID = targetID;
+      selectedDirectID = "";
+      selectedThread = null;
+      selectedThreadState = null;
+      selectedProfile = null;
+      activeComposerContext = "message";
+      replies = [];
+      mobileNavOpen = false;
+      await loadMessages();
+      if (serial !== routeApplySerial) return;
+      appliedRouteKey = requestedRouteKey;
+      return;
+    }
+
+    if (targetID.startsWith("dm_") && directConversations.some((conversation) => conversation.id === targetID)) {
+      selectedDirectID = targetID;
+      selectedChannelID = "";
+      selectedThread = null;
+      selectedThreadState = null;
+      selectedProfile = null;
+      activeComposerContext = "message";
+      replies = [];
+      mobileNavOpen = false;
+      await loadMessages();
+      if (serial !== routeApplySerial) return;
+      appliedRouteKey = requestedRouteKey;
+      return;
+    }
+
+    if (targetID.startsWith("msg_")) {
+      const resolved = await resolveThreadRoute(workspace.id, targetID);
+      if (serial !== routeApplySerial) return;
+      if (resolved) {
+        appliedRouteKey = requestedRouteKey;
+        return;
+      }
+    }
+
+    const fallbackTargetID = defaultTargetID();
+    selectedThread = null;
+    selectedThreadState = null;
+    selectedProfile = null;
+    activeComposerContext = "message";
+    replies = [];
+    if (!fallbackTargetID) {
+      selectedChannelID = "";
+      selectedDirectID = "";
+      await loadMessages();
+      appliedRouteKey = requestedRouteKey;
+      if (workspaceIDParam !== workspace.id || targetIDParam) await navigateToApp(workspace.id, "", true);
+      return;
+    }
+    await navigateToApp(workspace.id, fallbackTargetID, true);
+  }
+
+  async function resolveThreadRoute(workspaceID: string, messageID: string): Promise<boolean> {
+    let data: { root: Message; replies: Message[]; thread_state: ThreadState };
+    try {
+      data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${messageID}/thread`);
+    } catch (error) {
+      if (error instanceof APIError && (error.status === 400 || error.status === 403 || error.status === 404)) return false;
+      throw error;
+    }
+    if (data.root.workspace_id !== workspaceID) return false;
+    const parentChannelID = data.root.channel_id || "";
+    const parentDirectID = data.root.direct_conversation_id || "";
+    if (parentChannelID) {
+      if (!channels.some((channel) => channel.id === parentChannelID)) return false;
+      selectedChannelID = parentChannelID;
+      selectedDirectID = "";
+    } else if (parentDirectID) {
+      if (!directConversations.some((conversation) => conversation.id === parentDirectID)) return false;
+      selectedDirectID = parentDirectID;
+      selectedChannelID = "";
+    } else {
+      return false;
+    }
+    selectedProfile = null;
+    selectedThread = data.root;
+    selectedThreadState = data.thread_state;
+    replies = data.replies;
+    activeComposerContext = "thread";
+    mobileNavOpen = false;
+    await loadMessagesAround(data.root);
+    return true;
   }
 
   async function createWorkspace() {
@@ -231,31 +384,31 @@
     workspaceName = "";
     showWorkspaceCreate = false;
     workspaces = [...workspaces, data.workspace];
-    selectedWorkspaceID = data.workspace.id;
     mobileNavOpen = false;
-    await loadChannels();
-    await loadDirectConversations();
-    connectRealtimeSocket();
+    await navigateToApp(data.workspace.id);
   }
 
   async function selectWorkspace(workspaceID: string) {
-    selectedWorkspaceID = workspaceID;
     mobileNavOpen = false;
-    await loadChannels();
-    await loadDirectConversations();
-    connectRealtimeSocket();
+    await navigateToApp(workspaceID);
   }
 
-  async function loadChannels() {
+  async function loadChannels(loadInitialMessages = true, selectFallback = true, resetSidePanel = true) {
     if (!selectedWorkspaceID) return;
     const data = await api<{ channels: Channel[] }>(`/api/workspaces/${selectedWorkspaceID}/channels`);
     channels = data.channels;
-    selectedChannelID = channels.find((channel) => channel.id === selectedChannelID)?.id || channels[0]?.id || "";
-    selectedThread = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
-    replies = [];
-    await loadMessages();
+    if (selectFallback) {
+      selectedChannelID = channels.find((channel) => channel.id === selectedChannelID)?.id || channels[0]?.id || "";
+    } else if (selectedChannelID && !channels.some((channel) => channel.id === selectedChannelID)) {
+      selectedChannelID = "";
+    }
+    if (resetSidePanel) {
+      selectedThread = null;
+      selectedProfile = null;
+      activeComposerContext = "message";
+      replies = [];
+    }
+    if (loadInitialMessages) await loadMessages();
   }
 
   async function createChannel() {
@@ -266,28 +419,21 @@
     });
     channelName = "";
     channels = [...channels, data.channel];
-    selectedChannelID = data.channel.id;
-    selectedDirectID = "";
     showCreateChannel = false;
-    await loadMessages();
+    await navigateToApp(selectedWorkspaceID, data.channel.id);
   }
 
   async function selectChannel(channelID: string) {
-    selectedChannelID = channelID;
-    selectedDirectID = "";
-    selectedThread = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
     mobileNavOpen = false;
-    await loadMessages();
+    await navigateToApp(selectedWorkspaceID, channelID);
   }
 
   async function loadMessages() {
     captureScrollMemory();
     const targetKey = currentConversationKey();
     const isSwitching = targetKey !== viewKey;
+    resetHistoryPaging();
     if (isSwitching) {
-      resetHistoryPaging();
       messagesLoading = true;
     }
     try {
@@ -490,9 +636,9 @@
     void loadOlderMessages();
   }
 
-  function requestNewerMessages() {
+  function requestNewerMessages(queueIfBusy = false) {
     if (newerPageState !== "idle") {
-      pendingNewerPageIntent = true;
+      if (queueIfBusy) pendingNewerPageIntent = true;
       return;
     }
     void loadNewerMessages();
@@ -711,6 +857,10 @@
     if (!options.all && Date.now() < suppressAutoReadUntil) return;
     const key = currentConversationKey() || viewKey;
     if (!key) return;
+    if (!options.all && !options.seq) {
+      const boundarySeq = unreadBoundarySeqForKey(key);
+      if (boundarySeq >= 0 && !unreadBoundaryLoadedForKey(key, boundarySeq)) return;
+    }
     const seq = options.all
       ? Math.max(options.seq || 0, latestReadSeqForKey(key))
       : options.seq || reachedReadSeqForKey(key);
@@ -973,6 +1123,7 @@
       if (activeHasNewer || activeUnreadCount > 0) await loadLatestMessages();
       await scrollMessagesToBottom();
       markActiveViewRead({ all: true });
+      await scrollMessagesToBottom();
     } catch (error) {
       status = error instanceof Error ? error.message : "Could not jump to latest messages";
     }
@@ -1129,10 +1280,18 @@
   }
 
   async function openThread(message: Message) {
+    if (selectedWorkspaceID && window.location.pathname !== appHref(selectedWorkspaceID, message.id)) {
+      await navigateToApp(selectedWorkspaceID, message.id);
+      return;
+    }
+    await refreshThread(message.id, message);
+  }
+
+  async function refreshThread(messageID: string, optimisticRoot?: Message) {
     selectedProfile = null;
-    selectedThread = message;
+    if (optimisticRoot) selectedThread = optimisticRoot;
     activeComposerContext = "thread";
-    const data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${message.id}/thread`);
+    const data = await api<{ root: Message; replies: Message[]; thread_state: ThreadState }>(`/api/messages/${messageID}/thread`);
     selectedThread = data.root;
     replies = data.replies;
     selectedThreadState = data.thread_state;
@@ -1239,16 +1398,13 @@
 
   async function openSearchResult(result: SearchResult) {
     searchResults = [];
-    if (result.message.channel_id) {
-      selectedChannelID = result.message.channel_id;
-      selectedDirectID = "";
-      await loadMessagesAround(result.message);
+    const targetID = result.message.channel_id || result.message.direct_conversation_id || "";
+    if (!selectedWorkspaceID || !targetID) return;
+    if (currentConversationKey() !== targetID) {
+      await navigateToApp(selectedWorkspaceID, targetID);
+      await applyRoute(selectedWorkspaceID, targetID);
     }
-    if (result.message.direct_conversation_id) {
-      selectedDirectID = result.message.direct_conversation_id;
-      selectedChannelID = "";
-      await loadMessagesAround(result.message);
-    }
+    if (currentConversationKey() === targetID) await loadMessagesAround(result.message);
   }
 
   async function loadMessagesAround(target: Message) {
@@ -1267,8 +1423,8 @@
       scrollMemory.set(targetKey, { atBottom: false, anchorMessageID: targetMessageID, anchorPixelOffset: 0 });
     }
     const isSwitching = targetKey !== viewKey;
+    resetHistoryPaging();
     if (isSwitching) {
-      resetHistoryPaging();
       messagesLoading = true;
     }
     try {
@@ -1317,13 +1473,8 @@
     directMemberID = "";
     showCreateDirect = false;
     directConversations = [...directConversations, data.conversation];
-    selectedDirectID = data.conversation.id;
-    selectedChannelID = "";
-    selectedThread = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
     mobileNavOpen = false;
-    await loadMessages();
+    await navigateToApp(selectedWorkspaceID, data.conversation.id);
   }
 
   async function startDirectFromModal(memberID: string) {
@@ -1335,13 +1486,8 @@
   }
 
   async function selectDirectConversation(conversationID: string) {
-    selectedDirectID = conversationID;
-    selectedChannelID = "";
-    selectedThread = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
     mobileNavOpen = false;
-    await loadMessages();
+    await navigateToApp(selectedWorkspaceID, conversationID);
   }
 
   async function startDirectWithUser(memberID: string) {
@@ -1351,13 +1497,8 @@
       conversation.members.some((member) => member.id === trimmed),
     );
     if (existing) {
-      selectedDirectID = existing.id;
-      selectedChannelID = "";
-      selectedThread = null;
-      selectedProfile = null;
-      activeComposerContext = "message";
       mobileNavOpen = false;
-      await loadMessages();
+      await navigateToApp(selectedWorkspaceID, existing.id);
       return;
     }
     const data = await api<{ conversation: DirectConversation }>("/api/dms", {
@@ -1365,13 +1506,8 @@
       body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [trimmed] })
     });
     directConversations = [...directConversations, data.conversation];
-    selectedDirectID = data.conversation.id;
-    selectedChannelID = "";
-    selectedThread = null;
-    selectedProfile = null;
-    activeComposerContext = "message";
     mobileNavOpen = false;
-    await loadMessages();
+    await navigateToApp(selectedWorkspaceID, data.conversation.id);
   }
 
   function connectRealtimeSocket() {
@@ -1396,7 +1532,7 @@
       return;
     }
     if ((event.type === "channel.created" || event.type === "channel.updated") && event.workspace_id === selectedWorkspaceID) {
-      await loadChannels();
+      await loadChannels(false, false, false);
       return;
     }
     if (messageEventAlreadyAccounted(event)) return;
@@ -1441,7 +1577,7 @@
     }
     const rootID = event.payload.root_message_id || event.payload.message_id;
     if (selectedThread && rootID === selectedThread.id) {
-      await openThread(selectedThread);
+      await refreshThread(selectedThread.id, selectedThread);
     }
   }
 
@@ -1636,11 +1772,16 @@
   }
 
   function closeSidePanel() {
+    const threadWasOpen = selectedThread !== null;
+    const parentTargetID = currentConversationKey();
     if (replyContext === "thread") clearReplyTarget();
     selectedThread = null;
     selectedProfile = null;
     activeComposerContext = "message";
     replies = [];
+    if (threadWasOpen && selectedWorkspaceID && parentTargetID) {
+      void navigateToApp(selectedWorkspaceID, parentTargetID);
+    }
   }
 
   function toggleSidePanelFromTopbar() {
@@ -1648,24 +1789,7 @@
     else status = "pick a message to open its thread";
   }
 
-  function closeModal() {
-    selectedImage = null;
-    showProfileSettings = false;
-    showCreateChannel = false;
-    showCreateDirect = false;
-  }
-
-  function closeMobileNav() {
-    mobileNavOpen = false;
-  }
-</script>
-
-<svelte:head>
-  <meta name="color-scheme" content="light dark" />
-</svelte:head>
-
-<svelte:window
-  onkeydown={(event) => {
+  function handleWindowKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       if (isModalOpen()) {
         closeModal();
@@ -1691,8 +1815,25 @@
       replyInput,
       target: activeComposerTarget,
     });
-  }}
-/>
+  }
+
+  function closeModal() {
+    selectedImage = null;
+    showProfileSettings = false;
+    showCreateChannel = false;
+    showCreateDirect = false;
+  }
+
+  function closeMobileNav() {
+    mobileNavOpen = false;
+  }
+</script>
+
+<svelte:head>
+  <meta name="color-scheme" content="light dark" />
+</svelte:head>
+
+<svelte:window onkeydowncapture={handleWindowKeydown} />
 
 {#if authRequired}
   <main class="auth-shell">
@@ -1749,6 +1890,7 @@
     {selectedWorkspaceID}
     {workspaceName}
     {showWorkspaceCreate}
+    hrefForWorkspace={(workspaceID) => appHref(workspaceID)}
     onSelectWorkspace={(workspaceID) => void selectWorkspace(workspaceID)}
     onToggleWorkspaceCreate={() => (showWorkspaceCreate = !showWorkspaceCreate)}
     onWorkspaceName={(value) => (workspaceName = value)}
@@ -1768,6 +1910,8 @@
     {selectedDirectID}
     {selectedProfile}
     onToggleCollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+    hrefForChannel={(channelID) => appHref(selectedWorkspaceID, channelID)}
+    hrefForDirect={(conversationID) => appHref(selectedWorkspaceID, conversationID)}
     onSelectChannel={(channelID) => void selectChannel(channelID)}
     onCreateChannel={() => (showCreateChannel = true)}
     onSelectDirect={(conversationID) => void selectDirectConversation(conversationID)}
@@ -1825,7 +1969,7 @@
       onJumpToQuote={(message) => void jumpToQuotedMessage(message)}
       onOpenImage={openImageViewer}
       onLoadOlder={requestOlderMessages}
-      onLoadNewer={() => requestNewerMessages()}
+      onLoadNewer={(source) => requestNewerMessages(source === "wheel")}
       onJumpToUnread={() => void jumpToUnreadBoundary()}
       onHistorySettled={handleHistorySettled}
       onReachedBottom={markActiveViewRead}

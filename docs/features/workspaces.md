@@ -43,6 +43,20 @@ Both endpoints emit a durable `channel.created` or `channel.updated` event into
 the workspace event stream so connected clients see the change without
 polling.
 
+## Web routes
+
+The web app uses ID-based routes for conversation navigation:
+
+```text
+/app/{workspace_id}
+/app/{workspace_id}/{target_id}
+```
+
+`target_id` is a channel ID (`chn_...`), direct conversation ID (`dm_...`), or
+thread root message ID (`msg_...`). Thread URLs resolve through the root
+message, inherit that message's channel or DM visibility, and then open the
+thread panel in the parent conversation.
+
 ## Membership rules
 
 - Every workspace mutation checks `requireMembership(workspace_id, user_id)`.

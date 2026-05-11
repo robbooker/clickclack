@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test.describe("type-to-focus composer", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "# general" }).click();
+    await page.getByRole("link", { name: "# general" }).click();
     await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
   });
 

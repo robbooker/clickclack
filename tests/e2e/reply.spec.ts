@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("inline quote-reply renders, jumps, and survives source delete", async ({ page }) => {
   await page.goto("/app");
-  await page.getByRole("button", { name: "# general" }).click();
+  await page.getByRole("link", { name: "# general" }).click();
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 
   // Send the original message we'll reply to.

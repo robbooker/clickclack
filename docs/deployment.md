@@ -30,6 +30,21 @@ The Go build step requires the SPA `dist/` to be present because `webassets`
 uses `go:embed`. The `pnpm build` script copies `apps/web/dist` into
 `apps/api/internal/webassets/dist`; CI must run it before `go build`.
 
+The embedded frontend is a SvelteKit static SPA. Reverse proxies should pass
+unknown paths through to the ClickClack binary, because direct visits to app
+routes such as `/app/wsp_.../chn_...`, `/app/wsp_.../dm_...`, and
+`/app/wsp_.../msg_...` are resolved by the frontend fallback.
+
+`pnpm build` defaults the SvelteKit app version to `dev` so repeated local
+builds do not rewrite embedded asset filenames when source code has not
+changed. Release automation should set `CLICKCLACK_WEB_VERSION` to the commit
+or tag being shipped so long-lived open browser tabs can detect a newly
+deployed frontend bundle:
+
+```sh
+CLICKCLACK_WEB_VERSION="$(git rev-parse --short=12 HEAD)" pnpm build
+```
+
 ## Releases
 
 GoReleaser is configured in `.goreleaser.yml`. It builds `clickclack` for
@@ -39,19 +54,24 @@ archives emitted as `.zip` and the others as `.tar.gz`. Linux `.deb` and
 
 ```sh
 pnpm install
-goreleaser release --snapshot --clean
+CLICKCLACK_WEB_VERSION="$(git rev-parse --short=12 HEAD)" \
+  goreleaser release --snapshot --clean
 ```
 
 The GoReleaser config runs `pnpm build` before compiling so the embedded SPA
-is refreshed. Publishing is handled by `.github/workflows/release.yml` on
-`v*` tags or manual dispatch with an existing tag.
+is refreshed. The GitHub release workflow sets `CLICKCLACK_WEB_VERSION` from
+the checked-out commit before invoking GoReleaser. Publishing is handled by
+`.github/workflows/release.yml` on `v*` tags or manual dispatch with an
+existing tag.
 
 ## Docker
 
 The provided `Dockerfile` is multi-stage:
 
 ```sh
-docker build -t clickclack .
+docker build \
+  --build-arg CLICKCLACK_WEB_VERSION="$(git rev-parse --short=12 HEAD)" \
+  -t clickclack .
 docker run --rm -p 8080:8080 -v clickclack-data:/app/data clickclack
 ```
 

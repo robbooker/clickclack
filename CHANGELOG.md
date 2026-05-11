@@ -31,6 +31,10 @@
   older and newer history as users move through the timeline, and opens search
   or quote targets with around-sequence context without breaking the
   after-sequence API contract. Thanks @shakkernerd.
+- Added route-driven chat URLs for workspace, channel, DM, and thread views so
+  direct links, refresh, and browser back/forward restore the selected
+  conversation without leaving stale in-memory navigation state. Thanks
+  @shakkernerd.
 - Fixed live-message handling while reading older history so incoming messages
   mark the current window as having newer history instead of silently paging
   the timeline forward.

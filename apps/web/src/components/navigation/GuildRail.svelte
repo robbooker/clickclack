@@ -7,6 +7,7 @@
     selectedWorkspaceID: string;
     workspaceName: string;
     showWorkspaceCreate: boolean;
+    hrefForWorkspace: (workspaceID: string) => string;
     onSelectWorkspace: (workspaceID: string) => void;
     onToggleWorkspaceCreate: () => void;
     onWorkspaceName: (value: string) => void;
@@ -18,11 +19,16 @@
     selectedWorkspaceID,
     workspaceName,
     showWorkspaceCreate,
+    hrefForWorkspace,
     onSelectWorkspace,
     onToggleWorkspaceCreate,
     onWorkspaceName,
     onCreateWorkspace,
   }: Props = $props();
+
+  function shouldHandleClientNavigation(event: MouseEvent): boolean {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  }
 </script>
 
 <nav id="workspace-navigation" class="guild-rail" aria-label="Workspaces">
@@ -33,9 +39,18 @@
   <div class="guild-list">
     {#each workspaces as workspace (workspace.id)}
       <div class="guild-wrap" class:active={workspace.id === selectedWorkspaceID}>
-        <button class="guild" title={workspace.name} onclick={() => onSelectWorkspace(workspace.id)}>
+        <a
+          class="guild"
+          title={workspace.name}
+          href={hrefForWorkspace(workspace.id)}
+          onclick={(event) => {
+            if (!shouldHandleClientNavigation(event)) return;
+            event.preventDefault();
+            onSelectWorkspace(workspace.id);
+          }}
+        >
           <span>{workspaceInitial(workspace.name)}</span>
-        </button>
+        </a>
       </div>
     {/each}
     <button

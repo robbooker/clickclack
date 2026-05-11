@@ -5,9 +5,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite dev --host 127.0.0.1",
     "build": "vite build",
-    "typecheck": "tsgo --noEmit -p tsconfig.json",
+    "typecheck": "svelte-kit sync && tsgo --noEmit -p tsconfig.json",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -21,6 +21,8 @@
     "vite": "^7.2.4"
   },
   "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.59.1",
     "@typescript/native-preview": "7.0.0-dev.20260507.1"
   }
 }

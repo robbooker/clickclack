@@ -595,7 +595,13 @@ func (s *Server) serveSPA(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	index, err := fs.ReadFile(dist, "index.html")
+	fallback := "index.html"
+	if r.URL.Path != "/" {
+		if _, err := fs.Stat(dist, "200.html"); err == nil {
+			fallback = "200.html"
+		}
+	}
+	index, err := fs.ReadFile(dist, fallback)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

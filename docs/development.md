@@ -60,6 +60,11 @@ The Vite dev server proxies `/api` and `/api/realtime/ws` to `localhost:8080`.
 | `pnpm test`            | `go test ./... && pnpm build`. |
 | `pnpm test:e2e`        | Playwright suite in `tests/e2e`. |
 
+`pnpm build` uses `CLICKCLACK_WEB_VERSION=dev` by default. That keeps repeated
+local builds deterministic while still allowing real source changes to update
+content-hashed assets. Release and Docker builds should set
+`CLICKCLACK_WEB_VERSION` to the commit or tag being shipped.
+
 ## Layout
 
 ```

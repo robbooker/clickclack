@@ -18,6 +18,8 @@
     selectedDirectID: string;
     selectedProfile: User | null;
     onToggleCollapse: () => void;
+    hrefForChannel: (channelID: string) => string;
+    hrefForDirect: (conversationID: string) => string;
     onSelectChannel: (channelID: string) => void;
     onCreateChannel: () => void;
     onSelectDirect: (conversationID: string) => void;
@@ -39,6 +41,8 @@
     selectedDirectID,
     selectedProfile,
     onToggleCollapse,
+    hrefForChannel,
+    hrefForDirect,
     onSelectChannel,
     onCreateChannel,
     onSelectDirect,
@@ -46,6 +50,10 @@
     onOpenProfile,
     onOpenSettings,
   }: Props = $props();
+
+  function shouldHandleClientNavigation(event: MouseEvent): boolean {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  }
 </script>
 
 <aside class="sidebar" aria-label="Channels and DMs">
@@ -79,6 +87,7 @@
       {channels}
       {selectedChannelID}
       {selectedDirectID}
+      {hrefForChannel}
       {onSelectChannel}
       {onCreateChannel}
     />
@@ -87,6 +96,7 @@
       conversations={directConversations}
       currentUserID={currentUser?.id}
       {selectedDirectID}
+      {hrefForDirect}
       {onSelectDirect}
       {onCreateDirect}
     />
@@ -99,12 +109,19 @@
       <div class="nav-list">
         {#each recentPeople as person (person.id)}
           {@const conversation = directConversationForUser(directConversations, person.id)}
-          <button
+          <a
+            href={conversation ? hrefForDirect(conversation.id) : "#"}
             class="nav-item dm"
             class:active={conversation?.id === selectedDirectID || selectedProfile?.id === person.id}
-            onclick={() => {
-              if (conversation) onSelectDirect(conversation.id);
-              else onOpenProfile(person);
+            onclick={(event) => {
+              if (conversation) {
+                if (!shouldHandleClientNavigation(event)) return;
+                event.preventDefault();
+                onSelectDirect(conversation.id);
+              } else {
+                event.preventDefault();
+                onOpenProfile(person);
+              }
             }}
           >
             <Avatar
@@ -116,7 +133,7 @@
             />
             <span class="nav-label">{person.display_name}</span>
             <span class="presence-dot active" aria-hidden="true"></span>
-          </button>
+          </a>
         {/each}
         {#if recentPeople.length === 0}
           <p class="nav-empty">People appear here as you chat</p>

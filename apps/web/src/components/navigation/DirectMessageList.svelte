@@ -7,6 +7,7 @@
     conversations: DirectConversation[];
     currentUserID?: string;
     selectedDirectID: string;
+    hrefForDirect: (conversationID: string) => string;
     onSelectDirect: (conversationID: string) => void;
     onCreateDirect: () => void;
   };
@@ -15,9 +16,14 @@
     conversations,
     currentUserID,
     selectedDirectID,
+    hrefForDirect,
     onSelectDirect,
     onCreateDirect,
   }: Props = $props();
+
+  function shouldHandleClientNavigation(event: MouseEvent): boolean {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+  }
 </script>
 
 <section class="nav-section">
@@ -37,11 +43,16 @@
       {@const dmUser = dmAvatarUser(conversation, currentUserID)}
       {@const unread = conversation.unread_count || 0}
       {@const isActive = conversation.id === selectedDirectID}
-      <button
+      <a
+        href={hrefForDirect(conversation.id)}
         class="nav-item dm"
         class:active={isActive}
         class:has-unread={unread > 0 && !isActive}
-        onclick={() => onSelectDirect(conversation.id)}
+        onclick={(event) => {
+          if (!shouldHandleClientNavigation(event)) return;
+          event.preventDefault();
+          onSelectDirect(conversation.id);
+        }}
       >
         <Avatar
           class="dm-avatar"
@@ -56,7 +67,7 @@
         {:else}
           <span class="presence-dot" aria-hidden="true"></span>
         {/if}
-      </button>
+      </a>
     {/each}
     {#if conversations.length === 0}
       <p class="nav-empty">No direct messages yet</p>

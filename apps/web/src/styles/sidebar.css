@@ -20,6 +20,7 @@
   place-items: center;
   background: var(--panel-2);
   color: var(--text);
+  text-decoration: none;
   border: 0;
   font-weight: 700;
   font-size: 14px;
@@ -303,6 +304,7 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
+  text-decoration: none;
   text-align: left;
   padding: 6px 10px;
   min-height: 30px;

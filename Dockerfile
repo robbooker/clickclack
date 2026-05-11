@@ -1,4 +1,6 @@
 FROM node:25-alpine AS web
+ARG CLICKCLACK_WEB_VERSION=dev
+ENV CLICKCLACK_WEB_VERSION=$CLICKCLACK_WEB_VERSION
 WORKDIR /src
 RUN npm install -g pnpm@11.0.7
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -8,6 +10,7 @@ COPY packages/sdk-ts/package.json packages/sdk-ts/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps apps
 COPY packages packages
+COPY scripts scripts
 RUN pnpm build
 
 FROM golang:1.26-alpine AS api
