@@ -443,6 +443,64 @@ func TestMigrateBackfillsRouteIDsOnce(t *testing.T) {
 	}
 }
 
+func TestRouteIDBackfillOnceSkipsBeforeMigrationAndAfterMarker(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := Open("sqlite://" + t.TempDir() + "/clickclack.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mustExecSQL(t, ctx, st, `CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`)
+
+	if err := st.backfillRouteIDsOnce(ctx); err != nil {
+		t.Fatalf("missing route-id migration should skip backfill, got %v", err)
+	}
+	mustExecSQL(t, ctx, st, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, routeIDMigrationName, now())
+	mustExecSQL(t, ctx, st, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, routeIDBackfillMarker, now())
+	if err := st.backfillRouteIDsOnce(ctx); err != nil {
+		t.Fatalf("completed route-id backfill marker should skip backfill, got %v", err)
+	}
+}
+
+func TestRouteIDBackfillOnceSurfacesIncompleteMigrationState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := Open("sqlite://" + t.TempDir() + "/clickclack.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	if err := st.backfillRouteIDsOnce(ctx); err == nil {
+		t.Fatal("expected missing migration table to surface an error")
+	}
+	mustExecSQL(t, ctx, st, `CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`)
+	mustExecSQL(t, ctx, st, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, routeIDMigrationName, now())
+	if err := st.backfillRouteIDsOnce(ctx); err == nil {
+		t.Fatal("expected route-id migration marker without route tables to surface a backfill error")
+	}
+}
+
+func TestRouteIDBackfillStopsOnFirstMissingRouteTable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := Open("sqlite://" + t.TempDir() + "/clickclack.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	mustExecSQL(t, ctx, st, `CREATE TABLE workspaces (id TEXT PRIMARY KEY, route_id TEXT)`)
+	if err := st.backfillRouteIDs(ctx); err == nil || !strings.Contains(err.Error(), "channels") {
+		t.Fatalf("expected missing channels table error, got %v", err)
+	}
+	mustExecSQL(t, ctx, st, `CREATE TABLE channels (id TEXT PRIMARY KEY, route_id TEXT)`)
+	if err := st.backfillRouteIDs(ctx); err == nil || !strings.Contains(err.Error(), "direct_conversations") {
+		t.Fatalf("expected missing direct_conversations table error, got %v", err)
+	}
+}
+
 func hasRoutePrefix(value, prefix string) bool {
 	return strings.HasPrefix(value, prefix) && len(value) == 17
 }
