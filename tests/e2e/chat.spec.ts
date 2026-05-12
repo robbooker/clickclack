@@ -187,6 +187,7 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   ).trim();
 
   await page.goto("/app");
+  await expect(page).toHaveURL(/\/app\/[^/]+\/[^/]+$/);
 
   await page
     .getByRole("button", { name: /Account settings for Local Captain/ })
