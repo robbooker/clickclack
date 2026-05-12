@@ -74,6 +74,11 @@ test("app routes restore channels, DMs, threads, fallbacks, and history navigati
   await expect(page.getByRole("heading", { name: `#${lateChannel.name}` })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/app/${workspace.route_id}/${lateChannel.route_id}$`));
 
+  await page.goto("about:blank");
+  await page.goto(`/app/${workspace.route_id}`);
+  await expect(page.getByRole("heading", { name: `#${lateChannel.name}` })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/app/${workspace.route_id}/${lateChannel.route_id}$`));
+
   await page.goto(`/app/${workspace.route_id}/${conversation.route_id}`);
   await expect(page.getByRole("heading", { name: /Route User/ })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/app/${workspace.route_id}/${conversation.route_id}$`));

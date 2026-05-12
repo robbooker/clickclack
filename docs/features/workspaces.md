@@ -64,6 +64,11 @@ URL with the canonical public route after permission checks.
 Thread URLs resolve through the root message, inherit that message's channel or
 DM visibility, and then open the thread panel in the parent conversation.
 
+When a user opens a bare workspace route, the web app returns to the last
+channel that browser visited in that workspace. If that saved channel is no
+longer visible, the app falls back to the first listed channel, then to the
+first direct conversation.
+
 ## Membership rules
 
 - Every workspace mutation checks `requireMembership(workspace_id, user_id)`.

@@ -37,6 +37,7 @@
   import type { Channel, DirectConversation, Message, MessagePage, RealtimeEvent, RouteTarget, SearchResult, ThreadState, Upload, User, Workspace } from "./lib/types";
 
   const LIVE_EDGE_TOLERANCE_PX = 96;
+  const LAST_CHANNEL_STORAGE_PREFIX = "clickclack:last-channel:v1:";
 
   export let routeWorkspaceID = "";
   export let routeTargetID = "";
@@ -117,6 +118,10 @@
   type UnreadMarker = {
     boundarySeq: number;
     since: string;
+  };
+  type StoredLastChannel = {
+    id?: string;
+    routeID?: string;
   };
 
   $: selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID);
@@ -274,8 +279,66 @@
     mobileNavOpen = false;
   }
 
-  function defaultTargetID(): string {
-    return channels[0]?.id || directConversations[0]?.id || "";
+  function defaultTargetID(workspaceID = selectedWorkspaceID): string {
+    return storedLastChannelID(workspaceID) || channels[0]?.id || directConversations[0]?.id || "";
+  }
+
+  function workspaceForID(workspaceID = selectedWorkspaceID): Workspace | undefined {
+    return workspaces.find((workspace) => workspace.id === workspaceID || workspace.route_id === workspaceID);
+  }
+
+  function lastChannelStorageKey(workspaceID = selectedWorkspaceID): string {
+    const workspace = workspaceForID(workspaceID);
+    const keyID = workspace?.route_id || workspace?.id || workspaceID;
+    return keyID ? `${LAST_CHANNEL_STORAGE_PREFIX}${keyID}` : "";
+  }
+
+  function parseStoredLastChannel(raw: string): StoredLastChannel {
+    try {
+      const parsed = JSON.parse(raw) as StoredLastChannel;
+      return {
+        id: typeof parsed.id === "string" ? parsed.id : "",
+        routeID: typeof parsed.routeID === "string" ? parsed.routeID : "",
+      };
+    } catch {
+      return { id: raw };
+    }
+  }
+
+  function storedLastChannelID(workspaceID = selectedWorkspaceID): string {
+    const key = lastChannelStorageKey(workspaceID);
+    if (!key) return "";
+    let stored: StoredLastChannel;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return "";
+      stored = parseStoredLastChannel(raw);
+    } catch {
+      return "";
+    }
+    const channel = channels.find((candidate) =>
+      candidate.id === stored.id || candidate.route_id === stored.routeID,
+    );
+    if (channel) return channel.id;
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Ignore unavailable storage; falling back to normal channel order is safe.
+    }
+    return "";
+  }
+
+  function rememberLastChannel(workspaceID: string, channelID: string) {
+    if (!workspaceID || !channelID) return;
+    const channel = channels.find((candidate) => candidate.id === channelID);
+    if (!channel) return;
+    const key = lastChannelStorageKey(workspaceID);
+    if (!key) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify({ id: channel.id, routeID: channel.route_id }));
+    } catch {
+      // Ignore unavailable storage; explicit routed URLs still restore the view.
+    }
   }
 
   async function applyRoute(workspaceIDParam = "", targetIDParam = "") {
@@ -341,6 +404,7 @@
         !workspaceChanged && selectedChannelID === targetID && !selectedDirectID && viewKey === targetID;
       selectedChannelID = targetID;
       selectedDirectID = "";
+      rememberLastChannel(workspace.id, targetID);
       clearRoutePanelState();
       if (sameConversation) {
         appliedRouteKey = canonicalRouteKey;
@@ -433,6 +497,7 @@
       if (!channels.some((channel) => channel.id === parentChannelID)) return false;
       selectedChannelID = parentChannelID;
       selectedDirectID = "";
+      rememberLastChannel(route.workspace_id, parentChannelID);
     } else if (parentDirectID) {
       if (!directConversations.some((conversation) => conversation.id === parentDirectID)) return false;
       selectedDirectID = parentDirectID;
@@ -501,6 +566,7 @@
 
   async function selectChannel(channelID: string) {
     mobileNavOpen = false;
+    rememberLastChannel(selectedWorkspaceID, channelID);
     const targetPath = appHref(selectedWorkspaceID, channelID);
     if (
       channelID === selectedChannelID &&

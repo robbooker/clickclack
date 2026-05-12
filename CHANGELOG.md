@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Remember the last visited channel per workspace in the web app so returning
+  to a bare workspace route no longer jumps back to the first channel in the
+  list. Thanks @shakkernerd.
 - Set the web app favicon to the ClickClack icon. Thanks @shakkernerd.
 - Added short public route IDs for workspace, channel, DM, and thread URLs while
   preserving internal IDs and canonicalizing older copied links. Thanks
