@@ -1177,6 +1177,13 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Existing thread reply returned for an idempotent nonce replay */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Created thread reply */
       201: {
         headers: {
@@ -1201,6 +1208,13 @@ export interface operations {
       };
     };
     responses: {
+      /** @description Reaction already existed; no event created */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Added reaction */
       201: {
         headers: {

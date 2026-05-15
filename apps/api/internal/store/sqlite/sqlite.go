@@ -291,6 +291,18 @@ func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([
 	return out, nil
 }
 
+func (s *Store) GetChannel(ctx context.Context, channelID, userID string) (store.Channel, error) {
+	row, err := s.q.GetChannel(ctx, channelID)
+	if err != nil {
+		return store.Channel{}, err
+	}
+	channel := storeChannelFromGetChannel(row)
+	if err := s.requireMembership(ctx, channel.WorkspaceID, userID); err != nil {
+		return store.Channel{}, err
+	}
+	return channel, nil
+}
+
 func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInput) (store.Channel, store.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -412,14 +424,8 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		return store.Message{}, store.Event{}, err
 	}
 	var quotedID, quotedAuthorID, quotedSnapshot string
-	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+	if input.QuotedMessageID != nil {
 		quotedID = strings.TrimSpace(*input.QuotedMessageID)
-		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "channel", channelID: input.ChannelID})
-		if err != nil {
-			return store.Message{}, store.Event{}, err
-		}
-		quotedSnapshot = snap
-		quotedAuthorID = authorID
 	}
 	if existing, err := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); err == nil {
 		if existing.ChannelID != input.ChannelID || existing.DirectConversationID != "" || existing.ParentMessageID != nil || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
@@ -428,6 +434,14 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		return existing, store.Event{}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return store.Message{}, store.Event{}, err
+	}
+	if quotedID != "" {
+		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "channel", channelID: input.ChannelID})
+		if err != nil {
+			return store.Message{}, store.Event{}, err
+		}
+		quotedSnapshot = snap
+		quotedAuthorID = authorID
 	}
 	if err := qtx.InsertChannelMessage(ctx, storedb.InsertChannelMessageParams{
 		ID:                 id,
@@ -539,9 +553,27 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	if body == "" {
 		return store.Message{}, store.ThreadState{}, nil, errors.New("reply body is required")
 	}
+	nonce, err := normalizeClientNonce(input.Nonce)
+	if err != nil {
+		return store.Message{}, store.ThreadState{}, nil, err
+	}
 	var quotedID, quotedAuthorID, quotedSnapshot string
-	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+	if input.QuotedMessageID != nil {
 		quotedID = strings.TrimSpace(*input.QuotedMessageID)
+	}
+	if existing, err := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); err == nil {
+		if existing.ThreadRootID != root.ID || existing.ParentMessageID == nil || *existing.ParentMessageID != root.ID || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
+			return store.Message{}, store.ThreadState{}, nil, store.ErrClientNonceConflict
+		}
+		stateRow, err := qtx.GetThreadState(ctx, root.ID)
+		if err != nil {
+			return store.Message{}, store.ThreadState{}, nil, err
+		}
+		return existing, storeThreadStateFromDB(stateRow), nil, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return store.Message{}, store.ThreadState{}, nil, err
+	}
+	if quotedID != "" {
 		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "thread", threadRootID: root.ID})
 		if err != nil {
 			return store.Message{}, store.ThreadState{}, nil, err
@@ -570,14 +602,25 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		QuotedMessageID:      sqlOptionalText(quotedID),
 		QuotedBodySnapshot:   quotedSnapshot,
 		QuotedAuthorID:       sqlOptionalText(quotedAuthorID),
+		ClientNonce:          nonce,
 	}); err != nil {
+		if existing, lookupErr := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); lookupErr == nil {
+			if existing.ThreadRootID == root.ID && existing.ParentMessageID != nil && *existing.ParentMessageID == root.ID && existing.Body == body && sameQuotedMessageID(existing, quotedID) {
+				stateRow, stateErr := qtx.GetThreadState(ctx, root.ID)
+				if stateErr != nil {
+					return store.Message{}, store.ThreadState{}, nil, stateErr
+				}
+				return existing, storeThreadStateFromDB(stateRow), nil, nil
+			}
+			return store.Message{}, store.ThreadState{}, nil, store.ErrClientNonceConflict
+		}
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	state, err := updateThreadState(ctx, tx, root.ID, input.AuthorID, createdAt)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
-	replyPayload := map[string]string{"message_id": id, "root_message_id": root.ID}
+	replyPayload := eventPayload(map[string]string{"message_id": id, "root_message_id": root.ID}, nonce)
 	statePayload := map[string]string{"root_message_id": root.ID}
 	var recipients []string
 	if root.DirectConversationID != "" {
@@ -648,13 +691,17 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 		return store.Event{}, err
 	}
 	qtx := s.q.WithTx(tx)
+	var affected int64
 	if add {
-		err = qtx.AddReaction(ctx, storedb.AddReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji, CreatedAt: now()})
+		affected, err = qtx.AddReaction(ctx, storedb.AddReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji, CreatedAt: now()})
 	} else {
-		err = qtx.RemoveReaction(ctx, storedb.RemoveReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji})
+		affected, err = qtx.RemoveReaction(ctx, storedb.RemoveReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji})
 	}
 	if err != nil {
 		return store.Event{}, err
+	}
+	if affected == 0 {
+		return store.Event{}, tx.Commit()
 	}
 	eventType := "reaction.added"
 	if !add {

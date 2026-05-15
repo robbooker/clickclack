@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"mime/multipart"
@@ -136,6 +137,10 @@ func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	otherMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: otherChannel.ID, AuthorID: owner.ID, Body: "other workspace message"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	bot, token, err := st.CreateBot(ctx, store.CreateBotInput{
 		WorkspaceID: workspace.ID,
 		OwnerUserID: owner.ID,
@@ -149,9 +154,40 @@ func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
 	if err := st.AddWorkspaceMember(ctx, otherWorkspace.ID, bot.ID, "bot"); err != nil {
 		t.Fatal(err)
 	}
+	otherDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: otherWorkspace.ID, UserID: owner.ID, MemberIDs: []string{bot.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDMMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: otherDM.ID, AuthorID: owner.ID, Body: "other dm"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadDir: filepath.Join(dataDir, "uploads")}).Handler())
 	t.Cleanup(server.Close)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/workspaces", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected scoped workspace list, got %s %s", resp.Status, string(body))
+	}
+	var workspaceList struct {
+		Workspaces []store.Workspace `json:"workspaces"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&workspaceList); err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaceList.Workspaces) != 1 || workspaceList.Workspaces[0].ID != workspace.ID {
+		t.Fatalf("bot token listed workspaces outside token scope: %#v", workspaceList.Workspaces)
+	}
 	expectStatusWithBearer(t, token.Token, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Bot"}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/workspaces", strings.NewReader(`{"name":"Nope"}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/workspaces/"+otherWorkspace.ID, nil, http.StatusForbidden)
@@ -161,6 +197,32 @@ func TestHTTPBotTokenWorkspaceIsolation(t *testing.T) {
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/realtime/events?workspace_id="+otherWorkspace.ID, nil, http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/dms", strings.NewReader(`{"workspace_id":"`+otherWorkspace.ID+`","member_ids":[]}`), http.StatusForbidden)
 	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/routes/"+otherWorkspace.RouteID+"/"+otherChannel.RouteID, nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/channels/"+otherChannel.ID+"/messages", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/channels/"+otherChannel.ID+"/messages", strings.NewReader(`{"body":"nope"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/channels/"+otherChannel.ID+"/read", strings.NewReader(`{"seq":1}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/hooks/mattermost/"+otherChannel.ID, strings.NewReader(`{"text":"nope"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/hooks/slash/"+otherChannel.ID, strings.NewReader(`command=/nope`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/messages/"+otherMessage.ID, nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/messages/"+otherMessage.ID+"/thread", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/messages/"+otherMessage.ID+"/thread/replies", strings.NewReader(`{"body":"nope"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/messages/"+otherMessage.ID+"/reactions", strings.NewReader(`{"emoji":"x"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodDelete, server.URL+"/api/messages/"+otherMessage.ID+"/reactions/x", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/dms/"+otherDM.ID+"/messages", nil, http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/dms/"+otherDM.ID+"/messages", strings.NewReader(`{"body":"nope"}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodPost, server.URL+"/api/dms/"+otherDM.ID+"/read", strings.NewReader(`{"seq":1}`), http.StatusForbidden)
+	expectStatusWithBearer(t, token.Token, http.MethodGet, server.URL+"/api/messages/"+otherDMMessage.ID, nil, http.StatusForbidden)
+
+	_, profileToken, err := st.CreateBot(ctx, store.CreateBotInput{
+		WorkspaceID: workspace.ID,
+		OwnerUserID: owner.ID,
+		DisplayName: "Profile Only Bot",
+		Scopes:      []string{"profile:read"},
+		CreatedBy:   owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatusWithBearer(t, profileToken.Token, http.MethodGet, server.URL+"/api/messages/"+otherMessage.ID, nil, http.StatusForbidden)
 }
 
 func TestHTTPUploadNotConfiguredAndCookieAuth(t *testing.T) {

@@ -13,6 +13,8 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
 
+const maxUploadBytes = 64 << 20
+
 func formInt(r *http.Request, key string) int {
 	v, err := strconv.Atoi(r.FormValue(key))
 	if err != nil || v < 0 {
@@ -38,6 +40,9 @@ func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
+		return
+	}
 	receipt, event, err := s.store.MarkChannelRead(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, body.Seq)
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
@@ -60,6 +65,9 @@ func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("dms:read"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if !s.requireBotDirectWorkspace(w, r, act, chi.URLParam(r, "conversation_id")) {
 		return
 	}
 	receipt, event, err := s.store.MarkDirectRead(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, body.Seq)
@@ -98,6 +106,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, errors.New("uploads are not configured"))
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -108,6 +117,10 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := act.requireWorkspace(workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
@@ -126,9 +139,19 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	defer tmp.Close()
+	committed := false
+	defer func() {
+		_ = tmp.Close()
+		if !committed {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
 	size, err := io.Copy(tmp, file)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -147,6 +170,9 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		DurationMS:  formInt(r, "duration_ms"),
 		StoragePath: tmp.Name(),
 	})
+	if err == nil {
+		committed = true
+	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": upload}, err)
 }
 
@@ -163,6 +189,9 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 	upload, err := s.store.GetUpload(r.Context(), chi.URLParam(r, "upload_id"), act.user.ID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
 		return
 	}
 	http.ServeFile(w, r, upload.StoragePath)
@@ -183,6 +212,17 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("uploads:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	upload, err := s.store.GetUpload(r.Context(), body.UploadID, act.user.ID)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
+		return
+	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
 		return
 	}
 	err = s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})
@@ -249,6 +289,9 @@ func (s *Server) listDirectMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if !s.requireBotDirectWorkspace(w, r, act, chi.URLParam(r, "conversation_id")) {
+		return
+	}
 	messages, err := s.store.ListDirectMessages(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, page)
 	writeMessagePage(w, messages, err)
 }
@@ -270,6 +313,9 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("dms:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if !s.requireBotDirectWorkspace(w, r, act, chi.URLParam(r, "conversation_id")) {
 		return
 	}
 	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
@@ -297,6 +343,9 @@ func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
+		return
+	}
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Text})
 	if err == nil {
 		s.hub.Publish(event)
@@ -317,6 +366,9 @@ func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("messages:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
 		return
 	}
 	text := strings.TrimSpace(r.FormValue("text"))

@@ -178,6 +178,7 @@ CREATE TABLE invites (
 CREATE TABLE auth_magic_links (
   id TEXT PRIMARY KEY,
   token TEXT NOT NULL UNIQUE,
+  token_hash TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL,
   display_name TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
@@ -186,10 +187,12 @@ CREATE TABLE auth_magic_links (
 );
 
 CREATE INDEX idx_auth_magic_links_token ON auth_magic_links(token);
+CREATE UNIQUE INDEX idx_auth_magic_links_token_hash ON auth_magic_links(token_hash) WHERE token_hash <> '';
 
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   token TEXT NOT NULL UNIQUE,
+  token_hash TEXT NOT NULL DEFAULT '',
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
@@ -197,6 +200,7 @@ CREATE TABLE sessions (
 );
 
 CREATE INDEX idx_sessions_token ON sessions(token);
+CREATE UNIQUE INDEX idx_sessions_token_hash ON sessions(token_hash) WHERE token_hash <> '';
 
 CREATE TABLE channel_reads (
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,

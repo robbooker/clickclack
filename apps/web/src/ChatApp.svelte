@@ -1475,7 +1475,7 @@
     if (!body || !selectedThread) return;
     const quote = replyTarget && replyContext === "thread" ? replyTarget : null;
     replyBody = "";
-    const payload: Record<string, unknown> = { body };
+    const payload: Record<string, unknown> = { body, nonce: newNonce() };
     if (quote) payload.quoted_message_id = quote.id;
     const data = await api<{ message: Message; thread_state: ThreadState }>(`/api/messages/${selectedThread.id}/thread/replies`, {
       method: "POST",

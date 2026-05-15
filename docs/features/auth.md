@@ -43,9 +43,10 @@ the magic-link flow to mint a session.
 
 ## Magic links
 
-Magic-link tokens are short-lived bearer credentials. They can be created over
-HTTP or from the CLI; the consume endpoint exchanges them for a durable
-session.
+Magic-link tokens are short-lived bearer credentials. In local dev mode the
+HTTP request endpoint returns the token for convenience; with dev auth disabled
+it only records the request and tokens should be created or delivered out of
+band. The consume endpoint exchanges a token for a durable session.
 
 ```http
 POST /api/auth/magic/request
@@ -55,7 +56,8 @@ POST /api/auth/magic/consume
 { "token": "<token>" }
 ```
 
-Or from the CLI, which is the V0 delivery path:
+For production-style deployments, use the CLI delivery path until SMTP delivery
+exists:
 
 ```sh
 clickclack admin magic-link create --email steipete@gmail.com --name "Peter"

@@ -2,6 +2,15 @@ package httpapi
 
 import "net/http"
 
+type magicLinkResponse struct {
+	ID          string  `json:"id"`
+	Email       string  `json:"email"`
+	DisplayName string  `json:"display_name"`
+	CreatedAt   string  `json:"created_at"`
+	ExpiresAt   string  `json:"expires_at"`
+	UsedAt      *string `json:"used_at,omitempty"`
+}
+
 func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email       string `json:"email"`
@@ -12,7 +21,18 @@ func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	link, err := s.store.CreateMagicLink(r.Context(), body.Email, body.DisplayName)
-	writeResultStatus(w, http.StatusCreated, map[string]any{"magic_link": link, "token": link.Token}, err)
+	response := map[string]any{"magic_link": magicLinkResponse{
+		ID:          link.ID,
+		Email:       link.Email,
+		DisplayName: link.DisplayName,
+		CreatedAt:   link.CreatedAt,
+		ExpiresAt:   link.ExpiresAt,
+		UsedAt:      link.UsedAt,
+	}}
+	if !s.disableDevAuth {
+		response["token"] = link.Token
+	}
+	writeResultStatus(w, http.StatusCreated, response, err)
 }
 
 func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {

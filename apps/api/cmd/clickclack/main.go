@@ -32,27 +32,35 @@ func main() {
 }
 
 func run() error {
-	cmd := "serve"
-	if len(os.Args) > 1 {
-		cmd = os.Args[1]
-	}
+	return runArgs(os.Args)
+}
+
+func runArgs(args []string) error {
+	cmd, cmdArgs, clientArgs := dispatchArgs(args)
 	switch cmd {
 	case "serve":
-		return serve(os.Args[2:])
+		return serve(cmdArgs)
 	case "migrate":
-		return migrate(os.Args[2:])
+		return migrate(cmdArgs)
 	case "admin":
-		return admin(os.Args[2:])
+		return admin(cmdArgs)
 	case "backup":
-		return backup(os.Args[2:])
+		return backup(cmdArgs)
 	case "export":
-		return exportData(os.Args[2:])
+		return exportData(cmdArgs)
 	case "version":
 		fmt.Printf("clickclack %s (%s, %s)\n", version, commit, date)
 		return nil
 	default:
-		return client(os.Args[1:])
+		return client(clientArgs)
 	}
+}
+
+func dispatchArgs(args []string) (string, []string, []string) {
+	if len(args) <= 1 {
+		return "serve", nil, nil
+	}
+	return args[1], args[2:], args[1:]
 }
 
 func serve(args []string) error {
@@ -397,11 +405,21 @@ func exportData(args []string) error {
 	if *out == "-" {
 		writer = os.Stdout
 	} else {
-		writer, err = os.Create(*out)
+		dir := filepath.Dir(*out)
+		writer, err = os.CreateTemp(dir, "."+filepath.Base(*out)+".tmp-*")
 		if err != nil {
 			return err
 		}
-		defer writer.Close()
+		tmpName := writer.Name()
+		defer os.Remove(tmpName)
+		if err := st.ExportJSON(context.Background(), writer); err != nil {
+			writer.Close()
+			return err
+		}
+		if err := writer.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmpName, *out)
 	}
 	return st.ExportJSON(context.Background(), writer)
 }

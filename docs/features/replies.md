@@ -22,10 +22,10 @@ This page covers (2).
 `POST /api/channels/{channel_id}/messages`,
 `POST /api/dms/{conversation_id}/messages`, and
 `POST /api/messages/{message_id}/thread/replies` all accept an optional
-`quoted_message_id`:
+`quoted_message_id` and `nonce`:
 
 ```json
-{ "body": "responding", "quoted_message_id": "msg_..." }
+{ "body": "responding", "quoted_message_id": "msg_...", "nonce": "client-uuid" }
 ```
 
 Server-side, three columns are stored on the new row:

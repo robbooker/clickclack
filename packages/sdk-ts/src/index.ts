@@ -291,7 +291,7 @@ export class ClickClackClient {
     },
     reply: async (
       messageId: string,
-      input: { body: string; quoted_message_id?: string },
+      input: { body: string; quoted_message_id?: string; nonce?: string },
     ): Promise<Message> => {
       const data = await this.request<{ message: Message }>(
         `/api/messages/${messageId}/thread/replies`,

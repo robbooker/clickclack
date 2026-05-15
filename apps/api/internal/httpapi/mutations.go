@@ -28,6 +28,9 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
+		return
+	}
 	channel, event, err := s.store.UpdateChannel(r.Context(), store.UpdateChannelInput{ChannelID: chi.URLParam(r, "channel_id"), UserID: act.user.ID, Name: body.Name, Kind: body.Kind, Archived: body.Archived})
 	if err == nil {
 		s.hub.Publish(event)
@@ -52,6 +55,9 @@ func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+		return
+	}
 	message, event, err := s.store.UpdateMessage(r.Context(), store.UpdateMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Body: body.Body})
 	if err == nil {
 		s.hub.Publish(event)
@@ -67,6 +73,9 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("messages:write"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
 		return
 	}
 	message, event, err := s.store.DeleteMessage(r.Context(), store.DeleteMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID})

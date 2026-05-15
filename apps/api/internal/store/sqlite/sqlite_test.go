@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
@@ -113,6 +114,9 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if len(exportBody["auth_magic_links"]) == 0 || len(exportBody["sessions"]) == 0 {
 		t.Fatalf("expected auth tables in export, got keys %#v", exportBody)
+	}
+	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) {
+		t.Fatalf("export leaked bearer token: %s", exported.String())
 	}
 	if len(exportBody["bot_tokens"]) == 0 {
 		t.Fatalf("expected bot_tokens in export, got keys %#v", exportBody)
@@ -384,6 +388,36 @@ func TestStoreClosedDatabaseErrors(t *testing.T) {
 				t.Fatal("expected closed database error")
 			}
 		})
+	}
+}
+
+func TestAuthTokenHashMigrationScrubsLegacyTokens(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st, err := Open("sqlite://" + filepath.Join(t.TempDir(), "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	applySQLiteMigrations(t, ctx, st, "0001_initial.sql", "0002_auth.sql")
+	expiresAt := time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano)
+	mustExecSQL(t, ctx, st, `INSERT INTO users (id, display_name, created_at) VALUES ('usr_legacy', 'Legacy', ?)`, now())
+	mustExecSQL(t, ctx, st, `INSERT INTO auth_magic_links (id, token, email, created_at, expires_at) VALUES ('aml_legacy', 'legacy-link-token', 'legacy@example.com', ?, ?)`, now(), expiresAt)
+	mustExecSQL(t, ctx, st, `INSERT INTO sessions (id, token, user_id, created_at, expires_at) VALUES ('ses_legacy', 'legacy-session-token', 'usr_legacy', ?, ?)`, now(), expiresAt)
+
+	applySQLiteMigrations(t, ctx, st, "0012_auth_token_hashes.sql")
+
+	if got := scalarCount(t, ctx, st, `SELECT COUNT(*) FROM auth_magic_links WHERE token = 'legacy-link-token' OR token_hash <> ''`); got != 0 {
+		t.Fatalf("expected legacy magic-link token to be scrubbed without hash backfill, got %d", got)
+	}
+	if got := scalarCount(t, ctx, st, `SELECT COUNT(*) FROM sessions WHERE token = 'legacy-session-token' OR token_hash <> ''`); got != 0 {
+		t.Fatalf("expected legacy session token to be scrubbed without hash backfill, got %d", got)
+	}
+	if _, _, err := st.ConsumeMagicLink(ctx, "legacy-link-token"); err == nil {
+		t.Fatal("expected legacy magic link token to be invalid after scrub migration")
+	}
+	if _, err := st.GetSessionUser(ctx, "legacy-session-token"); err == nil {
+		t.Fatal("expected legacy session token to be invalid after scrub migration")
 	}
 }
 

@@ -1,11 +1,11 @@
 -- name: InsertMagicLink :exec
-INSERT INTO auth_magic_links (id, token, email, display_name, created_at, expires_at)
-VALUES (sqlc.arg(id), sqlc.arg(token), sqlc.arg(email), sqlc.arg(display_name), sqlc.arg(created_at), sqlc.arg(expires_at));
+INSERT INTO auth_magic_links (id, token, token_hash, email, display_name, created_at, expires_at)
+VALUES (sqlc.arg(id), sqlc.arg(token), sqlc.arg(token_hash), sqlc.arg(email), sqlc.arg(display_name), sqlc.arg(created_at), sqlc.arg(expires_at));
 
 -- name: GetMagicLinkByToken :one
-SELECT id, token, email, display_name, created_at, expires_at, used_at
+SELECT id, token, token_hash, email, display_name, created_at, expires_at, used_at
 FROM auth_magic_links
-WHERE token = sqlc.arg(token);
+WHERE token_hash = sqlc.arg(token_hash);
 
 -- name: MarkMagicLinkUsed :exec
 UPDATE auth_magic_links
@@ -16,13 +16,13 @@ WHERE id = sqlc.arg(id);
 SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
-WHERE s.token = sqlc.arg(token)
+WHERE s.token_hash = sqlc.arg(token_hash)
   AND s.revoked_at IS NULL
   AND s.expires_at > sqlc.arg(now);
 
 -- name: InsertSession :exec
-INSERT INTO sessions (id, token, user_id, created_at, expires_at)
-VALUES (sqlc.arg(id), sqlc.arg(token), sqlc.arg(user_id), sqlc.arg(created_at), sqlc.arg(expires_at));
+INSERT INTO sessions (id, token, token_hash, user_id, created_at, expires_at)
+VALUES (sqlc.arg(id), sqlc.arg(token), sqlc.arg(token_hash), sqlc.arg(user_id), sqlc.arg(created_at), sqlc.arg(expires_at));
 
 -- name: GetUserByIdentityEmail :one
 SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
@@ -91,6 +91,8 @@ ORDER BY u.id;
 -- name: ListDirectPushNotificationRecipients :many
 SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
 FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 JOIN users u ON u.id = dcm.user_id
 JOIN user_notification_settings uns ON uns.user_id = u.id
 WHERE dcm.conversation_id = sqlc.arg(conversation_id)
@@ -300,6 +302,7 @@ SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created
        ), 0) AS INTEGER) AS unread_count
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.id = sqlc.arg(conversation_id)
   AND dcm.user_id = sqlc.arg(reader_user_id);
 
@@ -313,15 +316,19 @@ VALUES (sqlc.arg(conversation_id), sqlc.arg(user_id), sqlc.arg(created_at));
 
 -- name: RequireDirectMembership :one
 SELECT 1
-FROM direct_conversation_members
-WHERE conversation_id = sqlc.arg(conversation_id)
-  AND user_id = sqlc.arg(user_id);
+FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
+WHERE dcm.conversation_id = sqlc.arg(conversation_id)
+  AND dcm.user_id = sqlc.arg(user_id);
 
 -- name: DirectConversationMemberIDs :many
-SELECT user_id
-FROM direct_conversation_members
-WHERE conversation_id = sqlc.arg(conversation_id)
-ORDER BY user_id;
+SELECT dcm.user_id
+FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
+WHERE dcm.conversation_id = sqlc.arg(conversation_id)
+ORDER BY dcm.user_id;
 
 -- name: DirectConversationMembers :many
 SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
@@ -361,8 +368,8 @@ SET reply_count = reply_count + 1,
 WHERE root_message_id = sqlc.arg(root_message_id);
 
 -- name: InsertThreadReply :exec
-INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), sqlc.arg(direct_conversation_id), sqlc.arg(author_id), sqlc.arg(parent_message_id), sqlc.arg(thread_root_id), NULL, sqlc.arg(thread_seq), sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id));
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), sqlc.arg(direct_conversation_id), sqlc.arg(author_id), sqlc.arg(parent_message_id), sqlc.arg(thread_root_id), NULL, sqlc.arg(thread_seq), sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id), sqlc.arg(client_nonce));
 
 -- name: GetChannel :one
 SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
@@ -385,6 +392,7 @@ WHERE workspace_id = sqlc.arg(workspace_id)
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = sqlc.arg(workspace_id)
   AND dc.id = sqlc.arg(id)
   AND dcm.user_id = sqlc.arg(user_id);
@@ -393,6 +401,7 @@ WHERE dc.workspace_id = sqlc.arg(workspace_id)
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = sqlc.arg(workspace_id)
   AND dc.route_id = sqlc.arg(route_id)
   AND dcm.user_id = sqlc.arg(user_id);
@@ -407,6 +416,7 @@ WHERE workspace_id = sqlc.arg(workspace_id)
 SELECT COALESCE(dc.route_id, '') AS route_id
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = sqlc.arg(workspace_id)
   AND dc.id = sqlc.arg(id)
   AND dcm.user_id = sqlc.arg(user_id);
@@ -430,11 +440,11 @@ SET body = '',
     deleted_at = sqlc.arg(deleted_at)
 WHERE id = sqlc.arg(id);
 
--- name: AddReaction :exec
+-- name: AddReaction :execrows
 INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at)
 VALUES (sqlc.arg(message_id), sqlc.arg(user_id), sqlc.arg(emoji), sqlc.arg(created_at));
 
--- name: RemoveReaction :exec
+-- name: RemoveReaction :execrows
 DELETE FROM reactions
 WHERE message_id = sqlc.arg(message_id)
   AND user_id = sqlc.arg(user_id)

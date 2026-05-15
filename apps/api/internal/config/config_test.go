@@ -63,6 +63,17 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	if _, err := Load(""); err == nil {
 		t.Fatal("expected bad bool env error")
 	}
+	overrideBoolPath := filepath.Join(t.TempDir(), "override-bool.json")
+	if err := os.WriteFile(overrideBoolPath, []byte(`{"dev_bootstrap":false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(overrideBoolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DevBootstrap {
+		t.Fatalf("expected file boolean to override invalid env: %#v", cfg)
+	}
 	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "")
 	badPath := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(badPath, []byte(`{`), 0o644); err != nil {

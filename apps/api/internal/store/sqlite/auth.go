@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -26,7 +28,8 @@ func (s *Store) CreateMagicLink(ctx context.Context, email, displayName string) 
 	}
 	return link, s.q.InsertMagicLink(ctx, storedb.InsertMagicLinkParams{
 		ID:          link.ID,
-		Token:       link.Token,
+		Token:       link.ID,
+		TokenHash:   tokenHash(link.Token),
 		Email:       link.Email,
 		DisplayName: link.DisplayName,
 		CreatedAt:   link.CreatedAt,
@@ -41,7 +44,8 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 	}
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
-	linkRow, err := qtx.GetMagicLinkByToken(ctx, strings.TrimSpace(token))
+	token = strings.TrimSpace(token)
+	linkRow, err := qtx.GetMagicLinkByToken(ctx, tokenHash(token))
 	if err != nil {
 		return store.User{}, store.Session{}, err
 	}
@@ -69,7 +73,8 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string) (store.User,
 }
 
 func (s *Store) GetSessionUser(ctx context.Context, token string) (store.User, error) {
-	row, err := s.q.GetSessionUser(ctx, storedb.GetSessionUserParams{Token: token, Now: now()})
+	token = strings.TrimSpace(token)
+	row, err := s.q.GetSessionUser(ctx, storedb.GetSessionUserParams{TokenHash: tokenHash(token), Now: now()})
 	if err != nil {
 		return store.User{}, err
 	}
@@ -125,9 +130,15 @@ func createSessionTx(ctx context.Context, q *storedb.Queries, userID string) (st
 	}
 	return session, q.InsertSession(ctx, storedb.InsertSessionParams{
 		ID:        session.ID,
-		Token:     session.Token,
+		Token:     session.ID,
+		TokenHash: tokenHash(session.Token),
 		UserID:    session.UserID,
 		CreatedAt: session.CreatedAt,
 		ExpiresAt: session.ExpiresAt,
 	})
+}
+
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
 }

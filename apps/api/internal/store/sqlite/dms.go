@@ -153,14 +153,8 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 		return store.Message{}, store.Event{}, err
 	}
 	var quotedID, quotedAuthorID, quotedSnapshot string
-	if input.QuotedMessageID != nil && strings.TrimSpace(*input.QuotedMessageID) != "" {
+	if input.QuotedMessageID != nil {
 		quotedID = strings.TrimSpace(*input.QuotedMessageID)
-		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "dm", directConversationID: input.ConversationID})
-		if err != nil {
-			return store.Message{}, store.Event{}, err
-		}
-		quotedSnapshot = snap
-		quotedAuthorID = authorID
 	}
 	if existing, err := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); err == nil {
 		if existing.DirectConversationID != input.ConversationID || existing.ChannelID != "" || existing.ParentMessageID != nil || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
@@ -169,6 +163,14 @@ func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirec
 		return existing, store.Event{}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return store.Message{}, store.Event{}, err
+	}
+	if quotedID != "" {
+		snap, authorID, err := resolveQuoteRefTx(ctx, tx, quotedID, quoteScope{kind: "dm", directConversationID: input.ConversationID})
+		if err != nil {
+			return store.Message{}, store.Event{}, err
+		}
+		quotedSnapshot = snap
+		quotedAuthorID = authorID
 	}
 	if err := qtx.InsertDirectMessage(ctx, storedb.InsertDirectMessageParams{
 		ID:                   id,

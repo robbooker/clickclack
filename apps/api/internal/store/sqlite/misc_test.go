@@ -242,6 +242,16 @@ func TestStoreMiscBranches(t *testing.T) {
 	if len(results) == 0 || results[0].Message.ParentMessageID == nil || results[0].Message.ThreadSeq == nil {
 		t.Fatalf("expected reply search result with thread fields, got %#v", results)
 	}
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaces[0].ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	recipients, err = st.ListPushNotificationRecipients(ctx, dmMessage.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recipients) != 0 {
+		t.Fatalf("revoked DM member should not receive push notifications, got %#v", recipients)
+	}
 }
 
 func TestEnsureDefaultWorkspaceMemberCreatesWorkspace(t *testing.T) {

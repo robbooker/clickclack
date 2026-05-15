@@ -41,6 +41,7 @@ func (s *Store) SearchMessages(ctx context.Context, workspaceID, channelID, user
 		  AND messages_fts MATCH ?
 		  AND m.direct_conversation_id IS NULL
 		  AND m.channel_id IS NOT NULL
+		  AND m.deleted_at IS NULL
 		  `+channelWhere+`
 		ORDER BY rank
 		LIMIT ?`, args...)

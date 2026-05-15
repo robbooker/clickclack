@@ -263,6 +263,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateMessageRequest"
       responses:
+        "200":
+          description: Existing thread reply returned for an idempotent nonce replay
         "201":
           description: Created thread reply
   /api/messages/{message_id}/reactions:
@@ -277,6 +279,8 @@ paths:
             schema:
               $ref: "#/components/schemas/AddReactionRequest"
       responses:
+        "200":
+          description: Reaction already existed; no event created
         "201":
           description: Added reaction
   /api/messages/{message_id}/attachments:

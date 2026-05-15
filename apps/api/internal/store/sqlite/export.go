@@ -25,7 +25,7 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 		if err != nil {
 			return err
 		}
-		values, err := rowsToMaps(rows)
+		values, err := rowsToMaps(table, rows)
 		if err != nil {
 			return err
 		}
@@ -36,7 +36,7 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 	return encoder.Encode(out)
 }
 
-func rowsToMaps(rows *sql.Rows) ([]map[string]any, error) {
+func rowsToMaps(table string, rows *sql.Rows) ([]map[string]any, error) {
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
@@ -54,6 +54,10 @@ func rowsToMaps(rows *sql.Rows) ([]map[string]any, error) {
 		}
 		row := map[string]any{}
 		for i, col := range cols {
+			if shouldRedactExportColumn(table, col) {
+				row[col] = "[redacted]"
+				continue
+			}
 			switch value := values[i].(type) {
 			case []byte:
 				row[col] = string(value)
@@ -64,4 +68,8 @@ func rowsToMaps(rows *sql.Rows) ([]map[string]any, error) {
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+func shouldRedactExportColumn(table, column string) bool {
+	return column == "token" && (table == "auth_magic_links" || table == "sessions")
 }

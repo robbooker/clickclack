@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/textproto"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,12 +145,21 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 		t.Fatalf("expected two root messages, got %d", len(messages.Messages))
 	}
 
-	reply := postJSON[struct {
+	reply, replyStatus := postJSONWithStatus[struct {
 		Message     store.Message     `json:"message"`
 		ThreadState store.ThreadState `json:"thread_state"`
-	}](t, server.URL+"/api/messages/"+created.Message.ID+"/thread/replies", map[string]string{"body": "thread _reply_"})
-	if reply.ThreadState.ReplyCount != 1 {
-		t.Fatalf("expected reply count 1, got %d", reply.ThreadState.ReplyCount)
+		Events      []store.Event     `json:"events"`
+	}](t, server.URL+"/api/messages/"+created.Message.ID+"/thread/replies", map[string]string{"body": "thread _reply_", "nonce": "http-thread-nonce-1"})
+	if replyStatus != http.StatusCreated || reply.ThreadState.ReplyCount != 1 || len(reply.Events) != 2 || reply.Message.Nonce != "http-thread-nonce-1" {
+		t.Fatalf("unexpected thread reply create: status=%d payload=%#v", replyStatus, reply)
+	}
+	replayedReply, replayedReplyStatus := postJSONWithStatus[struct {
+		Message     store.Message     `json:"message"`
+		ThreadState store.ThreadState `json:"thread_state"`
+		Events      []store.Event     `json:"events"`
+	}](t, server.URL+"/api/messages/"+created.Message.ID+"/thread/replies", map[string]string{"body": "thread _reply_", "nonce": "http-thread-nonce-1"})
+	if replayedReplyStatus != http.StatusOK || replayedReply.Message.ID != reply.Message.ID || replayedReply.ThreadState.ReplyCount != 1 || len(replayedReply.Events) != 0 {
+		t.Fatalf("unexpected thread reply replay: status=%d payload=%#v", replayedReplyStatus, replayedReply)
 	}
 
 	thread := getJSON[struct {
@@ -181,12 +191,20 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if rawUpload.ContentType != "application/octet-stream" || rawUpload.Width != 33 || rawUpload.Height != 0 || rawUpload.DurationMS != 0 {
 		t.Fatalf("unexpected raw upload metadata: %#v", rawUpload)
 	}
+	privateUpload := uploadFileAsUser(t, second.ID, server.URL+"/api/uploads", workspace.ID, "private.txt", "private upload")
+	expectStatus(t, http.MethodPost, server.URL+"/api/messages/"+created.Message.ID+"/attachments", strings.NewReader(`{"upload_id":"`+privateUpload.ID+`"}`), http.StatusForbidden)
 
 	reaction := postJSON[struct {
 		Event store.Event `json:"event"`
 	}](t, server.URL+"/api/messages/"+created.Message.ID+"/reactions", map[string]string{"emoji": "lobster"})
 	if reaction.Event.Type != "reaction.added" {
 		t.Fatalf("unexpected reaction event: %s", reaction.Event.Type)
+	}
+	duplicateReaction, duplicateStatus := postJSONWithStatus[struct {
+		Event store.Event `json:"event"`
+	}](t, server.URL+"/api/messages/"+created.Message.ID+"/reactions", map[string]string{"emoji": "lobster"})
+	if duplicateStatus != http.StatusOK || duplicateReaction.Event.ID != "" {
+		t.Fatalf("expected duplicate reaction no-op, status=%d event=%#v", duplicateStatus, duplicateReaction.Event)
 	}
 	deleteJSON(t, server.URL+"/api/messages/"+created.Message.ID+"/reactions/lobster")
 
@@ -808,6 +826,43 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	expectStatus(t, http.MethodPost, server.URL+"/api/workspaces/missing/channels", strings.NewReader(`{"name":"x"}`), http.StatusBadRequest)
 	expectStatus(t, http.MethodGet, server.URL+"/api/realtime/ws", nil, http.StatusBadRequest)
 	expectStatus(t, http.MethodPost, server.URL+"/api/uploads", strings.NewReader("not multipart"), http.StatusBadRequest)
+	{
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.WriteField("workspace_id", "wsp_missing"); err != nil {
+			t.Fatal(err)
+		}
+		part, err := writer.CreateFormFile("file", "orphan.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("orphan")); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/api/uploads", &body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected invalid upload workspace to be forbidden, got %s", resp.Status)
+		}
+		entries, err := os.ReadDir(filepath.Join(dataDir, "uploads"))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("expected invalid upload to leave no files, got %v", entries)
+		}
+	}
 	expectStatus(t, http.MethodGet, server.URL+"/api/uploads/missing", nil, http.StatusNotFound)
 	expectStatus(t, http.MethodGet, server.URL+"/api/search?workspace_id=missing&q=x", nil, http.StatusBadRequest)
 }
@@ -1008,6 +1063,11 @@ func expectStatusWithBearer(t *testing.T, token, method, endpoint string, body i
 
 func uploadFile(t *testing.T, endpoint, workspaceID, filename, content string) store.Upload {
 	t.Helper()
+	return uploadFileAsUser(t, "", endpoint, workspaceID, filename, content)
+}
+
+func uploadFileAsUser(t *testing.T, userID, endpoint, workspaceID, filename, content string) store.Upload {
+	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	if err := writer.WriteField("workspace_id", workspaceID); err != nil {
@@ -1023,7 +1083,15 @@ func uploadFile(t *testing.T, endpoint, workspaceID, filename, content string) s
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := http.Post(endpoint, writer.FormDataContentType(), &body)
+	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if userID != "" {
+		req.Header.Set("X-ClickClack-User", userID)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1123,6 +1191,15 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 
 	expectStatus(t, http.MethodGet, server.URL+"/api/me", nil, http.StatusUnauthorized)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Nope"}`), http.StatusUnauthorized)
+	link := postJSON[struct {
+		Token     string `json:"token"`
+		MagicLink struct {
+			Token string `json:"token"`
+		} `json:"magic_link"`
+	}](t, server.URL+"/api/auth/magic/request", map[string]string{"email": "no-token@example.com"})
+	if link.Token != "" || link.MagicLink.Token != "" {
+		t.Fatalf("production magic-link request leaked token: %#v", link)
+	}
 	for _, tc := range []struct {
 		method string
 		path   string

@@ -15,7 +15,7 @@ answering, see [replies.md](replies.md).
 
 ```http
 GET  /api/messages/{message_id}/thread                    # root + replies + state
-POST /api/messages/{message_id}/thread/replies            # body
+POST /api/messages/{message_id}/thread/replies            # body, quote, nonce
 ```
 
 `GET` returns:
@@ -28,8 +28,10 @@ POST /api/messages/{message_id}/thread/replies            # body
 }
 ```
 
-`POST` accepts `{body}`. Empty replies are rejected; replying to a non-root
-message returns an error (`nested thread replies are not supported`).
+`POST` accepts `{body, quoted_message_id?, nonce?}`. Empty replies are rejected;
+replying to a non-root message returns an error (`nested thread replies are not
+supported`). `nonce` is an optional idempotency key; replaying the same nonce
+with the same body and quote returns the existing reply with HTTP 200.
 
 ## Schema invariants
 

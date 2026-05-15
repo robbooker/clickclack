@@ -696,7 +696,7 @@ func TestStoreBranchCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.ExecContext(ctx, `UPDATE auth_magic_links SET expires_at = '2000-01-01T00:00:00Z' WHERE token = ?`, expired.Token); err != nil {
+	if _, err := st.db.ExecContext(ctx, `UPDATE auth_magic_links SET expires_at = '2000-01-01T00:00:00Z' WHERE token_hash = ?`, tokenHash(expired.Token)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.ConsumeMagicLink(ctx, expired.Token); err == nil {

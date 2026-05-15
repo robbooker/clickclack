@@ -227,6 +227,7 @@ type CreateThreadReplyInput struct {
 	AuthorID        string
 	Body            string
 	QuotedMessageID *string
+	Nonce           string
 }
 
 type CreateReactionInput struct {
@@ -363,6 +364,7 @@ type Store interface {
 	ResolveRouteTarget(ctx context.Context, userID, workspaceRouteID, targetRouteID string) (RouteTarget, error)
 	ResolveLegacyRouteTarget(ctx context.Context, userID, workspaceID, targetID string) (RouteTarget, error)
 	ListChannels(ctx context.Context, workspaceID, userID string) ([]Channel, error)
+	GetChannel(ctx context.Context, channelID, userID string) (Channel, error)
 	CreateChannel(ctx context.Context, input CreateChannelInput) (Channel, Event, error)
 	UpdateChannel(ctx context.Context, input UpdateChannelInput) (Channel, Event, error)
 	ListMessages(ctx context.Context, channelID, userID string, page MessagePageRequest) (MessagePage, error)

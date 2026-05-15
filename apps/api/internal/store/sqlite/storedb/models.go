@@ -11,6 +11,7 @@ import (
 type AuthMagicLink struct {
 	ID          string         `json:"id"`
 	Token       string         `json:"token"`
+	TokenHash   string         `json:"token_hash"`
 	Email       string         `json:"email"`
 	DisplayName string         `json:"display_name"`
 	CreatedAt   string         `json:"created_at"`
@@ -142,6 +143,7 @@ type Reaction struct {
 type Session struct {
 	ID        string         `json:"id"`
 	Token     string         `json:"token"`
+	TokenHash string         `json:"token_hash"`
 	UserID    string         `json:"user_id"`
 	CreatedAt string         `json:"created_at"`
 	ExpiresAt string         `json:"expires_at"`

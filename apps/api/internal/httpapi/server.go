@@ -240,6 +240,15 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, err := s.store.ListWorkspaces(r.Context(), act.user.ID)
+	if err == nil && act.botTokenID != "" {
+		filtered := items[:0]
+		for _, item := range items {
+			if item.ID == act.workspaceID {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
 	writeResult(w, map[string]any{"workspaces": items}, err)
 }
 
@@ -347,6 +356,9 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
+		return
+	}
 	messages, err := s.store.ListMessages(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, page)
 	writeMessagePage(w, messages, err)
 }
@@ -370,6 +382,9 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
+		return
+	}
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
@@ -379,12 +394,22 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getMessage(w http.ResponseWriter, r *http.Request) {
-	user, err := s.currentUser(r)
+	act, err := s.currentActor(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	message, err := s.store.GetMessage(r.Context(), chi.URLParam(r, "message_id"), user.ID)
+	if err := act.requireScope("messages:read"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	message, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id"))
+	if !ok {
+		return
+	}
+	if act.botTokenID == "" {
+		message, err = s.store.GetMessage(r.Context(), chi.URLParam(r, "message_id"), act.user.ID)
+	}
 	writeResult(w, map[string]any{"message": message}, err)
 }
 
@@ -396,6 +421,9 @@ func (s *Server) getThread(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := act.requireScope("threads:read"); err != nil {
 		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
 		return
 	}
 	root, replies, state, err := s.store.GetThread(r.Context(), chi.URLParam(r, "message_id"), act.user.ID, queryInt(r, "limit", 100))
@@ -415,17 +443,21 @@ func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body            string `json:"body"`
 		QuotedMessageID string `json:"quoted_message_id"`
+		Nonce           string `json:"nonce"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	message, state, events, err := s.store.CreateThreadReply(r.Context(), store.CreateThreadReplyInput{RootMessageID: chi.URLParam(r, "message_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID)})
-	if err == nil {
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+		return
+	}
+	message, state, events, err := s.store.CreateThreadReply(r.Context(), store.CreateThreadReplyInput{RootMessageID: chi.URLParam(r, "message_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
+	if err == nil && len(events) > 0 {
 		s.hub.PublishMany(events)
 		s.notifyMessageCreated(r.Context(), message)
 	}
-	writeResultStatus(w, http.StatusCreated, map[string]any{"message": message, "thread_state": state, "events": events}, err)
+	writeThreadReplyCreateResult(w, message, state, events, err)
 }
 
 func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
@@ -445,11 +477,14 @@ func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+		return
+	}
 	event, err := s.store.AddReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: body.Emoji})
-	if err == nil {
+	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
-	writeResultStatus(w, http.StatusCreated, map[string]any{"event": event}, err)
+	writeEventMutationResult(w, http.StatusCreated, event, err)
 }
 
 func (s *Server) removeReaction(w http.ResponseWriter, r *http.Request) {
@@ -462,11 +497,14 @@ func (s *Server) removeReaction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+		return
+	}
 	event, err := s.store.RemoveReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: chi.URLParam(r, "emoji")})
-	if err == nil {
+	if err == nil && event.ID != "" {
 		s.hub.Publish(event)
 	}
-	writeResult(w, map[string]any{"event": event}, err)
+	writeEventMutationResult(w, http.StatusOK, event, err)
 }
 
 func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
@@ -721,6 +759,30 @@ func writeMessageCreateResult(w http.ResponseWriter, message store.Message, even
 		status = http.StatusCreated
 	}
 	writeJSON(w, status, body)
+}
+
+func writeThreadReplyCreateResult(w http.ResponseWriter, message store.Message, state store.ThreadState, events []store.Event, err error) {
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	status := http.StatusOK
+	if len(events) > 0 {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, map[string]any{"message": message, "thread_state": state, "events": events})
+}
+
+func writeEventMutationResult(w http.ResponseWriter, changedStatus int, event store.Event, err error) {
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	status := http.StatusOK
+	if event.ID != "" {
+		status = changedStatus
+	}
+	writeJSON(w, status, map[string]any{"event": event})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

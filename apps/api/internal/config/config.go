@@ -24,6 +24,20 @@ func Defaults() Config {
 
 func Load(path string) (Config, error) {
 	cfg := Defaults()
+	var fileBody []byte
+	fileHasDevBootstrap := false
+	if path != "" {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return Config{}, err
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(body, &fields); err != nil {
+			return Config{}, err
+		}
+		_, fileHasDevBootstrap = fields["dev_bootstrap"]
+		fileBody = body
+	}
 	if env := os.Getenv("CLICKCLACK_ADDR"); env != "" {
 		cfg.Addr = env
 	}
@@ -36,7 +50,7 @@ func Load(path string) (Config, error) {
 	if env := os.Getenv("CLICKCLACK_PUBLIC_URL"); env != "" {
 		cfg.PublicURL = env
 	}
-	if env := os.Getenv("CLICKCLACK_DEV_BOOTSTRAP"); env != "" {
+	if env := os.Getenv("CLICKCLACK_DEV_BOOTSTRAP"); env != "" && !fileHasDevBootstrap {
 		value, err := strconv.ParseBool(env)
 		if err != nil {
 			return Config{}, err
@@ -58,11 +72,7 @@ func Load(path string) (Config, error) {
 	if path == "" {
 		return cfg, nil
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return Config{}, err
-	}
-	if err := json.Unmarshal(body, &cfg); err != nil {
+	if err := json.Unmarshal(fileBody, &cfg); err != nil {
 		return Config{}, err
 	}
 	if cfg.Addr == "" {

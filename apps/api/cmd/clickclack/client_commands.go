@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -209,7 +210,14 @@ func (c apiClient) messagesList(args []string) error {
 	var result struct {
 		Messages []store.Message `json:"messages"`
 	}
-	path := fmt.Sprintf("/api/channels/%s/messages?limit=%d&after_seq=%d", url.PathEscape(channel.ID), *limit, *afterSeq)
+	values := url.Values{}
+	values.Set("limit", strconv.Itoa(*limit))
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "after-seq" {
+			values.Set("after_seq", strconv.FormatInt(*afterSeq, 10))
+		}
+	})
+	path := fmt.Sprintf("/api/channels/%s/messages?%s", url.PathEscape(channel.ID), values.Encode())
 	if err := c.get(path, &result); err != nil {
 		return err
 	}

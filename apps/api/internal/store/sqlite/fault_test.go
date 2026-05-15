@@ -116,7 +116,7 @@ func TestStoreFaultBranches(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.db.ExecContext(ctx, `UPDATE auth_magic_links SET expires_at = 'bad' WHERE token = ?`, link.Token); err != nil {
+		if _, err := st.db.ExecContext(ctx, `UPDATE auth_magic_links SET expires_at = 'bad' WHERE token_hash = ?`, tokenHash(link.Token)); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := st.ConsumeMagicLink(ctx, link.Token); err == nil {

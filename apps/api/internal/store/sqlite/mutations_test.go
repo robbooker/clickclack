@@ -164,6 +164,51 @@ func TestMutationsRejectInvalidInput(t *testing.T) {
 	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: message.ID, UserID: member.ID}); err == nil {
 		t.Fatal("expected non-author member message delete error")
 	}
+	reactionMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channels[0].ID, AuthorID: owner.ID, Body: "react"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstReaction, err := st.AddReaction(ctx, store.CreateReactionInput{MessageID: reactionMessage.ID, UserID: owner.ID, Emoji: "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstReaction.ID == "" || firstReaction.Type != "reaction.added" {
+		t.Fatalf("unexpected first reaction event: %#v", firstReaction)
+	}
+	duplicateReaction, err := st.AddReaction(ctx, store.CreateReactionInput{MessageID: reactionMessage.ID, UserID: owner.ID, Emoji: "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicateReaction.ID != "" {
+		t.Fatalf("duplicate reaction emitted event: %#v", duplicateReaction)
+	}
+	removedReaction, err := st.RemoveReaction(ctx, store.CreateReactionInput{MessageID: reactionMessage.ID, UserID: owner.ID, Emoji: "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removedReaction.ID == "" || removedReaction.Type != "reaction.removed" {
+		t.Fatalf("unexpected remove reaction event: %#v", removedReaction)
+	}
+	missingReaction, err := st.RemoveReaction(ctx, store.CreateReactionInput{MessageID: reactionMessage.ID, UserID: owner.ID, Emoji: "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missingReaction.ID != "" {
+		t.Fatalf("missing reaction emitted event: %#v", missingReaction)
+	}
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: message.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.UpdateMessage(ctx, store.UpdateMessageInput{MessageID: message.ID, UserID: owner.ID, Body: "deleted body returns"}); err == nil {
+		t.Fatal("expected deleted message update error")
+	}
+	results, err := st.SearchMessages(ctx, workspaces[0].ID, channels[0].ID, owner.ID, "deleted body returns", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("deleted message was searchable: %#v", results)
+	}
 }
 
 func TestMutationsReturnOutboxErrors(t *testing.T) {

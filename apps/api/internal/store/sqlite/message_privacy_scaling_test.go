@@ -99,6 +99,22 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: workspaceOnly.ID}); err == nil {
 		t.Fatal("expected non-DM member to be blocked from attaching to a DM message")
 	}
+	privateUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: owner.ID, Filename: "private.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/private.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: publicMessage.ID, UploadID: privateUpload.ID, UserID: member.ID}); err == nil {
+		t.Fatal("expected member to be blocked from attaching another user's private upload")
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, upload.ID, workspaceOnly.ID); err == nil {
+		t.Fatal("expected non-DM member to be blocked from fetching a DM upload")
+	}
+	if _, err := st.GetUpload(ctx, upload.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	reply, state, events, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{
 		RootMessageID: dmMessage.ID,

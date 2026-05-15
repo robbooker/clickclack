@@ -198,6 +198,24 @@ func TestMarkDirectReadAndUnreadCounts(t *testing.T) {
 	if _, err := st.GetDirectConversation(ctx, "dm_missing", owner.ID); err == nil {
 		t.Fatal("expected missing direct conversation lookup to fail")
 	}
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspace.ID, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetDirectConversation(ctx, dm.ID, other.ID); err == nil {
+		t.Fatal("expected former workspace member direct conversation lookup to be rejected")
+	}
+	if _, err := st.ListDirectMessages(ctx, dm.ID, other.ID, store.MessagePageRequest{Limit: 10}); err == nil {
+		t.Fatal("expected former workspace member direct messages to be rejected")
+	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: other.ID, Body: "after revoke"}); err == nil {
+		t.Fatal("expected former workspace member direct message send to be rejected")
+	}
+	if _, _, err := st.MarkDirectRead(ctx, dm.ID, other.ID, 1); err == nil {
+		t.Fatal("expected former workspace member direct read to be rejected")
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, other.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
 	emptyDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{
 		WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{other.ID},
 	})

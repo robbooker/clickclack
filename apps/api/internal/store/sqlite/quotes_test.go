@@ -147,6 +147,9 @@ func TestCreateMessageNonceReplayWithQuote(t *testing.T) {
 	if event.ID == "" {
 		t.Fatal("expected first quoted nonce send to emit an event")
 	}
+	if _, _, err := f.store.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: f.rootA.ID, UserID: f.owner.ID}); err != nil {
+		t.Fatal(err)
+	}
 	replayed, replayEvent, err := f.store.CreateMessage(ctx, store.CreateMessageInput{
 		ChannelID:       f.channelA.ID,
 		AuthorID:        f.owner.ID,
@@ -168,6 +171,51 @@ func TestCreateMessageNonceReplayWithQuote(t *testing.T) {
 	})
 	if !errors.Is(err, store.ErrClientNonceConflict) {
 		t.Fatalf("expected quote mismatch nonce conflict, got %v", err)
+	}
+}
+
+func TestCreateThreadReplyNonceReplayWithQuote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newQuotesFixture(t)
+
+	first, firstState, events, err := f.store.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID:   f.rootA.ID,
+		AuthorID:        f.owner.ID,
+		Body:            "thread retry",
+		QuotedMessageID: ptr(f.rootA.ID),
+		Nonce:           "thread-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstState.ReplyCount != 1 || len(events) != 2 {
+		t.Fatalf("expected first reply event pair, got %#v / %#v", firstState, events)
+	}
+	if _, _, err := f.store.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: f.rootA.ID, UserID: f.owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	replayed, replayState, replayEvents, err := f.store.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID:   f.rootA.ID,
+		AuthorID:        f.owner.ID,
+		Body:            "thread retry",
+		QuotedMessageID: ptr(f.rootA.ID),
+		Nonce:           "thread-nonce-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ID != first.ID || replayState.ReplyCount != 1 || len(replayEvents) != 0 {
+		t.Fatalf("expected thread nonce replay without events, got %#v / %#v / %#v", replayed, replayState, replayEvents)
+	}
+	_, _, _, err = f.store.CreateThreadReply(ctx, store.CreateThreadReplyInput{
+		RootMessageID: f.rootA.ID,
+		AuthorID:      f.owner.ID,
+		Body:          "thread retry changed",
+		Nonce:         "thread-nonce-1",
+	})
+	if !errors.Is(err, store.ErrClientNonceConflict) {
+		t.Fatalf("expected thread nonce conflict, got %v", err)
 	}
 }
 

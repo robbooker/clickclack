@@ -75,6 +75,9 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 	if msg.AuthorID != input.UserID {
 		return store.Message{}, store.Event{}, errors.New("only the author can edit a message")
 	}
+	if msg.DeletedAt != nil {
+		return store.Message{}, store.Event{}, errors.New("deleted messages cannot be edited")
+	}
 	body := strings.TrimSpace(input.Body)
 	if body == "" {
 		return store.Message{}, store.Event{}, errors.New("message body is required")

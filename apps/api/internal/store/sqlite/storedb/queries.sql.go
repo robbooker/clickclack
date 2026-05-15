@@ -10,7 +10,7 @@ import (
 	"database/sql"
 )
 
-const addReaction = `-- name: AddReaction :exec
+const addReaction = `-- name: AddReaction :execrows
 INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at)
 VALUES (?1, ?2, ?3, ?4)
 `
@@ -22,14 +22,17 @@ type AddReactionParams struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) error {
-	_, err := q.db.ExecContext(ctx, addReaction,
+func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, addReaction,
 		arg.MessageID,
 		arg.UserID,
 		arg.Emoji,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const attachUpload = `-- name: AttachUpload :exec
@@ -113,10 +116,12 @@ func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyPa
 }
 
 const directConversationMemberIDs = `-- name: DirectConversationMemberIDs :many
-SELECT user_id
-FROM direct_conversation_members
-WHERE conversation_id = ?1
-ORDER BY user_id
+SELECT dcm.user_id
+FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
+WHERE dcm.conversation_id = ?1
+ORDER BY dcm.user_id
 `
 
 func (q *Queries) DirectConversationMemberIDs(ctx context.Context, conversationID string) ([]string, error) {
@@ -222,6 +227,7 @@ const directRouteID = `-- name: DirectRouteID :one
 SELECT COALESCE(dc.route_id, '') AS route_id
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = ?1
   AND dc.id = ?2
   AND dcm.user_id = ?3
@@ -462,6 +468,7 @@ const getDirectByIDAndWorkspace = `-- name: GetDirectByIDAndWorkspace :one
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = ?1
   AND dc.id = ?2
   AND dcm.user_id = ?3
@@ -496,6 +503,7 @@ const getDirectByRouteIDAndWorkspace = `-- name: GetDirectByRouteIDAndWorkspace 
 SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.workspace_id = ?1
   AND dc.route_id = ?2
   AND dcm.user_id = ?3
@@ -540,6 +548,7 @@ SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created
        ), 0) AS INTEGER) AS unread_count
 FROM direct_conversations dc
 JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 WHERE dc.id = ?2
   AND dcm.user_id = ?1
 `
@@ -588,17 +597,18 @@ func (q *Queries) GetDirectConversationWorkspace(ctx context.Context, id string)
 }
 
 const getMagicLinkByToken = `-- name: GetMagicLinkByToken :one
-SELECT id, token, email, display_name, created_at, expires_at, used_at
+SELECT id, token, token_hash, email, display_name, created_at, expires_at, used_at
 FROM auth_magic_links
-WHERE token = ?1
+WHERE token_hash = ?1
 `
 
-func (q *Queries) GetMagicLinkByToken(ctx context.Context, token string) (AuthMagicLink, error) {
-	row := q.db.QueryRowContext(ctx, getMagicLinkByToken, token)
+func (q *Queries) GetMagicLinkByToken(ctx context.Context, tokenHash string) (AuthMagicLink, error) {
+	row := q.db.QueryRowContext(ctx, getMagicLinkByToken, tokenHash)
 	var i AuthMagicLink
 	err := row.Scan(
 		&i.ID,
 		&i.Token,
+		&i.TokenHash,
 		&i.Email,
 		&i.DisplayName,
 		&i.CreatedAt,
@@ -630,14 +640,14 @@ const getSessionUser = `-- name: GetSessionUser :one
 SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
 FROM sessions s
 JOIN users u ON u.id = s.user_id
-WHERE s.token = ?1
+WHERE s.token_hash = ?1
   AND s.revoked_at IS NULL
   AND s.expires_at > ?2
 `
 
 type GetSessionUserParams struct {
-	Token string `json:"token"`
-	Now   string `json:"now"`
+	TokenHash string `json:"token_hash"`
+	Now       string `json:"now"`
 }
 
 type GetSessionUserRow struct {
@@ -651,7 +661,7 @@ type GetSessionUserRow struct {
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) (GetSessionUserRow, error) {
-	row := q.db.QueryRowContext(ctx, getSessionUser, arg.Token, arg.Now)
+	row := q.db.QueryRowContext(ctx, getSessionUser, arg.TokenHash, arg.Now)
 	var i GetSessionUserRow
 	err := row.Scan(
 		&i.ID,
@@ -1255,13 +1265,14 @@ func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) erro
 }
 
 const insertMagicLink = `-- name: InsertMagicLink :exec
-INSERT INTO auth_magic_links (id, token, email, display_name, created_at, expires_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+INSERT INTO auth_magic_links (id, token, token_hash, email, display_name, created_at, expires_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
 `
 
 type InsertMagicLinkParams struct {
 	ID          string `json:"id"`
 	Token       string `json:"token"`
+	TokenHash   string `json:"token_hash"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	CreatedAt   string `json:"created_at"`
@@ -1272,6 +1283,7 @@ func (q *Queries) InsertMagicLink(ctx context.Context, arg InsertMagicLinkParams
 	_, err := q.db.ExecContext(ctx, insertMagicLink,
 		arg.ID,
 		arg.Token,
+		arg.TokenHash,
 		arg.Email,
 		arg.DisplayName,
 		arg.CreatedAt,
@@ -1281,13 +1293,14 @@ func (q *Queries) InsertMagicLink(ctx context.Context, arg InsertMagicLinkParams
 }
 
 const insertSession = `-- name: InsertSession :exec
-INSERT INTO sessions (id, token, user_id, created_at, expires_at)
-VALUES (?1, ?2, ?3, ?4, ?5)
+INSERT INTO sessions (id, token, token_hash, user_id, created_at, expires_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 `
 
 type InsertSessionParams struct {
 	ID        string `json:"id"`
 	Token     string `json:"token"`
+	TokenHash string `json:"token_hash"`
 	UserID    string `json:"user_id"`
 	CreatedAt string `json:"created_at"`
 	ExpiresAt string `json:"expires_at"`
@@ -1297,6 +1310,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	_, err := q.db.ExecContext(ctx, insertSession,
 		arg.ID,
 		arg.Token,
+		arg.TokenHash,
 		arg.UserID,
 		arg.CreatedAt,
 		arg.ExpiresAt,
@@ -1305,8 +1319,8 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 }
 
 const insertThreadReply = `-- name: InsertThreadReply :exec
-INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'markdown', ?10, ?11, ?12, ?13)
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, 'markdown', ?10, ?11, ?12, ?13, ?14)
 `
 
 type InsertThreadReplyParams struct {
@@ -1323,6 +1337,7 @@ type InsertThreadReplyParams struct {
 	QuotedMessageID      sql.NullString `json:"quoted_message_id"`
 	QuotedBodySnapshot   string         `json:"quoted_body_snapshot"`
 	QuotedAuthorID       sql.NullString `json:"quoted_author_id"`
+	ClientNonce          string         `json:"client_nonce"`
 }
 
 func (q *Queries) InsertThreadReply(ctx context.Context, arg InsertThreadReplyParams) error {
@@ -1340,6 +1355,7 @@ func (q *Queries) InsertThreadReply(ctx context.Context, arg InsertThreadReplyPa
 		arg.QuotedMessageID,
 		arg.QuotedBodySnapshot,
 		arg.QuotedAuthorID,
+		arg.ClientNonce,
 	)
 	return err
 }
@@ -1573,6 +1589,8 @@ func (q *Queries) ListDirectConversations(ctx context.Context, arg ListDirectCon
 const listDirectPushNotificationRecipients = `-- name: ListDirectPushNotificationRecipients :many
 SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
 FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
 JOIN users u ON u.id = dcm.user_id
 JOIN user_notification_settings uns ON uns.user_id = u.id
 WHERE dcm.conversation_id = ?1
@@ -1866,7 +1884,7 @@ func (q *Queries) ReadDirectRead(ctx context.Context, arg ReadDirectReadParams) 
 	return i, err
 }
 
-const removeReaction = `-- name: RemoveReaction :exec
+const removeReaction = `-- name: RemoveReaction :execrows
 DELETE FROM reactions
 WHERE message_id = ?1
   AND user_id = ?2
@@ -1879,16 +1897,21 @@ type RemoveReactionParams struct {
 	Emoji     string `json:"emoji"`
 }
 
-func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
-	_, err := q.db.ExecContext(ctx, removeReaction, arg.MessageID, arg.UserID, arg.Emoji)
-	return err
+func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, removeReaction, arg.MessageID, arg.UserID, arg.Emoji)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const requireDirectMembership = `-- name: RequireDirectMembership :one
 SELECT 1
-FROM direct_conversation_members
-WHERE conversation_id = ?1
-  AND user_id = ?2
+FROM direct_conversation_members dcm
+JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+JOIN workspace_members wm ON wm.workspace_id = dc.workspace_id AND wm.user_id = dcm.user_id
+WHERE dcm.conversation_id = ?1
+  AND dcm.user_id = ?2
 `
 
 type RequireDirectMembershipParams struct {

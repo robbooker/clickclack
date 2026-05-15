@@ -50,6 +50,36 @@ func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.U
 	if err := s.requireMembership(ctx, upload.WorkspaceID, userID); err != nil {
 		return store.Upload{}, err
 	}
+	rows, err := s.db.QueryContext(ctx, `SELECT message_id FROM message_attachments WHERE upload_id = ?`, uploadID)
+	if err != nil {
+		return store.Upload{}, err
+	}
+	defer rows.Close()
+	messageIDs := []string{}
+	for rows.Next() {
+		var messageID string
+		if err := rows.Scan(&messageID); err != nil {
+			return store.Upload{}, err
+		}
+		messageIDs = append(messageIDs, messageID)
+	}
+	if err := rows.Err(); err != nil {
+		return store.Upload{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return store.Upload{}, err
+	}
+	for _, messageID := range messageIDs {
+		if _, err := s.GetMessage(ctx, messageID, userID); err == nil {
+			return upload, nil
+		}
+	}
+	if len(messageIDs) > 0 {
+		return store.Upload{}, errors.New("upload is not visible")
+	}
+	if upload.OwnerID != userID {
+		return store.Upload{}, errors.New("upload is not visible")
+	}
 	return upload, nil
 }
 
@@ -73,6 +103,44 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	}
 	if uploadWorkspace != msg.WorkspaceID {
 		return errors.New("upload and message workspaces differ")
+	}
+	uploadRow, err := qtx.GetUpload(ctx, input.UploadID)
+	if err != nil {
+		return err
+	}
+	upload := storeUploadFromGetUpload(uploadRow)
+	if upload.OwnerID != input.UserID {
+		rows, err := tx.QueryContext(ctx, `SELECT message_id FROM message_attachments WHERE upload_id = ?`, input.UploadID)
+		if err != nil {
+			return err
+		}
+		messageIDs := []string{}
+		for rows.Next() {
+			var messageID string
+			if err := rows.Scan(&messageID); err != nil {
+				rows.Close()
+				return err
+			}
+			messageIDs = append(messageIDs, messageID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		visible := false
+		for _, messageID := range messageIDs {
+			attachedMessage, err := getMessageTx(ctx, tx, messageID)
+			if err == nil && requireMessageAccessTx(ctx, tx, attachedMessage, input.UserID) == nil {
+				visible = true
+				break
+			}
+		}
+		if !visible {
+			return errors.New("upload is not visible")
+		}
 	}
 	if err := qtx.AttachUpload(ctx, storedb.AttachUploadParams{
 		MessageID: input.MessageID,
