@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdentityUserInput) (store.User, error) {
@@ -15,13 +16,9 @@ func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdenti
 	if provider == "" || subject == "" {
 		return store.User{}, errors.New("identity provider and subject are required")
 	}
-	user, err := scanUser(s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
-		FROM identities i
-		JOIN users u ON u.id = i.user_id
-		WHERE i.provider = ? AND i.provider_subject = ?`, provider, subject))
+	row, err := s.q.GetUserByIdentityProviderSubject(ctx, storedb.GetUserByIdentityProviderSubjectParams{Provider: provider, ProviderSubject: subject})
 	if err == nil {
-		return s.hydrateUserNotificationSettings(ctx, user)
+		return s.hydrateUserNotificationSettings(ctx, storeUserFromIdentityProviderSubject(row))
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return store.User{}, err
@@ -31,7 +28,8 @@ func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdenti
 		return store.User{}, err
 	}
 	defer tx.Rollback()
-	user = store.User{
+	qtx := s.q.WithTx(tx)
+	user := store.User{
 		ID:          newID("usr"),
 		Kind:        "human",
 		DisplayName: strings.TrimSpace(input.DisplayName),
@@ -45,13 +43,22 @@ func (s *Store) UpsertIdentityUser(ctx context.Context, input store.UpsertIdenti
 	if user.DisplayName == "" {
 		user.DisplayName = provider + ":" + subject
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO users (id, display_name, avatar_url, created_at) VALUES (?, ?, ?, ?)`, user.ID, user.DisplayName, user.AvatarURL, user.CreatedAt); err != nil {
+	if err := qtx.InsertHumanUser(ctx, storedb.InsertHumanUserParams{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+		AvatarUrl:   user.AvatarURL,
+		CreatedAt:   user.CreatedAt,
+	}); err != nil {
 		return store.User{}, err
 	}
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO identities (id, user_id, provider, provider_subject, email, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, newID("idn"), user.ID, provider, subject, strings.TrimSpace(input.Email), user.CreatedAt)
-	if err != nil {
+	if err := qtx.InsertIdentity(ctx, storedb.InsertIdentityParams{
+		ID:              newID("idn"),
+		UserID:          user.ID,
+		Provider:        provider,
+		ProviderSubject: subject,
+		Email:           strings.TrimSpace(input.Email),
+		CreatedAt:       user.CreatedAt,
+	}); err != nil {
 		return store.User{}, err
 	}
 	if err := tx.Commit(); err != nil {

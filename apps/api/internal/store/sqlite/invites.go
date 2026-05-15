@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) CreateInvite(ctx context.Context, workspaceID, createdBy string) (store.Invite, error) {
@@ -17,8 +18,11 @@ func (s *Store) CreateInvite(ctx context.Context, workspaceID, createdBy string)
 		CreatedBy:   createdBy,
 		CreatedAt:   now(),
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO invites (id, workspace_id, token, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?)`, invite.ID, invite.WorkspaceID, invite.Token, invite.CreatedBy, invite.CreatedAt)
-	return invite, err
+	return invite, s.q.InsertInvite(ctx, storedb.InsertInviteParams{
+		ID:          invite.ID,
+		WorkspaceID: invite.WorkspaceID,
+		Token:       invite.Token,
+		CreatedBy:   invite.CreatedBy,
+		CreatedAt:   invite.CreatedAt,
+	})
 }

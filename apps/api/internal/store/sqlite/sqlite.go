@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 	_ "modernc.org/sqlite"
 )
 
@@ -22,6 +23,7 @@ var migrationsFS embed.FS
 
 type Store struct {
 	db *sql.DB
+	q  *storedb.Queries
 }
 
 func Open(dbURL string) (*Store, error) {
@@ -50,7 +52,7 @@ func Open(dbURL string) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, q: storedb.New(db)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -134,12 +136,24 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 	if user.DisplayName == "" {
 		user.DisplayName = "Local User"
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO users (id, display_name, avatar_url, created_at) VALUES (?, ?, ?, ?)`, user.ID, user.DisplayName, user.AvatarURL, user.CreatedAt); err != nil {
+	qtx := s.q.WithTx(tx)
+	if err := qtx.InsertHumanUser(ctx, storedb.InsertHumanUserParams{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+		AvatarUrl:   user.AvatarURL,
+		CreatedAt:   user.CreatedAt,
+	}); err != nil {
 		return store.User{}, err
 	}
 	if input.Email != "" {
-		_, err = tx.ExecContext(ctx, `INSERT INTO identities (id, user_id, provider, provider_subject, email, created_at) VALUES (?, ?, 'local', ?, ?, ?)`, newID("idn"), user.ID, input.Email, input.Email, user.CreatedAt)
-		if err != nil {
+		if err := qtx.InsertIdentity(ctx, storedb.InsertIdentityParams{
+			ID:              newID("idn"),
+			UserID:          user.ID,
+			Provider:        "local",
+			ProviderSubject: input.Email,
+			Email:           input.Email,
+			CreatedAt:       user.CreatedAt,
+		}); err != nil {
 			return store.User{}, err
 		}
 	}
@@ -147,19 +161,19 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 }
 
 func (s *Store) FirstUser(ctx context.Context) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
+	row, err := s.q.FirstUser(ctx)
 	if err != nil {
 		return store.User{}, err
 	}
-	return s.hydrateUserNotificationSettings(ctx, user)
+	return s.hydrateUserNotificationSettings(ctx, storeUserFromFirstUser(row))
 }
 
 func (s *Store) GetUser(ctx context.Context, id string) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users WHERE id = ?`, id))
+	row, err := s.q.GetUser(ctx, id)
 	if err != nil {
 		return store.User{}, err
 	}
-	return s.hydrateUserNotificationSettings(ctx, user)
+	return s.hydrateUserNotificationSettings(ctx, storeUserFromGetUser(row))
 }
 
 func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserProfileInput) (store.User, error) {
@@ -178,11 +192,12 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 	if err != nil {
 		return store.User{}, err
 	}
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE users
-		SET display_name = ?, handle = ?, avatar_url = ?
-		WHERE id = ?`, displayName, handle, avatarURL, input.UserID)
-	if err != nil {
+	if err := s.q.UpdateUserProfile(ctx, storedb.UpdateUserProfileParams{
+		DisplayName: displayName,
+		Handle:      handle,
+		AvatarUrl:   avatarURL,
+		ID:          input.UserID,
+	}); err != nil {
 		if strings.Contains(err.Error(), "idx_users_handle") || strings.Contains(err.Error(), "users.handle") {
 			return store.User{}, errors.New("handle is already taken")
 		}
@@ -226,6 +241,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	if w.Slug == "" {
 		w.Slug = slug(w.Name)
 	}
+	qtx := s.q.WithTx(tx)
 	inserted := false
 	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
 		routeID, err := newRouteID('T')
@@ -233,7 +249,13 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 			return store.Workspace{}, err
 		}
 		w.RouteID = routeID
-		if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, route_id, name, slug, created_at) VALUES (?, ?, ?, ?, ?)`, w.ID, w.RouteID, w.Name, w.Slug, w.CreatedAt); err != nil {
+		if err := qtx.InsertWorkspace(ctx, storedb.InsertWorkspaceParams{
+			ID:        w.ID,
+			RouteID:   sqlText(w.RouteID),
+			Name:      w.Name,
+			Slug:      w.Slug,
+			CreatedAt: w.CreatedAt,
+		}); err != nil {
 			if isRouteIDConflict(err) {
 				continue
 			}
@@ -245,7 +267,12 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	if !inserted {
 		return store.Workspace{}, errors.New("could not create workspace route_id after collision retries")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)`, w.ID, ownerID, w.CreatedAt); err != nil {
+	if err := qtx.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
+		WorkspaceID: w.ID,
+		UserID:      ownerID,
+		Role:        "owner",
+		CreatedAt:   w.CreatedAt,
+	}); err != nil {
 		return store.Workspace{}, err
 	}
 	return w, tx.Commit()
@@ -646,13 +673,11 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 }
 
 func (s *Store) requireMembership(ctx context.Context, workspaceID, userID string) error {
-	var one int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID).Scan(&one)
+	_, err := s.q.RequireMembership(ctx, storedb.RequireMembershipParams{WorkspaceID: workspaceID, UserID: userID})
 	return err
 }
 
 func requireMembershipTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) error {
-	var one int
-	err := tx.QueryRowContext(ctx, `SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID).Scan(&one)
+	_, err := storedb.New(tx).RequireMembership(ctx, storedb.RequireMembershipParams{WorkspaceID: workspaceID, UserID: userID})
 	return err
 }

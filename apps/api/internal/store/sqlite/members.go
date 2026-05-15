@@ -6,16 +6,19 @@ import (
 	"errors"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) AddWorkspaceMember(ctx context.Context, workspaceID, userID, role string) error {
 	if role == "" {
 		role = "member"
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, created_at)
-		VALUES (?, ?, ?, ?)`, workspaceID, userID, role, now())
-	return err
+	return s.q.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Role:        role,
+		CreatedAt:   now(),
+	})
 }
 
 func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string) (store.Workspace, error) {
@@ -24,15 +27,10 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 		return store.Workspace{}, err
 	}
 	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
 
-	var workspace store.Workspace
-	err = tx.QueryRowContext(ctx, `SELECT id, COALESCE(route_id, ''), name, slug, created_at FROM workspaces ORDER BY created_at LIMIT 1`).Scan(
-		&workspace.ID,
-		&workspace.RouteID,
-		&workspace.Name,
-		&workspace.Slug,
-		&workspace.CreatedAt,
-	)
+	row, err := qtx.FirstWorkspace(ctx)
+	workspace := storeWorkspaceFromFirstWorkspace(row)
 	if err != nil && err != sql.ErrNoRows {
 		return store.Workspace{}, err
 	}
@@ -45,7 +43,13 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 				return store.Workspace{}, err
 			}
 			workspace.RouteID = workspaceRouteID
-			if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, route_id, name, slug, created_at) VALUES (?, ?, ?, ?, ?)`, workspace.ID, workspace.RouteID, workspace.Name, workspace.Slug, workspace.CreatedAt); err != nil {
+			if err := qtx.InsertWorkspace(ctx, storedb.InsertWorkspaceParams{
+				ID:        workspace.ID,
+				RouteID:   sqlText(workspace.RouteID),
+				Name:      workspace.Name,
+				Slug:      workspace.Slug,
+				CreatedAt: workspace.CreatedAt,
+			}); err != nil {
 				if isRouteIDConflict(err) {
 					continue
 				}
@@ -64,7 +68,12 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 			if err != nil {
 				return store.Workspace{}, err
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at) VALUES (?, ?, ?, 'general', 'public', ?)`, channelID, channelRouteID, workspace.ID, workspace.CreatedAt); err != nil {
+			if err := qtx.InsertDefaultChannel(ctx, storedb.InsertDefaultChannelParams{
+				ID:          channelID,
+				RouteID:     sqlText(channelRouteID),
+				WorkspaceID: workspace.ID,
+				CreatedAt:   workspace.CreatedAt,
+			}); err != nil {
 				if isRouteIDConflict(err) {
 					continue
 				}
@@ -77,9 +86,11 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 			return store.Workspace{}, errors.New("could not create channel route_id after collision retries")
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, created_at)
-		VALUES (?, ?, 'member', ?)`, workspace.ID, userID, now()); err != nil {
+	if err := qtx.InsertDefaultWorkspaceMember(ctx, storedb.InsertDefaultWorkspaceMemberParams{
+		WorkspaceID: workspace.ID,
+		UserID:      userID,
+		CreatedAt:   now(),
+	}); err != nil {
 		return store.Workspace{}, err
 	}
 	return workspace, tx.Commit()

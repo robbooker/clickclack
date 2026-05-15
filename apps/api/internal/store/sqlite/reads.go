@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 // MarkChannelRead upserts the user's read pointer for a channel and emits a
@@ -20,8 +21,9 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	var workspaceID string
-	if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = ?`, channelID).Scan(&workspaceID); err != nil {
+	qtx := s.q.WithTx(tx)
+	workspaceID, err := qtx.GetChannelWorkspace(ctx, channelID)
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
@@ -29,14 +31,14 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 	}
 	// Cap to the current channel last_seq so a buggy client can't push the
 	// pointer beyond reality.
-	var lastSeq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(channel_seq), 0) FROM messages WHERE channel_id = ? AND parent_message_id IS NULL`, channelID).Scan(&lastSeq); err != nil {
+	lastSeq, err := qtx.ChannelLastSeq(ctx, channelID)
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if seq > lastSeq {
 		seq = lastSeq
 	}
-	current, currentAt, err := readChannelReadTx(ctx, tx, channelID, userID)
+	current, currentAt, err := readChannelRead(ctx, qtx, channelID, userID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
@@ -44,10 +46,12 @@ func (s *Store) MarkChannelRead(ctx context.Context, channelID, userID string, s
 		return store.ReadReceipt{ScopeID: channelID, UserID: userID, LastReadSeq: current, LastReadAt: currentAt}, store.Event{}, nil
 	}
 	at := now()
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO channel_reads (channel_id, user_id, last_read_seq, last_read_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(channel_id, user_id) DO UPDATE SET last_read_seq = excluded.last_read_seq, last_read_at = excluded.last_read_at`,
-		channelID, userID, seq, at); err != nil {
+	if err := qtx.UpsertChannelRead(ctx, storedb.UpsertChannelReadParams{
+		ChannelID:   channelID,
+		UserID:      userID,
+		LastReadSeq: seq,
+		LastReadAt:  at,
+	}); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	event, err := insertEventWithRecipients(ctx, tx, workspaceID, channelID, "channel.read", &seq, map[string]string{
@@ -70,21 +74,22 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	var workspaceID string
-	if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM direct_conversations WHERE id = ?`, conversationID).Scan(&workspaceID); err != nil {
+	qtx := s.q.WithTx(tx)
+	workspaceID, err := qtx.GetDirectConversationWorkspace(ctx, conversationID)
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if err := requireDirectMembershipTx(ctx, tx, conversationID, userID); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
-	var lastSeq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(channel_seq), 0) FROM messages WHERE direct_conversation_id = ? AND parent_message_id IS NULL`, conversationID).Scan(&lastSeq); err != nil {
+	lastSeq, err := qtx.DirectLastSeq(ctx, conversationID)
+	if err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	if seq > lastSeq {
 		seq = lastSeq
 	}
-	current, currentAt, err := readDirectReadTx(ctx, tx, conversationID, userID)
+	current, currentAt, err := readDirectRead(ctx, qtx, conversationID, userID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
@@ -92,10 +97,12 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 		return store.ReadReceipt{ScopeID: conversationID, UserID: userID, LastReadSeq: current, LastReadAt: currentAt}, store.Event{}, nil
 	}
 	at := now()
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO direct_reads (conversation_id, user_id, last_read_seq, last_read_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(conversation_id, user_id) DO UPDATE SET last_read_seq = excluded.last_read_seq, last_read_at = excluded.last_read_at`,
-		conversationID, userID, seq, at); err != nil {
+	if err := qtx.UpsertDirectRead(ctx, storedb.UpsertDirectReadParams{
+		ConversationID: conversationID,
+		UserID:         userID,
+		LastReadSeq:    seq,
+		LastReadAt:     at,
+	}); err != nil {
 		return store.ReadReceipt{}, store.Event{}, err
 	}
 	event, err := insertEventWithRecipients(ctx, tx, workspaceID, "", "dm.read", &seq, map[string]string{
@@ -108,16 +115,12 @@ func (s *Store) MarkDirectRead(ctx context.Context, conversationID, userID strin
 	return store.ReadReceipt{ScopeID: conversationID, UserID: userID, LastReadSeq: seq, LastReadAt: at}, event, tx.Commit()
 }
 
-func readChannelReadTx(ctx context.Context, tx *sql.Tx, channelID, userID string) (int64, string, error) {
-	var seq int64
-	var at string
-	err := tx.QueryRowContext(ctx, `SELECT last_read_seq, last_read_at FROM channel_reads WHERE channel_id = ? AND user_id = ?`, channelID, userID).Scan(&seq, &at)
-	return seq, at, err
+func readChannelRead(ctx context.Context, q *storedb.Queries, channelID, userID string) (int64, string, error) {
+	row, err := q.ReadChannelRead(ctx, storedb.ReadChannelReadParams{ChannelID: channelID, UserID: userID})
+	return row.LastReadSeq, row.LastReadAt, err
 }
 
-func readDirectReadTx(ctx context.Context, tx *sql.Tx, conversationID, userID string) (int64, string, error) {
-	var seq int64
-	var at string
-	err := tx.QueryRowContext(ctx, `SELECT last_read_seq, last_read_at FROM direct_reads WHERE conversation_id = ? AND user_id = ?`, conversationID, userID).Scan(&seq, &at)
-	return seq, at, err
+func readDirectRead(ctx context.Context, q *storedb.Queries, conversationID, userID string) (int64, string, error) {
+	row, err := q.ReadDirectRead(ctx, storedb.ReadDirectReadParams{ConversationID: conversationID, UserID: userID})
+	return row.LastReadSeq, row.LastReadAt, err
 }

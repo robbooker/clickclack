@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput) (store.Upload, error) {
@@ -25,21 +26,27 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 		StoragePath: input.StoragePath,
 		CreatedAt:   now(),
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO uploads (id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		upload.ID, upload.WorkspaceID, upload.OwnerID, upload.Filename, upload.ContentType, upload.ByteSize, upload.Width, upload.Height, upload.DurationMS, upload.StoragePath, upload.CreatedAt)
-	return upload, err
+	return upload, s.q.InsertUpload(ctx, storedb.InsertUploadParams{
+		ID:          upload.ID,
+		WorkspaceID: upload.WorkspaceID,
+		OwnerID:     upload.OwnerID,
+		Filename:    upload.Filename,
+		ContentType: upload.ContentType,
+		ByteSize:    upload.ByteSize,
+		Width:       int64(upload.Width),
+		Height:      int64(upload.Height),
+		DurationMs:  int64(upload.DurationMS),
+		StoragePath: upload.StoragePath,
+		CreatedAt:   upload.CreatedAt,
+	})
 }
 
 func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.Upload, error) {
-	upload, err := scanUpload(s.db.QueryRowContext(ctx, `
-		SELECT id, workspace_id, owner_id, filename, content_type, byte_size, width, height, duration_ms, storage_path, created_at
-		FROM uploads
-		WHERE id = ?`, uploadID))
+	row, err := s.q.GetUpload(ctx, uploadID)
 	if err != nil {
 		return store.Upload{}, err
 	}
+	upload := storeUploadFromGetUpload(row)
 	if err := s.requireMembership(ctx, upload.WorkspaceID, userID); err != nil {
 		return store.Upload{}, err
 	}
@@ -52,6 +59,7 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 		return err
 	}
 	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
 	msg, err := getMessageTx(ctx, tx, input.MessageID)
 	if err != nil {
 		return err
@@ -59,24 +67,21 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return err
 	}
-	var uploadWorkspace string
-	if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM uploads WHERE id = ?`, input.UploadID).Scan(&uploadWorkspace); err != nil {
+	uploadWorkspace, err := qtx.GetUploadWorkspace(ctx, input.UploadID)
+	if err != nil {
 		return err
 	}
 	if uploadWorkspace != msg.WorkspaceID {
 		return errors.New("upload and message workspaces differ")
 	}
-	_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO message_attachments (message_id, upload_id, created_at) VALUES (?, ?, ?)`, input.MessageID, input.UploadID, now())
-	if err != nil {
+	if err := qtx.AttachUpload(ctx, storedb.AttachUploadParams{
+		MessageID: input.MessageID,
+		UploadID:  input.UploadID,
+		CreatedAt: now(),
+	}); err != nil {
 		return err
 	}
 	return tx.Commit()
-}
-
-func scanUpload(row scanner) (store.Upload, error) {
-	var upload store.Upload
-	err := row.Scan(&upload.ID, &upload.WorkspaceID, &upload.OwnerID, &upload.Filename, &upload.ContentType, &upload.ByteSize, &upload.Width, &upload.Height, &upload.DurationMS, &upload.StoragePath, &upload.CreatedAt)
-	return upload, err
 }
 
 func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message) ([]store.Message, error) {
