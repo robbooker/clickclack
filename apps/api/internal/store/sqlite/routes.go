@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) ResolveRouteTarget(ctx context.Context, userID, workspaceRouteID, targetRouteID string) (store.RouteTarget, error) {
@@ -15,12 +16,16 @@ func (s *Store) ResolveRouteTarget(ctx context.Context, userID, workspaceRouteID
 	if workspaceRouteID == "" || targetRouteID == "" {
 		return store.RouteTarget{}, sql.ErrNoRows
 	}
-	workspace, err := scanWorkspace(s.db.QueryRowContext(ctx, `
-		SELECT id, COALESCE(route_id, ''), name, slug, created_at
-		FROM workspaces
-		WHERE route_id = ?`, workspaceRouteID))
+	workspaceRow, err := s.q.GetWorkspaceByRouteID(ctx, sqlText(workspaceRouteID))
 	if err != nil {
 		return store.RouteTarget{}, err
+	}
+	workspace := store.Workspace{
+		ID:        workspaceRow.ID,
+		RouteID:   workspaceRow.RouteID,
+		Name:      workspaceRow.Name,
+		Slug:      workspaceRow.Slug,
+		CreatedAt: workspaceRow.CreatedAt,
 	}
 	if err := s.requireMembership(ctx, workspace.ID, userID); err != nil {
 		return store.RouteTarget{}, sql.ErrNoRows
@@ -56,19 +61,16 @@ func (s *Store) resolveTargetInWorkspace(ctx context.Context, userID string, wor
 
 func (s *Store) resolveChannelRouteTarget(ctx context.Context, workspace store.Workspace, targetID string, legacy bool) (store.RouteTarget, error) {
 	var channel store.Channel
-	var row *sql.Row
+	var err error
 	if legacy {
-		row = s.db.QueryRowContext(ctx, `
-			SELECT id, COALESCE(route_id, ''), workspace_id, name, kind, created_at, archived_at
-			FROM channels
-			WHERE workspace_id = ? AND id = ?`, workspace.ID, targetID)
+		var row storedb.GetChannelByIDAndWorkspaceRow
+		row, err = s.q.GetChannelByIDAndWorkspace(ctx, storedb.GetChannelByIDAndWorkspaceParams{WorkspaceID: workspace.ID, ID: targetID})
+		channel = store.Channel{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, Name: row.Name, Kind: row.Kind, CreatedAt: row.CreatedAt, ArchivedAt: ptrFromNull(row.ArchivedAt)}
 	} else {
-		row = s.db.QueryRowContext(ctx, `
-			SELECT id, COALESCE(route_id, ''), workspace_id, name, kind, created_at, archived_at
-			FROM channels
-			WHERE workspace_id = ? AND route_id = ?`, workspace.ID, targetID)
+		var row storedb.GetChannelByRouteIDAndWorkspaceRow
+		row, err = s.q.GetChannelByRouteIDAndWorkspace(ctx, storedb.GetChannelByRouteIDAndWorkspaceParams{WorkspaceID: workspace.ID, RouteID: sqlText(targetID)})
+		channel = store.Channel{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, Name: row.Name, Kind: row.Kind, CreatedAt: row.CreatedAt, ArchivedAt: ptrFromNull(row.ArchivedAt)}
 	}
-	channel, err := scanChannel(row)
 	if err != nil || channel.RouteID == "" {
 		return store.RouteTarget{}, sql.ErrNoRows
 	}
@@ -84,21 +86,17 @@ func (s *Store) resolveChannelRouteTarget(ctx context.Context, workspace store.W
 
 func (s *Store) resolveDirectRouteTarget(ctx context.Context, userID string, workspace store.Workspace, targetID string, legacy bool) (store.RouteTarget, error) {
 	var dm store.DirectConversation
-	var row *sql.Row
+	var err error
 	if legacy {
-		row = s.db.QueryRowContext(ctx, `
-			SELECT dc.id, COALESCE(dc.route_id, ''), dc.workspace_id, dc.created_at
-			FROM direct_conversations dc
-			JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
-			WHERE dc.workspace_id = ? AND dc.id = ? AND dcm.user_id = ?`, workspace.ID, targetID, userID)
+		var row storedb.GetDirectByIDAndWorkspaceRow
+		row, err = s.q.GetDirectByIDAndWorkspace(ctx, storedb.GetDirectByIDAndWorkspaceParams{WorkspaceID: workspace.ID, ID: targetID, UserID: userID})
+		dm = store.DirectConversation{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, CreatedAt: row.CreatedAt}
 	} else {
-		row = s.db.QueryRowContext(ctx, `
-			SELECT dc.id, COALESCE(dc.route_id, ''), dc.workspace_id, dc.created_at
-			FROM direct_conversations dc
-			JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
-			WHERE dc.workspace_id = ? AND dc.route_id = ? AND dcm.user_id = ?`, workspace.ID, targetID, userID)
+		var row storedb.GetDirectByRouteIDAndWorkspaceRow
+		row, err = s.q.GetDirectByRouteIDAndWorkspace(ctx, storedb.GetDirectByRouteIDAndWorkspaceParams{WorkspaceID: workspace.ID, RouteID: sqlText(targetID), UserID: userID})
+		dm = store.DirectConversation{ID: row.ID, RouteID: row.RouteID, WorkspaceID: row.WorkspaceID, CreatedAt: row.CreatedAt}
 	}
-	if err := row.Scan(&dm.ID, &dm.RouteID, &dm.WorkspaceID, &dm.CreatedAt); err != nil || dm.RouteID == "" {
+	if err != nil || dm.RouteID == "" {
 		return store.RouteTarget{}, sql.ErrNoRows
 	}
 	return store.RouteTarget{
@@ -167,22 +165,11 @@ func (s *Store) resolveThreadRouteTarget(ctx context.Context, userID string, wor
 }
 
 func (s *Store) channelRouteID(ctx context.Context, workspaceID, channelID string) (string, error) {
-	var routeID string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(route_id, '')
-		FROM channels
-		WHERE workspace_id = ? AND id = ?`, workspaceID, channelID).Scan(&routeID)
-	return routeID, err
+	return s.q.ChannelRouteID(ctx, storedb.ChannelRouteIDParams{WorkspaceID: workspaceID, ID: channelID})
 }
 
 func (s *Store) directRouteID(ctx context.Context, userID, workspaceID, conversationID string) (string, error) {
-	var routeID string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(dc.route_id, '')
-		FROM direct_conversations dc
-		JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
-		WHERE dc.workspace_id = ? AND dc.id = ? AND dcm.user_id = ?`, workspaceID, conversationID, userID).Scan(&routeID)
-	return routeID, err
+	return s.q.DirectRouteID(ctx, storedb.DirectRouteIDParams{WorkspaceID: workspaceID, ID: conversationID, UserID: userID})
 }
 
 func routeCanonicalPath(workspaceRouteID, targetRouteID string) string {

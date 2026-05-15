@@ -76,6 +76,25 @@ func (q *Queries) ChannelNextSeq(ctx context.Context, channelID string) (int64, 
 	return next_seq, err
 }
 
+const channelRouteID = `-- name: ChannelRouteID :one
+SELECT COALESCE(route_id, '') AS route_id
+FROM channels
+WHERE workspace_id = ?1
+  AND id = ?2
+`
+
+type ChannelRouteIDParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ID          string `json:"id"`
+}
+
+func (q *Queries) ChannelRouteID(ctx context.Context, arg ChannelRouteIDParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, channelRouteID, arg.WorkspaceID, arg.ID)
+	var route_id string
+	err := row.Scan(&route_id)
+	return route_id, err
+}
+
 const deleteMessageBody = `-- name: DeleteMessageBody :exec
 UPDATE messages
 SET body = '',
@@ -197,6 +216,28 @@ func (q *Queries) DirectNextSeq(ctx context.Context, conversationID string) (int
 	var next_seq int64
 	err := row.Scan(&next_seq)
 	return next_seq, err
+}
+
+const directRouteID = `-- name: DirectRouteID :one
+SELECT COALESCE(dc.route_id, '') AS route_id
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = ?1
+  AND dc.id = ?2
+  AND dcm.user_id = ?3
+`
+
+type DirectRouteIDParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+}
+
+func (q *Queries) DirectRouteID(ctx context.Context, arg DirectRouteIDParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, directRouteID, arg.WorkspaceID, arg.ID, arg.UserID)
+	var route_id string
+	err := row.Scan(&route_id)
+	return route_id, err
 }
 
 const firstUser = `-- name: FirstUser :one
@@ -330,6 +371,80 @@ func (q *Queries) GetChannel(ctx context.Context, id string) (GetChannelRow, err
 	return i, err
 }
 
+const getChannelByIDAndWorkspace = `-- name: GetChannelByIDAndWorkspace :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
+FROM channels
+WHERE workspace_id = ?1
+  AND id = ?2
+`
+
+type GetChannelByIDAndWorkspaceParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ID          string `json:"id"`
+}
+
+type GetChannelByIDAndWorkspaceRow struct {
+	ID          string         `json:"id"`
+	RouteID     string         `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	CreatedAt   string         `json:"created_at"`
+	ArchivedAt  sql.NullString `json:"archived_at"`
+}
+
+func (q *Queries) GetChannelByIDAndWorkspace(ctx context.Context, arg GetChannelByIDAndWorkspaceParams) (GetChannelByIDAndWorkspaceRow, error) {
+	row := q.db.QueryRowContext(ctx, getChannelByIDAndWorkspace, arg.WorkspaceID, arg.ID)
+	var i GetChannelByIDAndWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Kind,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const getChannelByRouteIDAndWorkspace = `-- name: GetChannelByRouteIDAndWorkspace :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
+FROM channels
+WHERE workspace_id = ?1
+  AND route_id = ?2
+`
+
+type GetChannelByRouteIDAndWorkspaceParams struct {
+	WorkspaceID string         `json:"workspace_id"`
+	RouteID     sql.NullString `json:"route_id"`
+}
+
+type GetChannelByRouteIDAndWorkspaceRow struct {
+	ID          string         `json:"id"`
+	RouteID     string         `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	CreatedAt   string         `json:"created_at"`
+	ArchivedAt  sql.NullString `json:"archived_at"`
+}
+
+func (q *Queries) GetChannelByRouteIDAndWorkspace(ctx context.Context, arg GetChannelByRouteIDAndWorkspaceParams) (GetChannelByRouteIDAndWorkspaceRow, error) {
+	row := q.db.QueryRowContext(ctx, getChannelByRouteIDAndWorkspace, arg.WorkspaceID, arg.RouteID)
+	var i GetChannelByRouteIDAndWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Kind,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
 const getChannelWorkspace = `-- name: GetChannelWorkspace :one
 SELECT workspace_id
 FROM channels
@@ -341,6 +456,74 @@ func (q *Queries) GetChannelWorkspace(ctx context.Context, id string) (string, e
 	var workspace_id string
 	err := row.Scan(&workspace_id)
 	return workspace_id, err
+}
+
+const getDirectByIDAndWorkspace = `-- name: GetDirectByIDAndWorkspace :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = ?1
+  AND dc.id = ?2
+  AND dcm.user_id = ?3
+`
+
+type GetDirectByIDAndWorkspaceParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	ID          string `json:"id"`
+	UserID      string `json:"user_id"`
+}
+
+type GetDirectByIDAndWorkspaceRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) GetDirectByIDAndWorkspace(ctx context.Context, arg GetDirectByIDAndWorkspaceParams) (GetDirectByIDAndWorkspaceRow, error) {
+	row := q.db.QueryRowContext(ctx, getDirectByIDAndWorkspace, arg.WorkspaceID, arg.ID, arg.UserID)
+	var i GetDirectByIDAndWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getDirectByRouteIDAndWorkspace = `-- name: GetDirectByRouteIDAndWorkspace :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = ?1
+  AND dc.route_id = ?2
+  AND dcm.user_id = ?3
+`
+
+type GetDirectByRouteIDAndWorkspaceParams struct {
+	WorkspaceID string         `json:"workspace_id"`
+	RouteID     sql.NullString `json:"route_id"`
+	UserID      string         `json:"user_id"`
+}
+
+type GetDirectByRouteIDAndWorkspaceRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) GetDirectByRouteIDAndWorkspace(ctx context.Context, arg GetDirectByRouteIDAndWorkspaceParams) (GetDirectByRouteIDAndWorkspaceRow, error) {
+	row := q.db.QueryRowContext(ctx, getDirectByRouteIDAndWorkspace, arg.WorkspaceID, arg.RouteID, arg.UserID)
+	var i GetDirectByRouteIDAndWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getDirectConversation = `-- name: GetDirectConversation :one
@@ -679,6 +862,33 @@ type GetWorkspaceRow struct {
 func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (GetWorkspaceRow, error) {
 	row := q.db.QueryRowContext(ctx, getWorkspace, arg.WorkspaceID, arg.UserID)
 	var i GetWorkspaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.Name,
+		&i.Slug,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getWorkspaceByRouteID = `-- name: GetWorkspaceByRouteID :one
+SELECT id, COALESCE(route_id, '') AS route_id, name, slug, created_at
+FROM workspaces
+WHERE route_id = ?1
+`
+
+type GetWorkspaceByRouteIDRow struct {
+	ID        string `json:"id"`
+	RouteID   string `json:"route_id"`
+	Name      string `json:"name"`
+	Slug      string `json:"slug"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (q *Queries) GetWorkspaceByRouteID(ctx context.Context, routeID sql.NullString) (GetWorkspaceByRouteIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getWorkspaceByRouteID, routeID)
+	var i GetWorkspaceByRouteIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.RouteID,

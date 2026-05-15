@@ -117,6 +117,11 @@ FROM workspaces
 ORDER BY created_at
 LIMIT 1;
 
+-- name: GetWorkspaceByRouteID :one
+SELECT id, COALESCE(route_id, '') AS route_id, name, slug, created_at
+FROM workspaces
+WHERE route_id = sqlc.arg(route_id);
+
 -- name: ListWorkspaces :many
 SELECT w.id, COALESCE(w.route_id, '') AS route_id, w.name, w.slug, w.created_at
 FROM workspaces w
@@ -363,6 +368,48 @@ VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), sqlc.arg(dir
 SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
 FROM channels
 WHERE id = sqlc.arg(id);
+
+-- name: GetChannelByIDAndWorkspace :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
+FROM channels
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND id = sqlc.arg(id);
+
+-- name: GetChannelByRouteIDAndWorkspace :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
+FROM channels
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND route_id = sqlc.arg(route_id);
+
+-- name: GetDirectByIDAndWorkspace :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = sqlc.arg(workspace_id)
+  AND dc.id = sqlc.arg(id)
+  AND dcm.user_id = sqlc.arg(user_id);
+
+-- name: GetDirectByRouteIDAndWorkspace :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = sqlc.arg(workspace_id)
+  AND dc.route_id = sqlc.arg(route_id)
+  AND dcm.user_id = sqlc.arg(user_id);
+
+-- name: ChannelRouteID :one
+SELECT COALESCE(route_id, '') AS route_id
+FROM channels
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND id = sqlc.arg(id);
+
+-- name: DirectRouteID :one
+SELECT COALESCE(dc.route_id, '') AS route_id
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = sqlc.arg(workspace_id)
+  AND dc.id = sqlc.arg(id)
+  AND dcm.user_id = sqlc.arg(user_id);
 
 -- name: UpdateChannel :exec
 UPDATE channels
