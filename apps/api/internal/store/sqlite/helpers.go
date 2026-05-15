@@ -27,28 +27,6 @@ var (
 	idEntropy = ulid.Monotonic(rand.Reader, 0)
 )
 
-func scanUser(row scanner) (store.User, error) {
-	var u store.User
-	var owner sql.NullString
-	err := row.Scan(&u.ID, &u.Kind, &owner, &u.DisplayName, &u.Handle, &u.AvatarURL, &u.CreatedAt)
-	if owner.Valid {
-		u.OwnerUserID = owner.String
-	}
-	return u, err
-}
-
-func scanWorkspace(row scanner) (store.Workspace, error) {
-	var w store.Workspace
-	err := row.Scan(&w.ID, &w.RouteID, &w.Name, &w.Slug, &w.CreatedAt)
-	return w, err
-}
-
-func scanChannel(row scanner) (store.Channel, error) {
-	var ch store.Channel
-	err := row.Scan(&ch.ID, &ch.RouteID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt)
-	return ch, err
-}
-
 func getMessage(ctx context.Context, db *sql.DB, id string) (store.Message, error) {
 	return scanMessage(db.QueryRowContext(ctx, messageSelect()+` WHERE m.id = ?`, id))
 }
@@ -200,19 +178,6 @@ func getThreadState(ctx context.Context, db *sql.DB, rootID string) (store.Threa
 	return storeThreadStateFromDB(row), nil
 }
 
-func scanThreadState(row scanner) (store.ThreadState, error) {
-	var state store.ThreadState
-	var lastReply sql.NullString
-	if err := row.Scan(&state.RootMessageID, &state.ReplyCount, &lastReply, &state.LastReplyAuthorIDsJSON); err != nil {
-		return store.ThreadState{}, err
-	}
-	if lastReply.Valid {
-		state.LastReplyAt = &lastReply.String
-	}
-	_ = json.Unmarshal([]byte(state.LastReplyAuthorIDsJSON), &state.LastReplyAuthorIDs)
-	return state, nil
-}
-
 func updateThreadState(ctx context.Context, tx *sql.Tx, rootID, authorID, createdAt string) (store.ThreadState, error) {
 	q := storedb.New(tx)
 	row, err := q.GetThreadState(ctx, rootID)
@@ -309,32 +274,6 @@ func eventPayload(base map[string]string, nonce string) map[string]string {
 	}
 	out["nonce"] = nonce
 	return out
-}
-
-func scanEvents(rows *sql.Rows) ([]store.Event, error) {
-	out := []store.Event{}
-	for rows.Next() {
-		var event store.Event
-		var seq sql.NullInt64
-		if err := rows.Scan(&event.ID, &event.Cursor, &event.WorkspaceID, &event.ChannelID, &event.Type, &seq, &event.PayloadJSON, &event.CreatedAt); err != nil {
-			return nil, err
-		}
-		if seq.Valid {
-			event.Seq = &seq.Int64
-		}
-		var payload any
-		_ = json.Unmarshal([]byte(event.PayloadJSON), &payload)
-		event.Payload = payload
-		out = append(out, event)
-	}
-	return out, rows.Err()
-}
-
-func nullableString(value string) any {
-	if value == "" {
-		return nil
-	}
-	return value
 }
 
 func newID(prefix string) string {
