@@ -14,6 +14,7 @@
     "fmt:go:check": "files=$(gofmt -l apps/api) && test -z \"$files\" || (printf '%s\n' \"$files\" && exit 1)",
     "fmt:ts": "oxfmt --write \"apps/web/src/**/*.{ts,svelte}\" \"packages/sdk-ts/src/**/*.ts\" \"examples/**/*.ts\" \"tests/e2e/**/*.ts\" \"playwright.config.ts\"",
     "fmt:ts:check": "oxfmt --check \"apps/web/src/**/*.{ts,svelte}\" \"packages/sdk-ts/src/**/*.ts\" \"examples/**/*.ts\" \"tests/e2e/**/*.ts\" \"playwright.config.ts\"",
+    "generate:sqlc": "go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate",
     "lint": "oxlint apps/web/src packages/sdk-ts/src examples tests/e2e playwright.config.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
