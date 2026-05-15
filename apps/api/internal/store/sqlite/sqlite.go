@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 	_ "modernc.org/sqlite"
 )
 
@@ -22,6 +23,7 @@ var migrationsFS embed.FS
 
 type Store struct {
 	db *sql.DB
+	q  *storedb.Queries
 }
 
 func Open(dbURL string) (*Store, error) {
@@ -50,7 +52,7 @@ func Open(dbURL string) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, q: storedb.New(db)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -134,12 +136,24 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 	if user.DisplayName == "" {
 		user.DisplayName = "Local User"
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO users (id, display_name, avatar_url, created_at) VALUES (?, ?, ?, ?)`, user.ID, user.DisplayName, user.AvatarURL, user.CreatedAt); err != nil {
+	qtx := s.q.WithTx(tx)
+	if err := qtx.InsertHumanUser(ctx, storedb.InsertHumanUserParams{
+		ID:          user.ID,
+		DisplayName: user.DisplayName,
+		AvatarUrl:   user.AvatarURL,
+		CreatedAt:   user.CreatedAt,
+	}); err != nil {
 		return store.User{}, err
 	}
 	if input.Email != "" {
-		_, err = tx.ExecContext(ctx, `INSERT INTO identities (id, user_id, provider, provider_subject, email, created_at) VALUES (?, ?, 'local', ?, ?, ?)`, newID("idn"), user.ID, input.Email, input.Email, user.CreatedAt)
-		if err != nil {
+		if err := qtx.InsertIdentity(ctx, storedb.InsertIdentityParams{
+			ID:              newID("idn"),
+			UserID:          user.ID,
+			Provider:        "local",
+			ProviderSubject: input.Email,
+			Email:           input.Email,
+			CreatedAt:       user.CreatedAt,
+		}); err != nil {
 			return store.User{}, err
 		}
 	}
@@ -147,19 +161,19 @@ func (s *Store) CreateUser(ctx context.Context, input store.CreateUserInput) (st
 }
 
 func (s *Store) FirstUser(ctx context.Context) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users ORDER BY created_at LIMIT 1`))
+	row, err := s.q.FirstUser(ctx)
 	if err != nil {
 		return store.User{}, err
 	}
-	return s.hydrateUserNotificationSettings(ctx, user)
+	return s.hydrateUserNotificationSettings(ctx, storeUserFromFirstUser(row))
 }
 
 func (s *Store) GetUser(ctx context.Context, id string) (store.User, error) {
-	user, err := scanUser(s.db.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users WHERE id = ?`, id))
+	row, err := s.q.GetUser(ctx, id)
 	if err != nil {
 		return store.User{}, err
 	}
-	return s.hydrateUserNotificationSettings(ctx, user)
+	return s.hydrateUserNotificationSettings(ctx, storeUserFromGetUser(row))
 }
 
 func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserProfileInput) (store.User, error) {
@@ -178,11 +192,12 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 	if err != nil {
 		return store.User{}, err
 	}
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE users
-		SET display_name = ?, handle = ?, avatar_url = ?
-		WHERE id = ?`, displayName, handle, avatarURL, input.UserID)
-	if err != nil {
+	if err := s.q.UpdateUserProfile(ctx, storedb.UpdateUserProfileParams{
+		DisplayName: displayName,
+		Handle:      handle,
+		AvatarUrl:   avatarURL,
+		ID:          input.UserID,
+	}); err != nil {
 		if strings.Contains(err.Error(), "idx_users_handle") || strings.Contains(err.Error(), "users.handle") {
 			return store.User{}, errors.New("handle is already taken")
 		}
@@ -192,25 +207,15 @@ func (s *Store) UpdateUserProfile(ctx context.Context, input store.UpdateUserPro
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID string) ([]store.Workspace, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT w.id, COALESCE(w.route_id, ''), w.name, w.slug, w.created_at
-		FROM workspaces w
-		JOIN workspace_members wm ON wm.workspace_id = w.id
-		WHERE wm.user_id = ?
-		ORDER BY w.created_at`, userID)
+	rows, err := s.q.ListWorkspaces(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []store.Workspace{}
-	for rows.Next() {
-		var w store.Workspace
-		if err := rows.Scan(&w.ID, &w.RouteID, &w.Name, &w.Slug, &w.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, w)
+	out := make([]store.Workspace, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storeWorkspaceFromListWorkspaces(row))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspaceInput, ownerID string) (store.Workspace, error) {
@@ -226,6 +231,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	if w.Slug == "" {
 		w.Slug = slug(w.Name)
 	}
+	qtx := s.q.WithTx(tx)
 	inserted := false
 	for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
 		routeID, err := newRouteID('T')
@@ -233,7 +239,13 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 			return store.Workspace{}, err
 		}
 		w.RouteID = routeID
-		if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, route_id, name, slug, created_at) VALUES (?, ?, ?, ?, ?)`, w.ID, w.RouteID, w.Name, w.Slug, w.CreatedAt); err != nil {
+		if err := qtx.InsertWorkspace(ctx, storedb.InsertWorkspaceParams{
+			ID:        w.ID,
+			RouteID:   sqlText(w.RouteID),
+			Name:      w.Name,
+			Slug:      w.Slug,
+			CreatedAt: w.CreatedAt,
+		}); err != nil {
 			if isRouteIDConflict(err) {
 				continue
 			}
@@ -245,52 +257,38 @@ func (s *Store) CreateWorkspace(ctx context.Context, input store.CreateWorkspace
 	if !inserted {
 		return store.Workspace{}, errors.New("could not create workspace route_id after collision retries")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)`, w.ID, ownerID, w.CreatedAt); err != nil {
+	if err := qtx.InsertWorkspaceMember(ctx, storedb.InsertWorkspaceMemberParams{
+		WorkspaceID: w.ID,
+		UserID:      ownerID,
+		Role:        "owner",
+		CreatedAt:   w.CreatedAt,
+	}); err != nil {
 		return store.Workspace{}, err
 	}
 	return w, tx.Commit()
 }
 
 func (s *Store) GetWorkspace(ctx context.Context, workspaceID, userID string) (store.Workspace, error) {
-	return scanWorkspace(s.db.QueryRowContext(ctx, `
-		SELECT w.id, COALESCE(w.route_id, ''), w.name, w.slug, w.created_at
-		FROM workspaces w
-		JOIN workspace_members wm ON wm.workspace_id = w.id
-		WHERE w.id = ? AND wm.user_id = ?`, workspaceID, userID))
+	row, err := s.q.GetWorkspace(ctx, storedb.GetWorkspaceParams{WorkspaceID: workspaceID, UserID: userID})
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	return storeWorkspaceFromGetWorkspace(row), nil
 }
 
 func (s *Store) ListChannels(ctx context.Context, workspaceID, userID string) ([]store.Channel, error) {
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id, COALESCE(c.route_id, ''), c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
-		       COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS last_seq,
-		       COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0) AS last_read_seq,
-		       COALESCE((
-		         SELECT COUNT(*)
-		         FROM messages m
-		         WHERE m.channel_id = c.id
-		           AND m.parent_message_id IS NULL
-		           AND m.author_id <> ?
-		           AND m.channel_seq > COALESCE((SELECT last_read_seq FROM channel_reads WHERE channel_id = c.id AND user_id = ?), 0)
-		       ), 0) AS unread_count
-		FROM channels c
-		WHERE c.workspace_id = ?
-		ORDER BY c.name`, userID, userID, userID, workspaceID)
+	rows, err := s.q.ListChannels(ctx, storedb.ListChannelsParams{ReaderUserID: userID, WorkspaceID: workspaceID})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []store.Channel{}
-	for rows.Next() {
-		var ch store.Channel
-		if err := rows.Scan(&ch.ID, &ch.RouteID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt, &ch.LastSeq, &ch.LastReadSeq, &ch.UnreadCount); err != nil {
-			return nil, err
-		}
-		out = append(out, ch)
+	out := make([]store.Channel, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storeChannelFromListChannels(row))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInput) (store.Channel, store.Event, error) {
@@ -316,7 +314,14 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 			return store.Channel{}, store.Event{}, err
 		}
 		ch.RouteID = routeID
-		if _, err := tx.ExecContext(ctx, `INSERT INTO channels (id, route_id, workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)`, ch.ID, ch.RouteID, ch.WorkspaceID, ch.Name, ch.Kind, ch.CreatedAt); err != nil {
+		if err := s.q.WithTx(tx).InsertChannel(ctx, storedb.InsertChannelParams{
+			ID:          ch.ID,
+			RouteID:     sqlText(ch.RouteID),
+			WorkspaceID: ch.WorkspaceID,
+			Name:        ch.Name,
+			Kind:        ch.Kind,
+			CreatedAt:   ch.CreatedAt,
+		}); err != nil {
 			if isRouteIDConflict(err) {
 				continue
 			}
@@ -336,8 +341,8 @@ func (s *Store) CreateChannel(ctx context.Context, input store.CreateChannelInpu
 }
 
 func (s *Store) ListMessages(ctx context.Context, channelID, userID string, page store.MessagePageRequest) (store.MessagePage, error) {
-	var workspaceID string
-	if err := s.db.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = ?`, channelID).Scan(&workspaceID); err != nil {
+	workspaceID, err := s.q.GetChannelWorkspace(ctx, channelID)
+	if err != nil {
 		return store.MessagePage{}, err
 	}
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
@@ -384,15 +389,16 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		return store.Message{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	var workspaceID string
-	if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = ?`, input.ChannelID).Scan(&workspaceID); err != nil {
+	qtx := s.q.WithTx(tx)
+	workspaceID, err := qtx.GetChannelWorkspace(ctx, input.ChannelID)
+	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	if err := requireMembershipTx(ctx, tx, workspaceID, input.AuthorID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	var seq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(channel_seq), 0) + 1 FROM messages WHERE channel_id = ? AND parent_message_id IS NULL`, input.ChannelID).Scan(&seq); err != nil {
+	seq, err := qtx.ChannelNextSeq(ctx, input.ChannelID)
+	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	id := newID("msg")
@@ -423,9 +429,20 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return store.Message{}, store.Event{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
-		VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, NULL, ?, 'markdown', ?, ?, ?, ?, ?)`, id, workspaceID, input.ChannelID, input.AuthorID, id, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID), nonce); err != nil {
+	if err := qtx.InsertChannelMessage(ctx, storedb.InsertChannelMessageParams{
+		ID:                 id,
+		WorkspaceID:        workspaceID,
+		ChannelID:          sqlText(input.ChannelID),
+		AuthorID:           input.AuthorID,
+		ThreadRootID:       id,
+		ChannelSeq:         sqlInt64(seq),
+		Body:               body,
+		CreatedAt:          createdAt,
+		QuotedMessageID:    sqlOptionalText(quotedID),
+		QuotedBodySnapshot: quotedSnapshot,
+		QuotedAuthorID:     sqlOptionalText(quotedAuthorID),
+		ClientNonce:        nonce,
+	}); err != nil {
 		if existing, lookupErr := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); lookupErr == nil {
 			if existing.ChannelID == input.ChannelID && existing.DirectConversationID == "" && existing.ParentMessageID == nil && existing.Body == body && sameQuotedMessageID(existing, quotedID) {
 				return existing, store.Event{}, nil
@@ -434,7 +451,7 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		}
 		return store.Message{}, store.Event{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO thread_state (root_message_id) VALUES (?)`, id); err != nil {
+	if err := qtx.InsertThreadState(ctx, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	event, err := insertEvent(ctx, tx, workspaceID, input.ChannelID, "message.created", &seq, eventPayload(map[string]string{"message_id": id, "author_id": input.AuthorID}, nonce))
@@ -497,6 +514,7 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
 	root, err := getMessageTx(ctx, tx, input.RootMessageID)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
@@ -511,8 +529,8 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
-	var seq int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(thread_seq), 0) + 1 FROM messages WHERE thread_root_id = ? AND parent_message_id = ?`, root.ID, root.ID).Scan(&seq); err != nil {
+	seq, err := qtx.ThreadNextSeq(ctx, storedb.ThreadNextSeqParams{ThreadRootID: root.ID, ParentMessageID: sqlText(root.ID)})
+	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	id := newID("msg")
@@ -531,16 +549,28 @@ func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadR
 		quotedSnapshot = snap
 		quotedAuthorID = authorID
 	}
-	var channelID any
-	var directConversationID any
+	var channelID sql.NullString
+	var directConversationID sql.NullString
 	if root.DirectConversationID != "" {
-		directConversationID = root.DirectConversationID
+		directConversationID = sqlText(root.DirectConversationID)
 	} else {
-		channelID = root.ChannelID
+		channelID = sqlText(root.ChannelID)
 	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'markdown', ?, ?, ?, ?)`, id, root.WorkspaceID, channelID, directConversationID, input.AuthorID, root.ID, root.ID, seq, body, createdAt, nullableQuotedID(quotedID), quotedSnapshot, nullableQuotedID(quotedAuthorID)); err != nil {
+	if err := qtx.InsertThreadReply(ctx, storedb.InsertThreadReplyParams{
+		ID:                   id,
+		WorkspaceID:          root.WorkspaceID,
+		ChannelID:            channelID,
+		DirectConversationID: directConversationID,
+		AuthorID:             input.AuthorID,
+		ParentMessageID:      sqlText(root.ID),
+		ThreadRootID:         root.ID,
+		ThreadSeq:            sqlInt64(seq),
+		Body:                 body,
+		CreatedAt:            createdAt,
+		QuotedMessageID:      sqlOptionalText(quotedID),
+		QuotedBodySnapshot:   quotedSnapshot,
+		QuotedAuthorID:       sqlOptionalText(quotedAuthorID),
+	}); err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err
 	}
 	state, err := updateThreadState(ctx, tx, root.ID, input.AuthorID, createdAt)
@@ -588,21 +618,20 @@ func (s *Store) ListEventsAfter(ctx context.Context, workspaceID, userID, cursor
 	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.id, e.cursor, e.workspace_id, COALESCE(e.channel_id, ''), e.type, e.seq, e.payload_json, e.created_at
-		FROM events e
-		WHERE e.workspace_id = ? AND e.cursor > ?
-		  AND (
-		    e.is_private = 0
-		    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = ?)
-		  )
-		ORDER BY e.cursor
-		LIMIT ?`, workspaceID, cursor, userID, limit)
+	rows, err := s.q.ListEventsAfter(ctx, storedb.ListEventsAfterParams{
+		WorkspaceID: workspaceID,
+		Cursor:      cursor,
+		UserID:      userID,
+		LimitCount:  int64(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanEvents(rows)
+	out := make([]store.Event, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storeEventFromListEventsAfter(row))
+	}
+	return out, nil
 }
 
 func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, add bool) (store.Event, error) {
@@ -618,10 +647,11 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
 		return store.Event{}, err
 	}
+	qtx := s.q.WithTx(tx)
 	if add {
-		_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)`, input.MessageID, input.UserID, input.Emoji, now())
+		err = qtx.AddReaction(ctx, storedb.AddReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji, CreatedAt: now()})
 	} else {
-		_, err = tx.ExecContext(ctx, `DELETE FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?`, input.MessageID, input.UserID, input.Emoji)
+		err = qtx.RemoveReaction(ctx, storedb.RemoveReactionParams{MessageID: input.MessageID, UserID: input.UserID, Emoji: input.Emoji})
 	}
 	if err != nil {
 		return store.Event{}, err
@@ -646,13 +676,11 @@ func (s *Store) reaction(ctx context.Context, input store.CreateReactionInput, a
 }
 
 func (s *Store) requireMembership(ctx context.Context, workspaceID, userID string) error {
-	var one int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID).Scan(&one)
+	_, err := s.q.RequireMembership(ctx, storedb.RequireMembershipParams{WorkspaceID: workspaceID, UserID: userID})
 	return err
 }
 
 func requireMembershipTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) error {
-	var one int
-	err := tx.QueryRowContext(ctx, `SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID).Scan(&one)
+	_, err := storedb.New(tx).RequireMembership(ctx, storedb.RequireMembershipParams{WorkspaceID: workspaceID, UserID: userID})
 	return err
 }

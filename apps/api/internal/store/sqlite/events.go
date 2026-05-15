@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 // PruneEvents deletes old durable events for a workspace while preserving the
@@ -29,19 +31,9 @@ func (s *Store) PruneEvents(ctx context.Context, workspaceID string, keepLatest 
 		}
 		before = parsed.UTC().Format(time.RFC3339Nano)
 	}
-	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM events
-		WHERE workspace_id = ?
-		  AND (? = '' OR julianday(created_at) < julianday(?))
-		  AND id NOT IN (
-		    SELECT id
-		    FROM events
-		    WHERE workspace_id = ?
-		    ORDER BY cursor DESC
-		    LIMIT ?
-		  )`, workspaceID, before, before, workspaceID, keepLatest)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.q.PruneEvents(ctx, storedb.PruneEventsParams{
+		WorkspaceIDArg: workspaceID,
+		Before:         before,
+		KeepLatest:     int64(keepLatest),
+	})
 }

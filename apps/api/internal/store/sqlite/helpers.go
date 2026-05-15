@@ -15,6 +15,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 type scanner interface {
@@ -25,28 +26,6 @@ var (
 	idMu      sync.Mutex
 	idEntropy = ulid.Monotonic(rand.Reader, 0)
 )
-
-func scanUser(row scanner) (store.User, error) {
-	var u store.User
-	var owner sql.NullString
-	err := row.Scan(&u.ID, &u.Kind, &owner, &u.DisplayName, &u.Handle, &u.AvatarURL, &u.CreatedAt)
-	if owner.Valid {
-		u.OwnerUserID = owner.String
-	}
-	return u, err
-}
-
-func scanWorkspace(row scanner) (store.Workspace, error) {
-	var w store.Workspace
-	err := row.Scan(&w.ID, &w.RouteID, &w.Name, &w.Slug, &w.CreatedAt)
-	return w, err
-}
-
-func scanChannel(row scanner) (store.Channel, error) {
-	var ch store.Channel
-	err := row.Scan(&ch.ID, &ch.RouteID, &ch.WorkspaceID, &ch.Name, &ch.Kind, &ch.CreatedAt, &ch.ArchivedAt)
-	return ch, err
-}
 
 func getMessage(ctx context.Context, db *sql.DB, id string) (store.Message, error) {
 	return scanMessage(db.QueryRowContext(ctx, messageSelect()+` WHERE m.id = ?`, id))
@@ -192,27 +171,20 @@ func scanMessages(rows *sql.Rows) ([]store.Message, error) {
 }
 
 func getThreadState(ctx context.Context, db *sql.DB, rootID string) (store.ThreadState, error) {
-	return scanThreadState(db.QueryRowContext(ctx, `SELECT root_message_id, reply_count, last_reply_at, last_reply_author_ids_json FROM thread_state WHERE root_message_id = ?`, rootID))
-}
-
-func scanThreadState(row scanner) (store.ThreadState, error) {
-	var state store.ThreadState
-	var lastReply sql.NullString
-	if err := row.Scan(&state.RootMessageID, &state.ReplyCount, &lastReply, &state.LastReplyAuthorIDsJSON); err != nil {
-		return store.ThreadState{}, err
-	}
-	if lastReply.Valid {
-		state.LastReplyAt = &lastReply.String
-	}
-	_ = json.Unmarshal([]byte(state.LastReplyAuthorIDsJSON), &state.LastReplyAuthorIDs)
-	return state, nil
-}
-
-func updateThreadState(ctx context.Context, tx *sql.Tx, rootID, authorID, createdAt string) (store.ThreadState, error) {
-	state, err := scanThreadState(tx.QueryRowContext(ctx, `SELECT root_message_id, reply_count, last_reply_at, last_reply_author_ids_json FROM thread_state WHERE root_message_id = ?`, rootID))
+	row, err := storedb.New(db).GetThreadState(ctx, rootID)
 	if err != nil {
 		return store.ThreadState{}, err
 	}
+	return storeThreadStateFromDB(row), nil
+}
+
+func updateThreadState(ctx context.Context, tx *sql.Tx, rootID, authorID, createdAt string) (store.ThreadState, error) {
+	q := storedb.New(tx)
+	row, err := q.GetThreadState(ctx, rootID)
+	if err != nil {
+		return store.ThreadState{}, err
+	}
+	state := storeThreadStateFromDB(row)
 	ids := append([]string{authorID}, state.LastReplyAuthorIDs...)
 	seen := map[string]bool{}
 	compact := make([]string, 0, 3)
@@ -227,10 +199,18 @@ func updateThreadState(ctx context.Context, tx *sql.Tx, rootID, authorID, create
 		}
 	}
 	body, _ := json.Marshal(compact)
-	if _, err := tx.ExecContext(ctx, `UPDATE thread_state SET reply_count = reply_count + 1, last_reply_at = ?, last_reply_author_ids_json = ? WHERE root_message_id = ?`, createdAt, string(body), rootID); err != nil {
+	if err := q.UpdateThreadState(ctx, storedb.UpdateThreadStateParams{
+		LastReplyAt:            sqlText(createdAt),
+		LastReplyAuthorIdsJson: string(body),
+		RootMessageID:          rootID,
+	}); err != nil {
 		return store.ThreadState{}, err
 	}
-	return scanThreadState(tx.QueryRowContext(ctx, `SELECT root_message_id, reply_count, last_reply_at, last_reply_author_ids_json FROM thread_state WHERE root_message_id = ?`, rootID))
+	row, err = q.GetThreadState(ctx, rootID)
+	if err != nil {
+		return store.ThreadState{}, err
+	}
+	return storeThreadStateFromDB(row), nil
 }
 
 func insertEvent(ctx context.Context, tx *sql.Tx, workspaceID, channelID, eventType string, seq *int64, payload any) (store.Event, error) {
@@ -258,11 +238,22 @@ func insertEventWithRecipients(ctx context.Context, tx *sql.Tx, workspaceID, cha
 	if len(recipients) > 0 {
 		isPrivate = 1
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.ID, event.Cursor, event.WorkspaceID, nullableString(event.ChannelID), event.Type, event.Seq, event.PayloadJSON, event.CreatedAt, isPrivate); err != nil {
+	q := storedb.New(tx)
+	if err := q.InsertEvent(ctx, storedb.InsertEventParams{
+		ID:          event.ID,
+		Cursor:      event.Cursor,
+		WorkspaceID: event.WorkspaceID,
+		ChannelID:   sqlOptionalText(event.ChannelID),
+		Type:        event.Type,
+		Seq:         nullInt64FromPtr(event.Seq),
+		PayloadJson: event.PayloadJSON,
+		CreatedAt:   event.CreatedAt,
+		IsPrivate:   int64(isPrivate),
+	}); err != nil {
 		return store.Event{}, err
 	}
 	for _, userID := range recipients {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO event_recipients (event_id, user_id) VALUES (?, ?)`, event.ID, userID); err != nil {
+		if err := q.InsertEventRecipient(ctx, storedb.InsertEventRecipientParams{EventID: event.ID, UserID: userID}); err != nil {
 			return store.Event{}, err
 		}
 		event.RecipientUserIDs = append(event.RecipientUserIDs, userID)
@@ -283,32 +274,6 @@ func eventPayload(base map[string]string, nonce string) map[string]string {
 	}
 	out["nonce"] = nonce
 	return out
-}
-
-func scanEvents(rows *sql.Rows) ([]store.Event, error) {
-	out := []store.Event{}
-	for rows.Next() {
-		var event store.Event
-		var seq sql.NullInt64
-		if err := rows.Scan(&event.ID, &event.Cursor, &event.WorkspaceID, &event.ChannelID, &event.Type, &seq, &event.PayloadJSON, &event.CreatedAt); err != nil {
-			return nil, err
-		}
-		if seq.Valid {
-			event.Seq = &seq.Int64
-		}
-		var payload any
-		_ = json.Unmarshal([]byte(event.PayloadJSON), &payload)
-		event.Payload = payload
-		out = append(out, event)
-	}
-	return out, rows.Err()
-}
-
-func nullableString(value string) any {
-	if value == "" {
-		return nil
-	}
-	return value
 }
 
 func newID(prefix string) string {
