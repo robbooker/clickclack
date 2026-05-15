@@ -232,6 +232,11 @@ FROM messages
 WHERE direct_conversation_id = CAST(sqlc.arg(conversation_id) AS TEXT)
   AND parent_message_id IS NULL;
 
+-- name: DirectNextSeq :one
+SELECT CAST(COALESCE(MAX(channel_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE direct_conversation_id = CAST(sqlc.arg(conversation_id) AS TEXT);
+
 -- name: ReadChannelRead :one
 SELECT last_read_seq, last_read_at
 FROM channel_reads
@@ -258,9 +263,75 @@ ON CONFLICT(conversation_id, user_id) DO UPDATE SET
   last_read_seq = excluded.last_read_seq,
   last_read_at = excluded.last_read_at;
 
+-- name: ListDirectConversations :many
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT dr.last_read_seq FROM direct_reads dr WHERE dr.conversation_id = dc.id AND dr.user_id = sqlc.arg(reader_user_id)), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.direct_conversation_id = dc.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> sqlc.arg(reader_user_id)
+           AND m.channel_seq > COALESCE((SELECT dr2.last_read_seq FROM direct_reads dr2 WHERE dr2.conversation_id = dc.id AND dr2.user_id = sqlc.arg(reader_user_id)), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = sqlc.arg(workspace_id)
+  AND dcm.user_id = sqlc.arg(reader_user_id)
+ORDER BY dc.created_at;
+
+-- name: GetDirectConversation :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT dr.last_read_seq FROM direct_reads dr WHERE dr.conversation_id = dc.id AND dr.user_id = sqlc.arg(reader_user_id)), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.direct_conversation_id = dc.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> sqlc.arg(reader_user_id)
+           AND m.channel_seq > COALESCE((SELECT dr2.last_read_seq FROM direct_reads dr2 WHERE dr2.conversation_id = dc.id AND dr2.user_id = sqlc.arg(reader_user_id)), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.id = sqlc.arg(conversation_id)
+  AND dcm.user_id = sqlc.arg(reader_user_id);
+
+-- name: InsertDirectConversation :exec
+INSERT INTO direct_conversations (id, route_id, workspace_id, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(route_id), sqlc.arg(workspace_id), sqlc.arg(created_at));
+
+-- name: InsertDirectConversationMember :exec
+INSERT INTO direct_conversation_members (conversation_id, user_id, created_at)
+VALUES (sqlc.arg(conversation_id), sqlc.arg(user_id), sqlc.arg(created_at));
+
+-- name: RequireDirectMembership :one
+SELECT 1
+FROM direct_conversation_members
+WHERE conversation_id = sqlc.arg(conversation_id)
+  AND user_id = sqlc.arg(user_id);
+
+-- name: DirectConversationMemberIDs :many
+SELECT user_id
+FROM direct_conversation_members
+WHERE conversation_id = sqlc.arg(conversation_id)
+ORDER BY user_id;
+
+-- name: DirectConversationMembers :many
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+FROM users u
+JOIN direct_conversation_members dcm ON dcm.user_id = u.id
+WHERE dcm.conversation_id = sqlc.arg(conversation_id)
+ORDER BY u.display_name;
+
 -- name: InsertChannelMessage :exec
 INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
 VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(channel_id), NULL, sqlc.arg(author_id), NULL, sqlc.arg(thread_root_id), sqlc.arg(channel_seq), NULL, sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id), sqlc.arg(client_nonce));
+
+-- name: InsertDirectMessage :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (sqlc.arg(id), sqlc.arg(workspace_id), NULL, sqlc.arg(direct_conversation_id), sqlc.arg(author_id), NULL, sqlc.arg(thread_root_id), sqlc.arg(channel_seq), NULL, sqlc.arg(body), 'markdown', sqlc.arg(created_at), sqlc.arg(quoted_message_id), sqlc.arg(quoted_body_snapshot), sqlc.arg(quoted_author_id), sqlc.arg(client_nonce));
 
 -- name: InsertThreadState :exec
 INSERT INTO thread_state (root_message_id)

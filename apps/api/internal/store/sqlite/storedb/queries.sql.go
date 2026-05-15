@@ -93,6 +93,85 @@ func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyPa
 	return err
 }
 
+const directConversationMemberIDs = `-- name: DirectConversationMemberIDs :many
+SELECT user_id
+FROM direct_conversation_members
+WHERE conversation_id = ?1
+ORDER BY user_id
+`
+
+func (q *Queries) DirectConversationMemberIDs(ctx context.Context, conversationID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, directConversationMemberIDs, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var user_id string
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const directConversationMembers = `-- name: DirectConversationMembers :many
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+FROM users u
+JOIN direct_conversation_members dcm ON dcm.user_id = u.id
+WHERE dcm.conversation_id = ?1
+ORDER BY u.display_name
+`
+
+type DirectConversationMembersRow struct {
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	OwnerUserID sql.NullString `json:"owner_user_id"`
+	DisplayName string         `json:"display_name"`
+	Handle      string         `json:"handle"`
+	AvatarUrl   string         `json:"avatar_url"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+func (q *Queries) DirectConversationMembers(ctx context.Context, conversationID string) ([]DirectConversationMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, directConversationMembers, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DirectConversationMembersRow
+	for rows.Next() {
+		var i DirectConversationMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.OwnerUserID,
+			&i.DisplayName,
+			&i.Handle,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const directLastSeq = `-- name: DirectLastSeq :one
 SELECT CAST(COALESCE(MAX(channel_seq), 0) AS INTEGER) AS last_seq
 FROM messages
@@ -105,6 +184,19 @@ func (q *Queries) DirectLastSeq(ctx context.Context, conversationID string) (int
 	var last_seq int64
 	err := row.Scan(&last_seq)
 	return last_seq, err
+}
+
+const directNextSeq = `-- name: DirectNextSeq :one
+SELECT CAST(COALESCE(MAX(channel_seq), 0) + 1 AS INTEGER) AS next_seq
+FROM messages
+WHERE direct_conversation_id = CAST(?1 AS TEXT)
+`
+
+func (q *Queries) DirectNextSeq(ctx context.Context, conversationID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, directNextSeq, conversationID)
+	var next_seq int64
+	err := row.Scan(&next_seq)
+	return next_seq, err
 }
 
 const firstUser = `-- name: FirstUser :one
@@ -249,6 +341,54 @@ func (q *Queries) GetChannelWorkspace(ctx context.Context, id string) (string, e
 	var workspace_id string
 	err := row.Scan(&workspace_id)
 	return workspace_id, err
+}
+
+const getDirectConversation = `-- name: GetDirectConversation :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT dr.last_read_seq FROM direct_reads dr WHERE dr.conversation_id = dc.id AND dr.user_id = ?1), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.direct_conversation_id = dc.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> ?1
+           AND m.channel_seq > COALESCE((SELECT dr2.last_read_seq FROM direct_reads dr2 WHERE dr2.conversation_id = dc.id AND dr2.user_id = ?1), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.id = ?2
+  AND dcm.user_id = ?1
+`
+
+type GetDirectConversationParams struct {
+	ReaderUserID   string `json:"reader_user_id"`
+	ConversationID string `json:"conversation_id"`
+}
+
+type GetDirectConversationRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+	LastSeq     int64  `json:"last_seq"`
+	LastReadSeq int64  `json:"last_read_seq"`
+	UnreadCount int64  `json:"unread_count"`
+}
+
+func (q *Queries) GetDirectConversation(ctx context.Context, arg GetDirectConversationParams) (GetDirectConversationRow, error) {
+	row := q.db.QueryRowContext(ctx, getDirectConversation, arg.ReaderUserID, arg.ConversationID)
+	var i GetDirectConversationRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+		&i.LastSeq,
+		&i.LastReadSeq,
+		&i.UnreadCount,
+	)
+	return i, err
 }
 
 const getDirectConversationWorkspace = `-- name: GetDirectConversationWorkspace :one
@@ -691,6 +831,82 @@ func (q *Queries) InsertDefaultWorkspaceMember(ctx context.Context, arg InsertDe
 	return err
 }
 
+const insertDirectConversation = `-- name: InsertDirectConversation :exec
+INSERT INTO direct_conversations (id, route_id, workspace_id, created_at)
+VALUES (?1, ?2, ?3, ?4)
+`
+
+type InsertDirectConversationParams struct {
+	ID          string         `json:"id"`
+	RouteID     sql.NullString `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+func (q *Queries) InsertDirectConversation(ctx context.Context, arg InsertDirectConversationParams) error {
+	_, err := q.db.ExecContext(ctx, insertDirectConversation,
+		arg.ID,
+		arg.RouteID,
+		arg.WorkspaceID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertDirectConversationMember = `-- name: InsertDirectConversationMember :exec
+INSERT INTO direct_conversation_members (conversation_id, user_id, created_at)
+VALUES (?1, ?2, ?3)
+`
+
+type InsertDirectConversationMemberParams struct {
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+	CreatedAt      string `json:"created_at"`
+}
+
+func (q *Queries) InsertDirectConversationMember(ctx context.Context, arg InsertDirectConversationMemberParams) error {
+	_, err := q.db.ExecContext(ctx, insertDirectConversationMember, arg.ConversationID, arg.UserID, arg.CreatedAt)
+	return err
+}
+
+const insertDirectMessage = `-- name: InsertDirectMessage :exec
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (?1, ?2, NULL, ?3, ?4, NULL, ?5, ?6, NULL, ?7, 'markdown', ?8, ?9, ?10, ?11, ?12)
+`
+
+type InsertDirectMessageParams struct {
+	ID                   string         `json:"id"`
+	WorkspaceID          string         `json:"workspace_id"`
+	DirectConversationID sql.NullString `json:"direct_conversation_id"`
+	AuthorID             string         `json:"author_id"`
+	ThreadRootID         string         `json:"thread_root_id"`
+	ChannelSeq           sql.NullInt64  `json:"channel_seq"`
+	Body                 string         `json:"body"`
+	CreatedAt            string         `json:"created_at"`
+	QuotedMessageID      sql.NullString `json:"quoted_message_id"`
+	QuotedBodySnapshot   string         `json:"quoted_body_snapshot"`
+	QuotedAuthorID       sql.NullString `json:"quoted_author_id"`
+	ClientNonce          string         `json:"client_nonce"`
+}
+
+func (q *Queries) InsertDirectMessage(ctx context.Context, arg InsertDirectMessageParams) error {
+	_, err := q.db.ExecContext(ctx, insertDirectMessage,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.DirectConversationID,
+		arg.AuthorID,
+		arg.ThreadRootID,
+		arg.ChannelSeq,
+		arg.Body,
+		arg.CreatedAt,
+		arg.QuotedMessageID,
+		arg.QuotedBodySnapshot,
+		arg.QuotedAuthorID,
+		arg.ClientNonce,
+	)
+	return err
+}
+
 const insertHumanUser = `-- name: InsertHumanUser :exec
 INSERT INTO users (id, display_name, avatar_url, created_at)
 VALUES (?1, ?2, ?3, ?4)
@@ -957,6 +1173,71 @@ func (q *Queries) ListChannels(ctx context.Context, arg ListChannelsParams) ([]L
 			&i.Kind,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.LastSeq,
+			&i.LastReadSeq,
+			&i.UnreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDirectConversations = `-- name: ListDirectConversations :many
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at,
+       CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE direct_conversation_id = dc.id AND parent_message_id IS NULL), 0) AS INTEGER) AS last_seq,
+       CAST(COALESCE((SELECT dr.last_read_seq FROM direct_reads dr WHERE dr.conversation_id = dc.id AND dr.user_id = ?1), 0) AS INTEGER) AS last_read_seq,
+       CAST(COALESCE((
+         SELECT COUNT(*)
+         FROM messages m
+         WHERE m.direct_conversation_id = dc.id
+           AND m.parent_message_id IS NULL
+           AND m.author_id <> ?1
+           AND m.channel_seq > COALESCE((SELECT dr2.last_read_seq FROM direct_reads dr2 WHERE dr2.conversation_id = dc.id AND dr2.user_id = ?1), 0)
+       ), 0) AS INTEGER) AS unread_count
+FROM direct_conversations dc
+JOIN direct_conversation_members dcm ON dcm.conversation_id = dc.id
+WHERE dc.workspace_id = ?2
+  AND dcm.user_id = ?1
+ORDER BY dc.created_at
+`
+
+type ListDirectConversationsParams struct {
+	ReaderUserID string `json:"reader_user_id"`
+	WorkspaceID  string `json:"workspace_id"`
+}
+
+type ListDirectConversationsRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+	LastSeq     int64  `json:"last_seq"`
+	LastReadSeq int64  `json:"last_read_seq"`
+	UnreadCount int64  `json:"unread_count"`
+}
+
+func (q *Queries) ListDirectConversations(ctx context.Context, arg ListDirectConversationsParams) ([]ListDirectConversationsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDirectConversations, arg.ReaderUserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDirectConversationsRow
+	for rows.Next() {
+		var i ListDirectConversationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RouteID,
+			&i.WorkspaceID,
+			&i.CreatedAt,
 			&i.LastSeq,
 			&i.LastReadSeq,
 			&i.UnreadCount,
@@ -1286,6 +1567,25 @@ type RemoveReactionParams struct {
 func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
 	_, err := q.db.ExecContext(ctx, removeReaction, arg.MessageID, arg.UserID, arg.Emoji)
 	return err
+}
+
+const requireDirectMembership = `-- name: RequireDirectMembership :one
+SELECT 1
+FROM direct_conversation_members
+WHERE conversation_id = ?1
+  AND user_id = ?2
+`
+
+type RequireDirectMembershipParams struct {
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+}
+
+func (q *Queries) RequireDirectMembership(ctx context.Context, arg RequireDirectMembershipParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, requireDirectMembership, arg.ConversationID, arg.UserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const requireMembership = `-- name: RequireMembership :one

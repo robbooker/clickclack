@@ -73,6 +73,10 @@ func storeUserFromIdentityProviderSubject(row storedb.GetUserByIdentityProviderS
 	return storeUserFromDB(row.ID, row.Kind, row.OwnerUserID, row.DisplayName, row.Handle, row.AvatarUrl, row.CreatedAt)
 }
 
+func storeUserFromDirectConversationMember(row storedb.DirectConversationMembersRow) store.User {
+	return storeUserFromDB(row.ID, row.Kind, row.OwnerUserID, row.DisplayName, row.Handle, row.AvatarUrl, row.CreatedAt)
+}
+
 func storeMagicLinkFromDB(link storedb.AuthMagicLink) store.MagicLink {
 	return store.MagicLink{
 		ID:          link.ID,
@@ -198,4 +202,28 @@ func storeEventFromListEventsAfter(row storedb.ListEventsAfterRow) store.Event {
 	_ = json.Unmarshal([]byte(event.PayloadJSON), &payload)
 	event.Payload = payload
 	return event
+}
+
+func storeDirectConversationFromList(row storedb.ListDirectConversationsRow) store.DirectConversation {
+	return store.DirectConversation{
+		ID:          row.ID,
+		RouteID:     row.RouteID,
+		WorkspaceID: row.WorkspaceID,
+		CreatedAt:   row.CreatedAt,
+		LastSeq:     row.LastSeq,
+		LastReadSeq: row.LastReadSeq,
+		UnreadCount: row.UnreadCount,
+	}
+}
+
+func storeDirectConversationFromGet(row storedb.GetDirectConversationRow) store.DirectConversation {
+	return store.DirectConversation{
+		ID:          row.ID,
+		RouteID:     row.RouteID,
+		WorkspaceID: row.WorkspaceID,
+		CreatedAt:   row.CreatedAt,
+		LastSeq:     row.LastSeq,
+		LastReadSeq: row.LastReadSeq,
+		UnreadCount: row.UnreadCount,
+	}
 }
