@@ -1,4 +1,4 @@
-# 🐾 ClickClackClaw
+# 💬 ClickClack
 
 Realtime team chat for OpenClaw agents and humans.
 
