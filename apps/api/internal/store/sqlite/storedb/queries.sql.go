@@ -40,6 +40,23 @@ func (q *Queries) ChannelLastSeq(ctx context.Context, channelID string) (int64, 
 	return last_seq, err
 }
 
+const deleteMessageBody = `-- name: DeleteMessageBody :exec
+UPDATE messages
+SET body = '',
+    deleted_at = ?1
+WHERE id = ?2
+`
+
+type DeleteMessageBodyParams struct {
+	DeletedAt sql.NullString `json:"deleted_at"`
+	ID        string         `json:"id"`
+}
+
+func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMessageBody, arg.DeletedAt, arg.ID)
+	return err
+}
+
 const directLastSeq = `-- name: DirectLastSeq :one
 SELECT CAST(COALESCE(MAX(channel_seq), 0) AS INTEGER) AS last_seq
 FROM messages
@@ -114,6 +131,77 @@ func (q *Queries) FirstWorkspace(ctx context.Context) (FirstWorkspaceRow, error)
 	return i, err
 }
 
+const getBotTokenAuth = `-- name: GetBotTokenAuth :one
+SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
+       bt.id AS token_id, bt.workspace_id, bt.scopes_json
+FROM bot_tokens bt
+JOIN users u ON u.id = bt.bot_user_id
+WHERE bt.token_hash = ?1
+  AND bt.revoked_at IS NULL
+`
+
+type GetBotTokenAuthRow struct {
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	OwnerUserID sql.NullString `json:"owner_user_id"`
+	DisplayName string         `json:"display_name"`
+	Handle      string         `json:"handle"`
+	AvatarUrl   string         `json:"avatar_url"`
+	CreatedAt   string         `json:"created_at"`
+	TokenID     string         `json:"token_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	ScopesJson  string         `json:"scopes_json"`
+}
+
+func (q *Queries) GetBotTokenAuth(ctx context.Context, tokenHash string) (GetBotTokenAuthRow, error) {
+	row := q.db.QueryRowContext(ctx, getBotTokenAuth, tokenHash)
+	var i GetBotTokenAuthRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.OwnerUserID,
+		&i.DisplayName,
+		&i.Handle,
+		&i.AvatarUrl,
+		&i.CreatedAt,
+		&i.TokenID,
+		&i.WorkspaceID,
+		&i.ScopesJson,
+	)
+	return i, err
+}
+
+const getChannel = `-- name: GetChannel :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, name, kind, created_at, archived_at
+FROM channels
+WHERE id = ?1
+`
+
+type GetChannelRow struct {
+	ID          string         `json:"id"`
+	RouteID     string         `json:"route_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	CreatedAt   string         `json:"created_at"`
+	ArchivedAt  sql.NullString `json:"archived_at"`
+}
+
+func (q *Queries) GetChannel(ctx context.Context, id string) (GetChannelRow, error) {
+	row := q.db.QueryRowContext(ctx, getChannel, id)
+	var i GetChannelRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Kind,
+		&i.CreatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
 const getChannelWorkspace = `-- name: GetChannelWorkspace :one
 SELECT workspace_id
 FROM channels
@@ -158,6 +246,24 @@ func (q *Queries) GetMagicLinkByToken(ctx context.Context, token string) (AuthMa
 		&i.ExpiresAt,
 		&i.UsedAt,
 	)
+	return i, err
+}
+
+const getNotificationSettings = `-- name: GetNotificationSettings :one
+SELECT pushover_enabled, pushover_user_key
+FROM user_notification_settings
+WHERE user_id = ?1
+`
+
+type GetNotificationSettingsRow struct {
+	PushoverEnabled int64  `json:"pushover_enabled"`
+	PushoverUserKey string `json:"pushover_user_key"`
+}
+
+func (q *Queries) GetNotificationSettings(ctx context.Context, userID string) (GetNotificationSettingsRow, error) {
+	row := q.db.QueryRowContext(ctx, getNotificationSettings, userID)
+	var i GetNotificationSettingsRow
+	err := row.Scan(&i.PushoverEnabled, &i.PushoverUserKey)
 	return i, err
 }
 
@@ -353,6 +459,64 @@ func (q *Queries) GetUserByIdentityProviderSubject(ctx context.Context, arg GetU
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertBotToken = `-- name: InsertBotToken :exec
+INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+`
+
+type InsertBotTokenParams struct {
+	ID          string         `json:"id"`
+	TokenHash   string         `json:"token_hash"`
+	BotUserID   string         `json:"bot_user_id"`
+	WorkspaceID string         `json:"workspace_id"`
+	OwnerUserID sql.NullString `json:"owner_user_id"`
+	Name        string         `json:"name"`
+	ScopesJson  string         `json:"scopes_json"`
+	CreatedBy   sql.NullString `json:"created_by"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+func (q *Queries) InsertBotToken(ctx context.Context, arg InsertBotTokenParams) error {
+	_, err := q.db.ExecContext(ctx, insertBotToken,
+		arg.ID,
+		arg.TokenHash,
+		arg.BotUserID,
+		arg.WorkspaceID,
+		arg.OwnerUserID,
+		arg.Name,
+		arg.ScopesJson,
+		arg.CreatedBy,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertBotUser = `-- name: InsertBotUser :exec
+INSERT INTO users (id, kind, owner_user_id, display_name, handle, avatar_url, created_at)
+VALUES (?1, 'bot', ?2, ?3, ?4, ?5, ?6)
+`
+
+type InsertBotUserParams struct {
+	ID          string         `json:"id"`
+	OwnerUserID sql.NullString `json:"owner_user_id"`
+	DisplayName string         `json:"display_name"`
+	Handle      string         `json:"handle"`
+	AvatarUrl   string         `json:"avatar_url"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+func (q *Queries) InsertBotUser(ctx context.Context, arg InsertBotUserParams) error {
+	_, err := q.db.ExecContext(ctx, insertBotUser,
+		arg.ID,
+		arg.OwnerUserID,
+		arg.DisplayName,
+		arg.Handle,
+		arg.AvatarUrl,
+		arg.CreatedAt,
+	)
+	return err
 }
 
 const insertDefaultChannel = `-- name: InsertDefaultChannel :exec
@@ -597,6 +761,98 @@ func (q *Queries) InsertWorkspaceMember(ctx context.Context, arg InsertWorkspace
 	return err
 }
 
+const listDirectPushNotificationRecipients = `-- name: ListDirectPushNotificationRecipients :many
+SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
+FROM direct_conversation_members dcm
+JOIN users u ON u.id = dcm.user_id
+JOIN user_notification_settings uns ON uns.user_id = u.id
+WHERE dcm.conversation_id = ?1
+  AND u.id <> ?2
+  AND uns.pushover_enabled = 1
+  AND uns.pushover_user_key <> ''
+ORDER BY u.id
+`
+
+type ListDirectPushNotificationRecipientsParams struct {
+	ConversationID string `json:"conversation_id"`
+	AuthorID       string `json:"author_id"`
+}
+
+type ListDirectPushNotificationRecipientsRow struct {
+	UserID          string `json:"user_id"`
+	DisplayName     string `json:"display_name"`
+	PushoverUserKey string `json:"pushover_user_key"`
+}
+
+func (q *Queries) ListDirectPushNotificationRecipients(ctx context.Context, arg ListDirectPushNotificationRecipientsParams) ([]ListDirectPushNotificationRecipientsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDirectPushNotificationRecipients, arg.ConversationID, arg.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDirectPushNotificationRecipientsRow
+	for rows.Next() {
+		var i ListDirectPushNotificationRecipientsRow
+		if err := rows.Scan(&i.UserID, &i.DisplayName, &i.PushoverUserKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspacePushNotificationRecipients = `-- name: ListWorkspacePushNotificationRecipients :many
+SELECT u.id AS user_id, u.display_name, uns.pushover_user_key
+FROM workspace_members wm
+JOIN users u ON u.id = wm.user_id
+JOIN user_notification_settings uns ON uns.user_id = u.id
+WHERE wm.workspace_id = ?1
+  AND u.id <> ?2
+  AND uns.pushover_enabled = 1
+  AND uns.pushover_user_key <> ''
+ORDER BY u.id
+`
+
+type ListWorkspacePushNotificationRecipientsParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	AuthorID    string `json:"author_id"`
+}
+
+type ListWorkspacePushNotificationRecipientsRow struct {
+	UserID          string `json:"user_id"`
+	DisplayName     string `json:"display_name"`
+	PushoverUserKey string `json:"pushover_user_key"`
+}
+
+func (q *Queries) ListWorkspacePushNotificationRecipients(ctx context.Context, arg ListWorkspacePushNotificationRecipientsParams) ([]ListWorkspacePushNotificationRecipientsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWorkspacePushNotificationRecipients, arg.WorkspaceID, arg.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorkspacePushNotificationRecipientsRow
+	for rows.Next() {
+		var i ListWorkspacePushNotificationRecipientsRow
+		if err := rows.Scan(&i.UserID, &i.DisplayName, &i.PushoverUserKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markMagicLinkUsed = `-- name: MarkMagicLinkUsed :exec
 UPDATE auth_magic_links
 SET used_at = ?1
@@ -611,6 +867,33 @@ type MarkMagicLinkUsedParams struct {
 func (q *Queries) MarkMagicLinkUsed(ctx context.Context, arg MarkMagicLinkUsedParams) error {
 	_, err := q.db.ExecContext(ctx, markMagicLinkUsed, arg.UsedAt, arg.ID)
 	return err
+}
+
+const pruneEvents = `-- name: PruneEvents :execrows
+DELETE FROM events AS e
+WHERE e.workspace_id = ?1
+  AND (CAST(?2 AS TEXT) = '' OR julianday(e.created_at) < julianday(CAST(?2 AS TEXT)))
+  AND e.id NOT IN (
+    SELECT kept.id
+    FROM events AS kept
+    WHERE kept.workspace_id = ?1
+    ORDER BY kept.cursor DESC
+    LIMIT ?3
+  )
+`
+
+type PruneEventsParams struct {
+	WorkspaceIDArg string `json:"workspace_id_arg"`
+	Before         string `json:"before"`
+	KeepLatest     int64  `json:"keep_latest"`
+}
+
+func (q *Queries) PruneEvents(ctx context.Context, arg PruneEventsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneEvents, arg.WorkspaceIDArg, arg.Before, arg.KeepLatest)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const readChannelRead = `-- name: ReadChannelRead :one
@@ -678,6 +961,65 @@ func (q *Queries) RequireMembership(ctx context.Context, arg RequireMembershipPa
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const touchBotToken = `-- name: TouchBotToken :exec
+UPDATE bot_tokens
+SET last_used_at = ?1
+WHERE id = ?2
+`
+
+type TouchBotTokenParams struct {
+	LastUsedAt sql.NullString `json:"last_used_at"`
+	ID         string         `json:"id"`
+}
+
+func (q *Queries) TouchBotToken(ctx context.Context, arg TouchBotTokenParams) error {
+	_, err := q.db.ExecContext(ctx, touchBotToken, arg.LastUsedAt, arg.ID)
+	return err
+}
+
+const updateChannel = `-- name: UpdateChannel :exec
+UPDATE channels
+SET name = ?1,
+    kind = ?2,
+    archived_at = ?3
+WHERE id = ?4
+`
+
+type UpdateChannelParams struct {
+	Name       string         `json:"name"`
+	Kind       string         `json:"kind"`
+	ArchivedAt sql.NullString `json:"archived_at"`
+	ID         string         `json:"id"`
+}
+
+func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) error {
+	_, err := q.db.ExecContext(ctx, updateChannel,
+		arg.Name,
+		arg.Kind,
+		arg.ArchivedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateMessageBody = `-- name: UpdateMessageBody :exec
+UPDATE messages
+SET body = ?1,
+    edited_at = ?2
+WHERE id = ?3
+`
+
+type UpdateMessageBodyParams struct {
+	Body     string         `json:"body"`
+	EditedAt sql.NullString `json:"edited_at"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyParams) error {
+	_, err := q.db.ExecContext(ctx, updateMessageBody, arg.Body, arg.EditedAt, arg.ID)
+	return err
 }
 
 const updateUserProfile = `-- name: UpdateUserProfile :exec
@@ -752,5 +1094,24 @@ func (q *Queries) UpsertDirectRead(ctx context.Context, arg UpsertDirectReadPara
 		arg.LastReadSeq,
 		arg.LastReadAt,
 	)
+	return err
+}
+
+const upsertNotificationSettings = `-- name: UpsertNotificationSettings :exec
+INSERT INTO user_notification_settings (user_id, pushover_enabled, pushover_user_key)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(user_id) DO UPDATE SET
+  pushover_enabled = excluded.pushover_enabled,
+  pushover_user_key = excluded.pushover_user_key
+`
+
+type UpsertNotificationSettingsParams struct {
+	UserID          string `json:"user_id"`
+	PushoverEnabled int64  `json:"pushover_enabled"`
+	PushoverUserKey string `json:"pushover_user_key"`
+}
+
+func (q *Queries) UpsertNotificationSettings(ctx context.Context, arg UpsertNotificationSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertNotificationSettings, arg.UserID, arg.PushoverEnabled, arg.PushoverUserKey)
 	return err
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 var pushoverUserKeyRE = regexp.MustCompile(`^[A-Za-z0-9]{30}$`)
@@ -24,13 +25,11 @@ func (s *Store) UpdateNotificationSettings(ctx context.Context, input store.Upda
 	if input.PushoverEnabled {
 		enabled = 1
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO user_notification_settings (user_id, pushover_enabled, pushover_user_key)
-		VALUES (?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET
-			pushover_enabled = excluded.pushover_enabled,
-			pushover_user_key = excluded.pushover_user_key`, input.UserID, enabled, userKey)
-	if err != nil {
+	if err := s.q.UpsertNotificationSettings(ctx, storedb.UpsertNotificationSettingsParams{
+		UserID:          input.UserID,
+		PushoverEnabled: int64(enabled),
+		PushoverUserKey: userKey,
+	}); err != nil {
 		return store.NotificationSettings{}, err
 	}
 	return store.NotificationSettings{PushoverEnabled: input.PushoverEnabled, PushoverUserKey: userKey}, nil
@@ -46,20 +45,14 @@ func (s *Store) hydrateUserNotificationSettings(ctx context.Context, user store.
 }
 
 func (s *Store) getNotificationSettings(ctx context.Context, userID string) (store.NotificationSettings, error) {
-	var settings store.NotificationSettings
-	var enabled int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT pushover_enabled, pushover_user_key
-		FROM user_notification_settings
-		WHERE user_id = ?`, userID).Scan(&enabled, &settings.PushoverUserKey)
+	row, err := s.q.GetNotificationSettings(ctx, userID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return settings, nil
+		return store.NotificationSettings{}, nil
 	}
 	if err != nil {
 		return store.NotificationSettings{}, err
 	}
-	settings.PushoverEnabled = enabled == 1
-	return settings, nil
+	return storeNotificationSettingsFromDB(row), nil
 }
 
 func (s *Store) ListPushNotificationRecipients(ctx context.Context, messageID string) ([]store.PushNotificationRecipient, error) {
@@ -74,49 +67,31 @@ func (s *Store) ListPushNotificationRecipients(ctx context.Context, messageID st
 }
 
 func (s *Store) listWorkspacePushNotificationRecipients(ctx context.Context, message store.Message) ([]store.PushNotificationRecipient, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.display_name, uns.pushover_user_key
-		FROM workspace_members wm
-		JOIN users u ON u.id = wm.user_id
-		JOIN user_notification_settings uns ON uns.user_id = u.id
-		WHERE wm.workspace_id = ?
-		  AND u.id <> ?
-		  AND uns.pushover_enabled = 1
-		  AND uns.pushover_user_key <> ''
-		ORDER BY u.id`, message.WorkspaceID, message.AuthorID)
+	rows, err := s.q.ListWorkspacePushNotificationRecipients(ctx, storedb.ListWorkspacePushNotificationRecipientsParams{
+		WorkspaceID: message.WorkspaceID,
+		AuthorID:    message.AuthorID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanPushNotificationRecipients(rows)
+	out := make([]store.PushNotificationRecipient, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storePushRecipient(row.UserID, row.DisplayName, row.PushoverUserKey))
+	}
+	return out, nil
 }
 
 func (s *Store) listDirectPushNotificationRecipients(ctx context.Context, message store.Message) ([]store.PushNotificationRecipient, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.display_name, uns.pushover_user_key
-		FROM direct_conversation_members dcm
-		JOIN users u ON u.id = dcm.user_id
-		JOIN user_notification_settings uns ON uns.user_id = u.id
-		WHERE dcm.conversation_id = ?
-		  AND u.id <> ?
-		  AND uns.pushover_enabled = 1
-		  AND uns.pushover_user_key <> ''
-		ORDER BY u.id`, message.DirectConversationID, message.AuthorID)
+	rows, err := s.q.ListDirectPushNotificationRecipients(ctx, storedb.ListDirectPushNotificationRecipientsParams{
+		ConversationID: message.DirectConversationID,
+		AuthorID:       message.AuthorID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanPushNotificationRecipients(rows)
-}
-
-func scanPushNotificationRecipients(rows *sql.Rows) ([]store.PushNotificationRecipient, error) {
-	out := []store.PushNotificationRecipient{}
-	for rows.Next() {
-		var recipient store.PushNotificationRecipient
-		if err := rows.Scan(&recipient.UserID, &recipient.DisplayName, &recipient.PushoverUserKey); err != nil {
-			return nil, err
-		}
-		out = append(out, recipient)
+	out := make([]store.PushNotificationRecipient, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, storePushRecipient(row.UserID, row.DisplayName, row.PushoverUserKey))
 	}
-	return out, rows.Err()
+	return out, nil
 }

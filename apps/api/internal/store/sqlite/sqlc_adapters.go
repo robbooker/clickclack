@@ -11,6 +11,10 @@ func sqlText(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: true}
 }
 
+func sqlOptionalText(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
+}
+
 func stringFromNull(value sql.NullString) string {
 	if !value.Valid {
 		return ""
@@ -23,6 +27,13 @@ func ptrFromNull(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+func nullFromPtr(value *string) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sqlText(*value)
 }
 
 func storeUserFromDB(id, kind string, ownerUserID sql.NullString, displayName, handle, avatarURL, createdAt string) store.User {
@@ -92,5 +103,40 @@ func storeUploadFromGetUpload(row storedb.GetUploadRow) store.Upload {
 		DurationMS:  int(row.DurationMs),
 		StoragePath: row.StoragePath,
 		CreatedAt:   row.CreatedAt,
+	}
+}
+
+func storeChannelFromGetChannel(row storedb.GetChannelRow) store.Channel {
+	return store.Channel{
+		ID:          row.ID,
+		RouteID:     row.RouteID,
+		WorkspaceID: row.WorkspaceID,
+		Name:        row.Name,
+		Kind:        row.Kind,
+		CreatedAt:   row.CreatedAt,
+		ArchivedAt:  ptrFromNull(row.ArchivedAt),
+	}
+}
+
+func storeNotificationSettingsFromDB(row storedb.GetNotificationSettingsRow) store.NotificationSettings {
+	return store.NotificationSettings{
+		PushoverEnabled: row.PushoverEnabled == 1,
+		PushoverUserKey: row.PushoverUserKey,
+	}
+}
+
+func storePushRecipient(userID, displayName, userKey string) store.PushNotificationRecipient {
+	return store.PushNotificationRecipient{
+		UserID:          userID,
+		DisplayName:     displayName,
+		PushoverUserKey: userKey,
+	}
+}
+
+func storeBotTokenAuthFromDB(row storedb.GetBotTokenAuthRow) store.BotTokenAuth {
+	return store.BotTokenAuth{
+		User:        storeUserFromDB(row.ID, row.Kind, row.OwnerUserID, row.DisplayName, row.Handle, row.AvatarUrl, row.CreatedAt),
+		TokenID:     row.TokenID,
+		WorkspaceID: row.WorkspaceID,
 	}
 }

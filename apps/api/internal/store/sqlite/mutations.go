@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/store/sqlite/storedb"
 )
 
 func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInput) (store.Channel, store.Event, error) {
@@ -15,10 +16,12 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 		return store.Channel{}, store.Event{}, err
 	}
 	defer tx.Rollback()
-	ch, err := scanChannel(tx.QueryRowContext(ctx, `SELECT id, COALESCE(route_id, ''), workspace_id, name, kind, created_at, archived_at FROM channels WHERE id = ?`, input.ChannelID))
+	qtx := s.q.WithTx(tx)
+	chRow, err := qtx.GetChannel(ctx, input.ChannelID)
 	if err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
+	ch := storeChannelFromGetChannel(chRow)
 	if err := requireMembershipTx(ctx, tx, ch.WorkspaceID, input.UserID); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
@@ -38,11 +41,12 @@ func (s *Store) UpdateChannel(ctx context.Context, input store.UpdateChannelInpu
 			archivedValue = &value
 		}
 	}
-	var archivedAt any
-	if archivedValue != nil {
-		archivedAt = *archivedValue
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE channels SET name = ?, kind = ?, archived_at = ? WHERE id = ?`, name, kind, archivedAt, ch.ID); err != nil {
+	if err := qtx.UpdateChannel(ctx, storedb.UpdateChannelParams{
+		Name:       name,
+		Kind:       kind,
+		ArchivedAt: nullFromPtr(archivedValue),
+		ID:         ch.ID,
+	}); err != nil {
 		return store.Channel{}, store.Event{}, err
 	}
 	event, err := insertEvent(ctx, tx, ch.WorkspaceID, ch.ID, "channel.updated", nil, map[string]string{"channel_id": ch.ID})
@@ -76,7 +80,7 @@ func (s *Store) UpdateMessage(ctx context.Context, input store.UpdateMessageInpu
 		return store.Message{}, store.Event{}, errors.New("message body is required")
 	}
 	editedAt := now()
-	if _, err := tx.ExecContext(ctx, `UPDATE messages SET body = ?, edited_at = ? WHERE id = ?`, body, editedAt, msg.ID); err != nil {
+	if err := s.q.WithTx(tx).UpdateMessageBody(ctx, storedb.UpdateMessageBodyParams{Body: body, EditedAt: sqlText(editedAt), ID: msg.ID}); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	payload := messagePayload(msg)
@@ -110,7 +114,7 @@ func (s *Store) DeleteMessage(ctx context.Context, input store.DeleteMessageInpu
 		return store.Message{}, store.Event{}, errors.New("only the author can delete a message")
 	}
 	deletedAt := now()
-	if _, err := tx.ExecContext(ctx, `UPDATE messages SET body = '', deleted_at = ? WHERE id = ?`, deletedAt, msg.ID); err != nil {
+	if err := s.q.WithTx(tx).DeleteMessageBody(ctx, storedb.DeleteMessageBodyParams{DeletedAt: sqlText(deletedAt), ID: msg.ID}); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
 	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
