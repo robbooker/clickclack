@@ -124,6 +124,9 @@ func (s *Store) CreateReservedUpload(ctx context.Context, reservationID string, 
 	if err := requireNoModerationBlockTx(ctx, tx, input.WorkspaceID, input.OwnerID); err != nil {
 		return store.Upload{}, err
 	}
+	if input.ByteSize < 0 {
+		return store.Upload{}, errors.New("upload byte size must be non-negative")
+	}
 	if input.ByteSize > reservation.ByteSize {
 		return store.Upload{}, store.ErrUploadQuotaExceeded
 	}

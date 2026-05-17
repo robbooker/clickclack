@@ -329,6 +329,44 @@ func TestReservedUploadRechecksModerationOnFinalize(t *testing.T) {
 	}
 }
 
+func TestReservedUploadRejectsNegativeFinalizeSize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "reserved-upload-negative-owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	reservation, err := st.ReserveUploadQuota(ctx, workspace.ID, owner.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.CreateReservedUpload(ctx, reservation.ID, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     owner.ID,
+		Filename:    "negative.bin",
+		ContentType: "application/octet-stream",
+		ByteSize:    -1,
+		StoragePath: "/tmp/negative.bin",
+	})
+	if err == nil || !strings.Contains(err.Error(), "non-negative") {
+		t.Fatalf("expected negative size rejection, got %v", err)
+	}
+	quota, err := st.UploadQuota(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quota.UsedBytes != reservation.ByteSize || quota.UsedCount != 1 {
+		t.Fatalf("negative finalize changed quota unexpectedly: %#v", quota)
+	}
+}
+
 func TestAuthTimestampComparisonsParseRFC3339Nano(t *testing.T) {
 	t.Parallel()
 	current, err := time.Parse(time.RFC3339Nano, "2026-01-01T00:00:00.123Z")

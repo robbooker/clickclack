@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rejected negative byte sizes when finalizing reserved uploads so quota accounting cannot be credited by malformed store calls.
 - Kept the infra SQLite migration mirror in sync with the embedded guest moderation migration.
 - Required DM bot scopes on generic message, thread, reaction, upload, and typing routes when the target resource belongs to a direct conversation.
 - Reserved upload quota before object storage writes so concurrent uploads cannot overspend a workspace budget.
