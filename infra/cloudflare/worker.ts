@@ -1,6 +1,16 @@
 import { Container, getContainer } from "@cloudflare/containers";
 import { env } from "cloudflare:workers";
 
+function optionalContainerEnv(values: Record<string, string | undefined>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== "") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export class ClickClackContainer extends Container {
   defaultPort = 8080;
   sleepAfter = "10m";
@@ -13,12 +23,14 @@ export class ClickClackContainer extends Container {
     CLICKCLACK_DEV_BOOTSTRAP: "false",
     CLICKCLACK_GITHUB_CLIENT_ID: env.CLICKCLACK_GITHUB_CLIENT_ID,
     CLICKCLACK_GITHUB_CLIENT_SECRET: env.CLICKCLACK_GITHUB_CLIENT_SECRET,
-    CLICKCLACK_GITHUB_ALLOWED_ORG: env.CLICKCLACK_GITHUB_ALLOWED_ORG,
     CLICKCLACK_PUSHOVER_API_TOKEN: env.CLICKCLACK_PUSHOVER_API_TOKEN ?? "",
     CLICKCLACK_R2_ACCOUNT_ID: env.CLICKCLACK_R2_ACCOUNT_ID ?? "",
     CLICKCLACK_R2_ACCESS_KEY_ID: env.CLICKCLACK_R2_ACCESS_KEY_ID ?? "",
     CLICKCLACK_R2_SECRET_ACCESS_KEY: env.CLICKCLACK_R2_SECRET_ACCESS_KEY ?? "",
     CLICKCLACK_R2_ENDPOINT: env.CLICKCLACK_R2_ENDPOINT ?? "",
+    ...optionalContainerEnv({
+      CLICKCLACK_GITHUB_ALLOWED_ORG: env.CLICKCLACK_GITHUB_ALLOWED_ORG,
+    }),
   };
 }
 
