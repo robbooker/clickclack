@@ -35,13 +35,14 @@ var ErrPostRateLimited = errors.New("waiting room post limit reached")
 var ErrUploadQuotaExceeded = errors.New("upload quota exceeded")
 
 const (
-	WorkspaceRoleOwner     = "owner"
-	WorkspaceRoleModerator = "moderator"
-	WorkspaceRoleMember    = "member"
-	WorkspaceRoleGuest     = "guest"
-	WorkspaceRoleBot       = "bot"
-	GuestChannelName       = "guest"
-	GuestPostLimit         = 3
+	WorkspaceRoleOwner           = "owner"
+	WorkspaceRoleModerator       = "moderator"
+	WorkspaceRoleMember          = "member"
+	WorkspaceRoleGuest           = "guest"
+	WorkspaceRoleBot             = "bot"
+	GuestChannelName             = "guest"
+	GuestPostLimit               = 3
+	MaxDirectConversationMembers = 32
 
 	UploadQuotaBytesPerUserWorkspace int64 = 512 << 20
 	UploadQuotaCountPerUserWorkspace int64 = 64

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"slices"
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -72,6 +71,9 @@ func (s *Store) CreateDirectConversation(ctx context.Context, input store.Create
 	memberIDs = compactStrings(memberIDs)
 	if len(memberIDs) < 2 {
 		return store.DirectConversation{}, errors.New("direct conversation needs at least two members")
+	}
+	if len(memberIDs) > store.MaxDirectConversationMembers {
+		return store.DirectConversation{}, errors.New("direct conversation has too many members")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -326,12 +328,17 @@ func (s *Store) directConversationMembersByConversationIDs(ctx context.Context, 
 }
 
 func compactStrings(values []string) []string {
-	var out []string
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
-		if value == "" || slices.Contains(out, value) {
+		if value == "" {
 			continue
 		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
 		out = append(out, value)
 	}
 	return out

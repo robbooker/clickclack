@@ -592,6 +592,24 @@ func TestStoreDirectMessagesAndUserLookup(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("expected two dm conversations for other member, got %#v", list)
 	}
+	tooManyMemberIDs := make([]string, 0, store.MaxDirectConversationMembers)
+	for i := 0; i < store.MaxDirectConversationMembers; i++ {
+		user, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: fmt.Sprintf("DM Extra %02d", i), Email: fmt.Sprintf("dm-extra-%02d@example.com", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.AddWorkspaceMember(ctx, workspace.ID, user.ID, "member"); err != nil {
+			t.Fatal(err)
+		}
+		tooManyMemberIDs = append(tooManyMemberIDs, user.ID)
+	}
+	if _, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{
+		WorkspaceID: workspace.ID,
+		UserID:      owner.ID,
+		MemberIDs:   tooManyMemberIDs,
+	}); err == nil {
+		t.Fatal("expected overlarge direct conversation to be rejected")
+	}
 	msg, event, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{
 		ConversationID: dm.ID,
 		AuthorID:       other.ID,
