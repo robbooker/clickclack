@@ -270,8 +270,11 @@ func setUploadResponseHeaders(w http.ResponseWriter, upload store.Upload) {
 
 func safeUploadContentType(value string) string {
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	if strings.HasPrefix(contentType, "audio/") {
+		return contentType
+	}
 	switch contentType {
-	case "image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "audio/mpeg", "audio/ogg", "audio/wav", "text/plain", "application/pdf":
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "text/plain", "application/pdf":
 		return contentType
 	default:
 		return "application/octet-stream"

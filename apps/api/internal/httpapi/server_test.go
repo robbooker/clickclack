@@ -1378,6 +1378,12 @@ func TestUploadResponseHeadersUseSafeContentTypes(t *testing.T) {
 		t.Fatalf("unexpected image headers: %#v", image.Header())
 	}
 
+	audio := httptest.NewRecorder()
+	setUploadResponseHeaders(audio, store.Upload{Filename: "clip.m4a", ContentType: "audio/x-m4a"})
+	if audio.Header().Get("Content-Type") != "audio/x-m4a" || !strings.HasPrefix(audio.Header().Get("Content-Disposition"), "inline;") {
+		t.Fatalf("unexpected audio headers: %#v", audio.Header())
+	}
+
 	html := httptest.NewRecorder()
 	setUploadResponseHeaders(html, store.Upload{Filename: "index.html", ContentType: "text/html"})
 	if html.Header().Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(html.Header().Get("Content-Disposition"), "attachment;") {
