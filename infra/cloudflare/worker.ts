@@ -24,7 +24,7 @@ export class ClickClackContainer extends Container {
 
 export default {
   async fetch(request: Request, workerEnv: Env): Promise<Response> {
-    const container = getContainer(workerEnv.CLICKCLACK_CONTAINER, "prod");
+    const container = getContainer(workerEnv.CLICKCLACK_CONTAINER, workerEnv.CLICKCLACK_CONTAINER_NAME || "prod");
     return container.fetch(request);
   },
 };
