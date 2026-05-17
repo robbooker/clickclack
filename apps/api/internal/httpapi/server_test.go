@@ -1154,8 +1154,8 @@ func TestHTTPServerTimeouts(t *testing.T) {
 	if server.ReadHeaderTimeout != readHeaderTimeout {
 		t.Fatalf("unexpected read header timeout %s", server.ReadHeaderTimeout)
 	}
-	if server.ReadTimeout != requestReadTimeout {
-		t.Fatalf("unexpected request read timeout %s", server.ReadTimeout)
+	if server.IdleTimeout != idleTimeout {
+		t.Fatalf("unexpected idle timeout %s", server.IdleTimeout)
 	}
 }
 

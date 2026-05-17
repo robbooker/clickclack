@@ -968,6 +968,9 @@ func readJSON(w http.ResponseWriter, r *http.Request, out any) error {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); err == nil {
+		if _, drainErr := io.Copy(io.Discard, r.Body); drainErr != nil {
+			return drainErr
+		}
 		return errors.New("json request body must contain a single JSON value")
 	} else if !errors.Is(err, io.EOF) {
 		return err

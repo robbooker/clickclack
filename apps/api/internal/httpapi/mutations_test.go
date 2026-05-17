@@ -241,16 +241,7 @@ func TestDirectTypingEphemeralIsLimitedToConversationMembers(t *testing.T) {
 	if channelEphemeral.Event.ChannelID != channels[0].ID {
 		t.Fatalf("unexpected channel typing event: %#v", channelEphemeral.Event)
 	}
-	payloadChannelEphemeral := postJSONAsUser[struct {
-		Event store.Event `json:"event"`
-	}](t, owner.ID, server.URL+"/api/realtime/ephemeral", map[string]any{
-		"workspace_id": workspace.ID,
-		"type":         "typing.started",
-		"payload":      map[string]any{"channel_id": channels[0].ID},
-	})
-	if payloadChannelEphemeral.Event.ChannelID != channels[0].ID {
-		t.Fatalf("unexpected payload channel typing event: %#v", payloadChannelEphemeral.Event)
-	}
+	expectStatusAsUser(t, owner.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","type":"typing.started","payload":{"channel_id":"`+channels[0].ID+`"}}`)), http.StatusBadRequest)
 	blocked := true
 	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: member.ID, Blocked: &blocked}); err != nil {
 		t.Fatal(err)
@@ -260,7 +251,6 @@ func TestDirectTypingEphemeralIsLimitedToConversationMembers(t *testing.T) {
 	expectStatusAsUser(t, member.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","type":"presence.changed"}`)), http.StatusForbidden)
 	expectStatusAsUser(t, guest.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","channel_id":"`+channels[0].ID+`","type":"typing.started"}`)), http.StatusForbidden)
 	expectStatusAsUser(t, guest.ID, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","type":"typing.started","payload":{"channel_id":"`+channels[0].ID+`"}}`)), http.StatusForbidden)
-	expectStatus(t, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","channel_id":"`+channels[0].ID+`","type":"typing.started","payload":{"channel_id":"chn_other"}}`)), http.StatusBadRequest)
 	expectStatus(t, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","channel_id":"chn_missing","type":"typing.started"}`)), http.StatusForbidden)
 	expectStatus(t, http.MethodPost, server.URL+"/api/realtime/ephemeral", bytes.NewReader([]byte(`{"workspace_id":"`+workspace.ID+`","direct_conversation_id":"`+dm.ID+`","channel_id":"chn_any","type":"typing.started"}`)), http.StatusBadRequest)
 	reqBody := bytes.NewReader([]byte(`{"workspace_id":"` + workspace.ID + `","direct_conversation_id":"` + dm.ID + `","type":"typing.started"}`))

@@ -163,13 +163,10 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 		return store.Event{}, err
 	}
 	if msg.AuthorID != input.UserID {
-		return store.ErrMessageNotWritable
+		return store.Event{}, store.ErrMessageNotWritable
 	}
 	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return store.Event{}, err
-	}
-	if msg.AuthorID != input.UserID {
-		return store.Event{}, errors.New("message attachments can only be changed by the message author")
 	}
 	if msg.DeletedAt != nil {
 		return store.Event{}, errors.New("deleted messages cannot have attachments")

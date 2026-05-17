@@ -123,23 +123,7 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		body.Payload = map[string]any{}
 	}
 	channelID := strings.TrimSpace(body.ChannelID)
-	if payloadID, _ := body.Payload["channel_id"].(string); payloadID != "" {
-		payloadID = strings.TrimSpace(payloadID)
-		if channelID != "" && channelID != payloadID {
-			writeError(w, http.StatusBadRequest, errors.New("channel_id values do not match"))
-			return
-		}
-		channelID = payloadID
-	}
 	directConversationID := strings.TrimSpace(body.DirectConversationID)
-	if payloadID, _ := body.Payload["direct_conversation_id"].(string); payloadID != "" {
-		payloadID = strings.TrimSpace(payloadID)
-		if directConversationID != "" && directConversationID != payloadID {
-			writeError(w, http.StatusBadRequest, errors.New("direct_conversation_id values do not match"))
-			return
-		}
-		directConversationID = payloadID
-	}
 	if (body.Type == "typing.started" || body.Type == "typing.stopped") && channelID == "" && directConversationID == "" {
 		writeError(w, http.StatusBadRequest, errors.New("typing events require channel_id or direct_conversation_id"))
 		return
