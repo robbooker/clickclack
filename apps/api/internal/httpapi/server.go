@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -67,7 +68,7 @@ func New(st store.Store, hub *realtime.Hub, options Options) *Server {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
+	r.Use(middleware.RequestLogger(&pathOnlyLogFormatter{}))
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api", func(r chi.Router) {
@@ -114,6 +115,43 @@ func (s *Server) Handler() http.Handler {
 	r.Head("/*", s.serveSPA)
 	r.Get("/*", s.serveSPA)
 	return r
+}
+
+type pathOnlyLogFormatter struct {
+	Logger middleware.LoggerInterface
+}
+
+func (f *pathOnlyLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	path := r.URL.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	prefix := fmt.Sprintf("\"%s %s://%s%s %s\" from %s - ", r.Method, scheme, r.Host, path, r.Proto, r.RemoteAddr)
+	return &pathOnlyLogEntry{logger: f.logger(), prefix: prefix}
+}
+
+func (f *pathOnlyLogFormatter) logger() middleware.LoggerInterface {
+	if f.Logger != nil {
+		return f.Logger
+	}
+	return log.Default()
+}
+
+type pathOnlyLogEntry struct {
+	logger middleware.LoggerInterface
+	prefix string
+}
+
+func (e *pathOnlyLogEntry) Write(status, bytes int, _ http.Header, elapsed time.Duration, _ interface{}) {
+	e.logger.Print(fmt.Sprintf("%s%03d %dB in %s", e.prefix, status, bytes, elapsed))
+}
+
+func (e *pathOnlyLogEntry) Panic(v interface{}, _ []byte) {
+	middleware.PrintPrettyStack(v)
 }
 
 func (s *Server) resolveRoute(w http.ResponseWriter, r *http.Request) {

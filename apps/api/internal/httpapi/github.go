@@ -81,6 +81,7 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid github oauth state"))
 		return
 	}
+	s.clearGitHubStateCookie(w, r)
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
 		writeError(w, http.StatusBadRequest, errors.New("github oauth code is required"))
@@ -128,6 +129,19 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, r, session)
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) clearGitHubStateCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cc_github_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   s.secureCookies(r),
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (s *Server) exchangeGitHubCode(ctx context.Context, r *http.Request, code string) (string, error) {

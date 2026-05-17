@@ -1,16 +1,19 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/realtime"
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
@@ -127,6 +130,10 @@ func TestGitHubOAuthFlow(t *testing.T) {
 	resp.Body.Close()
 	if sessionCookie == nil || sessionCookie.Value == "" {
 		t.Fatal("expected session cookie")
+	}
+	clearedStateCookie := findCookie(resp.Cookies(), "cc_github_state")
+	if clearedStateCookie == nil || clearedStateCookie.MaxAge >= 0 {
+		t.Fatalf("expected github state cookie to be cleared, got %#v", clearedStateCookie)
 	}
 
 	req, err = http.NewRequest(http.MethodGet, server.URL+"/api/me", nil)
@@ -316,6 +323,24 @@ func TestGitHubOAuthAllowedOrg(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected org denied, got %s", resp.Status)
+	}
+}
+
+func TestRequestLoggerOmitsQueryString(t *testing.T) {
+	t.Parallel()
+	var logs bytes.Buffer
+	formatter := &pathOnlyLogFormatter{Logger: log.New(&logs, "", 0)}
+	req := httptest.NewRequest(http.MethodGet, "https://example.test/api/auth/github/callback?code=secret-code&state=secret-state&after_cursor=secret-cursor", nil)
+
+	entry := formatter.NewLogEntry(req)
+	entry.Write(http.StatusFound, 0, nil, time.Millisecond, nil)
+
+	got := logs.String()
+	if strings.Contains(got, "secret-code") || strings.Contains(got, "secret-state") || strings.Contains(got, "secret-cursor") || strings.Contains(got, "?") {
+		t.Fatalf("expected query string to be omitted from request log, got %q", got)
+	}
+	if !strings.Contains(got, "/api/auth/github/callback") {
+		t.Fatalf("expected path in request log, got %q", got)
 	}
 }
 
