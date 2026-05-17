@@ -62,7 +62,11 @@ func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.U
 	if err := s.requireMembership(ctx, upload.WorkspaceID, userID); err != nil {
 		return store.Upload{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id FROM message_attachments WHERE upload_id = ?`, uploadID)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ma.message_id
+		FROM message_attachments ma
+		JOIN messages m ON m.id = ma.message_id
+		WHERE ma.upload_id = ? AND m.deleted_at IS NULL`, uploadID)
 	if err != nil {
 		return store.Upload{}, err
 	}
@@ -118,6 +122,9 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	if msg.AuthorID != input.UserID {
 		return errors.New("message attachments can only be changed by the message author")
 	}
+	if msg.DeletedAt != nil {
+		return errors.New("deleted messages cannot have attachments")
+	}
 	uploadWorkspace, err := qtx.GetUploadWorkspace(ctx, input.UploadID)
 	if err != nil {
 		return err
@@ -131,7 +138,11 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	}
 	upload := storeUploadFromGetUpload(uploadRow)
 	if upload.OwnerID != input.UserID {
-		rows, err := tx.QueryContext(ctx, `SELECT message_id FROM message_attachments WHERE upload_id = ?`, input.UploadID)
+		rows, err := tx.QueryContext(ctx, `
+			SELECT ma.message_id
+			FROM message_attachments ma
+			JOIN messages m ON m.id = ma.message_id
+			WHERE ma.upload_id = ? AND m.deleted_at IS NULL`, input.UploadID)
 		if err != nil {
 			return err
 		}
@@ -154,7 +165,7 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 		visible := false
 		for _, messageID := range messageIDs {
 			attachedMessage, err := getMessageTx(ctx, tx, messageID)
-			if err == nil && requireMessageAccessTx(ctx, tx, attachedMessage, input.UserID) == nil {
+			if err == nil && attachedMessage.DeletedAt == nil && requireMessageAccessTx(ctx, tx, attachedMessage, input.UserID) == nil {
 				visible = true
 				break
 			}
@@ -180,8 +191,14 @@ func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message
 	ids := make([]string, 0, len(messages))
 	indexByID := make(map[string]int, len(messages))
 	for i, message := range messages {
+		if message.DeletedAt != nil {
+			continue
+		}
 		ids = append(ids, message.ID)
 		indexByID[message.ID] = i
+	}
+	if len(ids) == 0 {
+		return messages, nil
 	}
 	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
 	args := make([]any, 0, len(ids))
@@ -192,7 +209,8 @@ func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message
 		SELECT ma.message_id, u.id, u.workspace_id, u.owner_id, u.filename, u.content_type, u.byte_size, u.width, u.height, u.duration_ms, u.storage_path, u.created_at
 		FROM message_attachments ma
 		JOIN uploads u ON u.id = ma.upload_id
-		WHERE ma.message_id IN (`+placeholders+`)
+		JOIN messages m ON m.id = ma.message_id
+		WHERE ma.message_id IN (`+placeholders+`) AND m.deleted_at IS NULL
 		ORDER BY ma.message_id, ma.created_at`, args...)
 	if err != nil {
 		return nil, err

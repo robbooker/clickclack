@@ -129,6 +129,9 @@ func (s *Store) DeleteMessage(ctx context.Context, input store.DeleteMessageInpu
 	if err := s.q.WithTx(tx).DeleteMessageBody(ctx, storedb.DeleteMessageBodyParams{DeletedAt: sqlText(deletedAt), ID: msg.ID}); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_attachments WHERE message_id = ?`, msg.ID); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
 	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
 	if err != nil {
 		return store.Message{}, store.Event{}, err

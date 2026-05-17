@@ -294,6 +294,77 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	}
 }
 
+func TestDeletedMessageAttachmentsAreHidden(t *testing.T) {
+	t.Parallel()
+	ctx, st, owner, workspace, channel := seededStore(t)
+
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Attachment Member", Email: "attachment-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, member.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	channelMessage, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "with upload"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: owner.ID, Filename: "channel.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/channel.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, channelUpload.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: channelMessage.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, channelUpload.ID, member.ID); err == nil {
+		t.Fatal("expected deleted channel message attachment to stop exposing upload to other members")
+	}
+	if _, err := st.GetUpload(ctx, channelUpload.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	deletedChannelMessage, err := st.GetMessage(ctx, channelMessage.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deletedChannelMessage.Attachments) != 0 {
+		t.Fatalf("expected deleted message attachments to be hidden, got %#v", deletedChannelMessage.Attachments)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err == nil {
+		t.Fatal("expected attaching to a deleted message to fail")
+	}
+
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{member.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dmMessage, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: owner.ID, Body: "dm upload"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dmUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: owner.ID, Filename: "dm.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/dm.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: dmUpload.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, dmUpload.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: dmMessage.ID, UserID: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetUpload(ctx, dmUpload.ID, member.ID); err == nil {
+		t.Fatal("expected deleted DM attachment to stop exposing upload to DM members")
+	}
+}
+
 func TestMessagePrivacyScalingMessageShapeAndSequenceGuards(t *testing.T) {
 	t.Parallel()
 	ctx, st, owner, workspace, channel := seededStore(t)
