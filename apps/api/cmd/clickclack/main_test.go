@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openclaw/clickclack/apps/api/internal/config"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 )
 
@@ -42,11 +43,27 @@ func TestExportDataPreservesExistingOutputOnFailure(t *testing.T) {
 func TestCommandDBDefaultsUseEnvironment(t *testing.T) {
 	t.Setenv("CLICKCLACK_DATA", "/tmp/clickclack-env-data")
 	t.Setenv("CLICKCLACK_DB", "postgres://example.invalid/clickclack")
+	t.Setenv("CLICKCLACK_UPLOADS", "r2://bucket/uploads")
 	if got := defaultData(); got != "/tmp/clickclack-env-data" {
 		t.Fatalf("defaultData = %q", got)
 	}
 	if got := defaultDB(); got != "postgres://example.invalid/clickclack" {
 		t.Fatalf("defaultDB = %q", got)
+	}
+	if got := defaultUploads(); got != "r2://bucket/uploads" {
+		t.Fatalf("defaultUploads = %q", got)
+	}
+}
+
+func TestOpenUploadStorageValidation(t *testing.T) {
+	if _, err := openUploadStorage(config.Config{Data: t.TempDir(), Uploads: "r2://bucket/prod"}); err == nil {
+		t.Fatal("expected missing r2 credentials error")
+	}
+	if _, err := openUploadStorage(config.Config{Data: t.TempDir(), Uploads: "file://" + t.TempDir()}); err != nil {
+		t.Fatalf("file upload storage: %v", err)
+	}
+	if _, err := openUploadStorage(config.Config{Data: t.TempDir(), Uploads: t.TempDir()}); err != nil {
+		t.Fatalf("plain upload storage path: %v", err)
 	}
 }
 

@@ -1,17 +1,18 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
 )
 
 const maxUploadBytes = 64 << 20
@@ -103,7 +104,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
-	if s.uploadDir == "" {
+	if s.uploadStorage == nil {
 		writeError(w, http.StatusInternalServerError, errors.New("uploads are not configured"))
 		return
 	}
@@ -120,15 +121,11 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	fields := map[string]string{}
 	var workspaceID string
 	var upload store.CreateUploadInput
-	var tmp *os.File
-	var size int64
+	var savedPath string
 	committed := false
 	defer func() {
-		if tmp != nil {
-			_ = tmp.Close()
-			if !committed {
-				_ = os.Remove(tmp.Name())
-			}
+		if savedPath != "" && !committed {
+			_ = s.uploadStorage.Delete(context.Background(), savedPath)
 		}
 	}()
 	for {
@@ -168,45 +165,33 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("workspace_id must precede file"))
 			return
 		}
-		if tmp != nil {
+		if upload.StoragePath != "" {
 			writeError(w, http.StatusBadRequest, errors.New("only one file is supported"))
-			return
-		}
-		if err := os.MkdirAll(s.uploadDir, 0o755); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		tmp, err = os.CreateTemp(s.uploadDir, "upload-*")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		size, err = io.Copy(tmp, part)
-		if err != nil {
-			writeUploadBodyError(w, err, http.StatusInternalServerError)
-			return
-		}
-		if err := tmp.Close(); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		contentType := part.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
+		saved, err := s.uploadStorage.Save(r.Context(), part, uploadstore.SaveOptions{ContentType: contentType})
+		if err != nil {
+			writeUploadBodyError(w, err, http.StatusInternalServerError)
+			return
+		}
+		savedPath = saved.Path
 		upload = store.CreateUploadInput{
 			WorkspaceID: workspaceID,
 			OwnerID:     act.user.ID,
 			Filename:    filepath.Base(part.FileName()),
 			ContentType: contentType,
-			ByteSize:    size,
+			ByteSize:    saved.ByteSize,
 			Width:       formInt(fields, "width"),
 			Height:      formInt(fields, "height"),
 			DurationMS:  formInt(fields, "duration_ms"),
-			StoragePath: tmp.Name(),
+			StoragePath: saved.Path,
 		}
 	}
-	if tmp == nil {
+	if upload.StoragePath == "" {
 		writeError(w, http.StatusBadRequest, errors.New("file is required"))
 		return
 	}
@@ -243,6 +228,10 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if s.uploadStorage == nil {
+		writeError(w, http.StatusInternalServerError, errors.New("uploads are not configured"))
+		return
+	}
 	upload, err := s.store.GetUpload(r.Context(), chi.URLParam(r, "upload_id"), act.user.ID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
@@ -252,7 +241,19 @@ func (s *Server) getUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setUploadResponseHeaders(w, upload)
-	http.ServeFile(w, r, upload.StoragePath)
+	err = s.uploadStorage.ServeHTTP(w, r, uploadstore.Object{
+		Path:        upload.StoragePath,
+		Filename:    upload.Filename,
+		ContentType: safeUploadContentType(upload.ContentType),
+		ByteSize:    upload.ByteSize,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, uploadstore.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
+	}
 }
 
 func setUploadResponseHeaders(w http.ResponseWriter, upload store.Upload) {

@@ -117,10 +117,24 @@ clickclack serve --addr :8080 --data /var/lib/clickclack
 ```
 
 The Postgres adapter stores users, messages, events, auth, search, and chat
-metadata in Postgres. The local data directory still holds uploads and logs,
-so Cloudflare-style ephemeral containers also need object storage before
-uploads are production-safe. Use provider snapshots or `pg_dump` for
-Postgres backups; `clickclack backup` is SQLite-only.
+metadata in Postgres. Use provider snapshots or `pg_dump` for Postgres
+backups; `clickclack backup` is SQLite-only.
+
+R2 upload layout:
+
+```sh
+CLICKCLACK_DB='postgres://user:pass@db.example.com:5432/clickclack?sslmode=require' \
+CLICKCLACK_UPLOADS='r2://clickclack-uploads/prod' \
+CLICKCLACK_R2_ACCOUNT_ID='91b59577e757131d68d55a471fe32aca' \
+CLICKCLACK_R2_ACCESS_KEY_ID='...' \
+CLICKCLACK_R2_SECRET_ACCESS_KEY='...' \
+CLICKCLACK_DEV_BOOTSTRAP=false \
+clickclack serve --addr :8080 --data /var/lib/clickclack
+```
+
+R2 stores upload bytes; Postgres stores upload metadata and message attachment
+links. Requests still go through `/api/uploads/{id}` so workspace/member
+authorization stays server-side.
 
 ## Reverse proxy
 

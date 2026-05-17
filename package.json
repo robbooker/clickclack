@@ -21,14 +21,18 @@
     "test:e2e": "playwright test",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "test": "pnpm build:web && pnpm build:sdk && node scripts/go-test-with-web-dist.mjs",
-    "embed:webassets": "node scripts/embed-web-dist.mjs apps/web/dist apps/api/internal/webassets/dist"
+    "embed:webassets": "node scripts/embed-web-dist.mjs apps/web/dist apps/api/internal/webassets/dist",
+    "deploy:cloudflare": "wrangler deploy",
+    "cf:containers": "wrangler containers list"
   },
   "packageManager": "pnpm@11.0.7",
   "devDependencies": {
+    "@cloudflare/containers": "0.3.4",
     "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.2",
     "@typescript/native-preview": "7.0.0-dev.20260507.1",
     "oxfmt": "^0.48.0",
-    "oxlint": "^1.63.0"
+    "oxlint": "^1.63.0",
+    "wrangler": "4.91.0"
   }
 }

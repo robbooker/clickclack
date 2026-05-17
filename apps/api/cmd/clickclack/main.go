@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	postgresstore "github.com/openclaw/clickclack/apps/api/internal/store/postgres"
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
+	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
 )
 
 var (
@@ -77,6 +79,7 @@ func serve(args []string) error {
 	flags.String("addr", ":8080", "HTTP listen address")
 	flags.String("data", defaultData(), "data directory")
 	flags.String("db", defaultDB(), "database URL")
+	flags.String("uploads", defaultUploads(), "upload storage URL")
 	configPath := flags.String("config", "", "config file")
 	flags.Bool("dev-bootstrap", false, "create a local owner/workspace/channel if no user exists")
 	if err := flags.Parse(args); err != nil {
@@ -89,6 +92,10 @@ func serve(args []string) error {
 	applyFlagOverrides(flags, &cfg)
 	url := resolveDB(cfg.Data, cfg.DB)
 	if err := ensureDirs(cfg.Data); err != nil {
+		return err
+	}
+	uploads, err := openUploadStorage(cfg)
+	if err != nil {
 		return err
 	}
 	st, err := openStore(url)
@@ -114,7 +121,7 @@ func serve(args []string) error {
 	}
 	log.Printf("ClickClack listening on %s", displayURL(cfg.Addr))
 	server := httpapi.New(st, realtime.NewHub(), httpapi.Options{
-		UploadDir:      filepath.Join(cfg.Data, "uploads"),
+		UploadStorage:  uploads,
 		DisableDevAuth: !cfg.DevBootstrap,
 		GitHubOAuth: httpapi.GitHubOAuthConfig{
 			ClientID:     cfg.GitHubClientID,
@@ -451,6 +458,10 @@ func defaultDB() string {
 	return os.Getenv("CLICKCLACK_DB")
 }
 
+func defaultUploads() string {
+	return os.Getenv("CLICKCLACK_UPLOADS")
+}
+
 func openStore(dbURL string) (databaseStore, error) {
 	switch {
 	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
@@ -458,6 +469,35 @@ func openStore(dbURL string) (databaseStore, error) {
 	default:
 		return sqlitestore.Open(dbURL)
 	}
+}
+
+func openUploadStorage(cfg config.Config) (uploadstore.Store, error) {
+	uploads := cfg.Uploads
+	if uploads == "" {
+		return uploadstore.NewLocal(filepath.Join(cfg.Data, "uploads")), nil
+	}
+	if strings.HasPrefix(uploads, "r2://") {
+		u, err := url.Parse(uploads)
+		if err != nil {
+			return nil, err
+		}
+		return uploadstore.NewR2(uploadstore.R2Config{
+			AccountID:       cfg.R2AccountID,
+			AccessKeyID:     cfg.R2AccessKeyID,
+			SecretAccessKey: cfg.R2SecretAccessKey,
+			Bucket:          u.Host,
+			Prefix:          strings.TrimLeft(u.Path, "/"),
+			Endpoint:        cfg.R2Endpoint,
+		})
+	}
+	if strings.HasPrefix(uploads, "file://") {
+		u, err := url.Parse(uploads)
+		if err != nil {
+			return nil, err
+		}
+		return uploadstore.NewLocal(u.Path), nil
+	}
+	return uploadstore.NewLocal(uploads), nil
 }
 
 func applyFlagOverrides(flags *flag.FlagSet, cfg *config.Config) {
@@ -469,6 +509,8 @@ func applyFlagOverrides(flags *flag.FlagSet, cfg *config.Config) {
 			cfg.Data = f.Value.String()
 		case "db":
 			cfg.DB = f.Value.String()
+		case "uploads":
+			cfg.Uploads = f.Value.String()
 		case "dev-bootstrap":
 			cfg.DevBootstrap = f.Value.String() == "true"
 		}

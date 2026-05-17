@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
+- Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.
 - Fixed clawpatch-reported CLI export/listing, config precedence, auth token redaction, bot workspace isolation, upload cleanup/privacy, deleted-message search, reaction no-op events, DM revocation, thread nonce, and coverage edge cases.
 - Fixed `pnpm test` so it no longer rewrites embedded web assets, and made the release asset embedding step preserve the existing embedded app if the copy fails.

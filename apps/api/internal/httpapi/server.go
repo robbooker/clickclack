@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/openclaw/clickclack/apps/api/internal/realtime"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
+	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
 	"github.com/openclaw/clickclack/apps/api/internal/webassets"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	store          store.Store
 	hub            *realtime.Hub
 	uploadDir      string
+	uploadStorage  uploadstore.Store
 	githubOAuth    GitHubOAuthConfig
 	disableDevAuth bool
 	pushNotifier   PushNotifier
@@ -40,16 +42,22 @@ type actor struct {
 
 type Options struct {
 	UploadDir      string
+	UploadStorage  uploadstore.Store
 	GitHubOAuth    GitHubOAuthConfig
 	DisableDevAuth bool
 	PushNotifier   PushNotifier
 }
 
 func New(st store.Store, hub *realtime.Hub, options Options) *Server {
+	uploadStorage := options.UploadStorage
+	if uploadStorage == nil && options.UploadDir != "" {
+		uploadStorage = uploadstore.NewLocal(options.UploadDir)
+	}
 	return &Server{
 		store:          st,
 		hub:            hub,
 		uploadDir:      options.UploadDir,
+		uploadStorage:  uploadStorage,
 		githubOAuth:    options.GitHubOAuth.withDefaults(),
 		disableDevAuth: options.DisableDevAuth,
 		pushNotifier:   options.PushNotifier,

@@ -10,17 +10,22 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_ADDR", ":9000")
 	t.Setenv("CLICKCLACK_DATA", "/tmp/clickclack")
 	t.Setenv("CLICKCLACK_DB", "sqlite:///tmp/clickclack.db")
+	t.Setenv("CLICKCLACK_UPLOADS", "r2://clickclack-uploads/prod")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "https://clickclack.test")
 	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "false")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "client")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_SECRET", "secret")
 	t.Setenv("CLICKCLACK_GITHUB_ALLOWED_ORG", "openclaw")
 	t.Setenv("CLICKCLACK_PUSHOVER_API_TOKEN", "app-token")
+	t.Setenv("CLICKCLACK_R2_ACCOUNT_ID", "account")
+	t.Setenv("CLICKCLACK_R2_ACCESS_KEY_ID", "access")
+	t.Setenv("CLICKCLACK_R2_SECRET_ACCESS_KEY", "secret-access")
+	t.Setenv("CLICKCLACK_R2_ENDPOINT", "https://r2.example.com")
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.PublicURL != "https://clickclack.test" || cfg.DevBootstrap || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" || cfg.GitHubAllowedOrg != "openclaw" || cfg.PushoverAPIToken != "app-token" {
+	if cfg.Addr != ":9000" || cfg.Data != "/tmp/clickclack" || cfg.DB != "sqlite:///tmp/clickclack.db" || cfg.Uploads != "r2://clickclack-uploads/prod" || cfg.PublicURL != "https://clickclack.test" || cfg.DevBootstrap || cfg.GitHubClientID != "client" || cfg.GitHubClientSecret != "secret" || cfg.GitHubAllowedOrg != "openclaw" || cfg.PushoverAPIToken != "app-token" || cfg.R2AccountID != "account" || cfg.R2AccessKeyID != "access" || cfg.R2SecretAccessKey != "secret-access" || cfg.R2Endpoint != "https://r2.example.com" {
 		t.Fatalf("unexpected env config: %#v", cfg)
 	}
 
@@ -39,12 +44,17 @@ func TestLoadDefaultsEnvAndFile(t *testing.T) {
 	t.Setenv("CLICKCLACK_ADDR", "")
 	t.Setenv("CLICKCLACK_DATA", "")
 	t.Setenv("CLICKCLACK_DB", "")
+	t.Setenv("CLICKCLACK_UPLOADS", "")
 	t.Setenv("CLICKCLACK_PUBLIC_URL", "")
 	t.Setenv("CLICKCLACK_DEV_BOOTSTRAP", "")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_ID", "")
 	t.Setenv("CLICKCLACK_GITHUB_CLIENT_SECRET", "")
 	t.Setenv("CLICKCLACK_GITHUB_ALLOWED_ORG", "")
 	t.Setenv("CLICKCLACK_PUSHOVER_API_TOKEN", "")
+	t.Setenv("CLICKCLACK_R2_ACCOUNT_ID", "")
+	t.Setenv("CLICKCLACK_R2_ACCESS_KEY_ID", "")
+	t.Setenv("CLICKCLACK_R2_SECRET_ACCESS_KEY", "")
+	t.Setenv("CLICKCLACK_R2_ENDPOINT", "")
 	emptyPath := filepath.Join(t.TempDir(), "empty.json")
 	if err := os.WriteFile(emptyPath, []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)

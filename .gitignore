@@ -18,3 +18,6 @@ playwright-report/
 .DS_Store
 .claude/
 .artifacts/
+cloudflare-seed/uploads/*
+!cloudflare-seed/uploads/.gitkeep
+supabase/.temp/

@@ -10,12 +10,17 @@ type Config struct {
 	Addr               string `json:"addr"`
 	Data               string `json:"data"`
 	DB                 string `json:"db"`
+	Uploads            string `json:"uploads"`
 	PublicURL          string `json:"public_url"`
 	DevBootstrap       bool   `json:"dev_bootstrap"`
 	GitHubClientID     string `json:"github_client_id"`
 	GitHubClientSecret string `json:"github_client_secret"`
 	GitHubAllowedOrg   string `json:"github_allowed_org"`
 	PushoverAPIToken   string `json:"pushover_api_token"`
+	R2AccountID        string `json:"r2_account_id"`
+	R2AccessKeyID      string `json:"r2_access_key_id"`
+	R2SecretAccessKey  string `json:"r2_secret_access_key"`
+	R2Endpoint         string `json:"r2_endpoint"`
 }
 
 func Defaults() Config {
@@ -47,6 +52,9 @@ func Load(path string) (Config, error) {
 	if env := os.Getenv("CLICKCLACK_DB"); env != "" {
 		cfg.DB = env
 	}
+	if env := os.Getenv("CLICKCLACK_UPLOADS"); env != "" {
+		cfg.Uploads = env
+	}
 	if env := os.Getenv("CLICKCLACK_PUBLIC_URL"); env != "" {
 		cfg.PublicURL = env
 	}
@@ -68,6 +76,18 @@ func Load(path string) (Config, error) {
 	}
 	if env := os.Getenv("CLICKCLACK_PUSHOVER_API_TOKEN"); env != "" {
 		cfg.PushoverAPIToken = env
+	}
+	if env := os.Getenv("CLICKCLACK_R2_ACCOUNT_ID"); env != "" {
+		cfg.R2AccountID = env
+	}
+	if env := os.Getenv("CLICKCLACK_R2_ACCESS_KEY_ID"); env != "" {
+		cfg.R2AccessKeyID = env
+	}
+	if env := os.Getenv("CLICKCLACK_R2_SECRET_ACCESS_KEY"); env != "" {
+		cfg.R2SecretAccessKey = env
+	}
+	if env := os.Getenv("CLICKCLACK_R2_ENDPOINT"); env != "" {
+		cfg.R2Endpoint = env
 	}
 	if path == "" {
 		return cfg, nil

@@ -6,9 +6,10 @@ read_when:
 
 # Uploads
 
-Uploads are local files keyed by an `upl_...` ID and attached to messages
-through a join table. The server streams them back to authenticated workspace
-members.
+Uploads are files keyed by an `upl_...` ID and attached to messages through a
+join table. The default backend is local disk; Cloudflare R2 can store bytes
+for ephemeral container deployments. The server streams uploads back to
+authenticated workspace members.
 
 ## Endpoints
 
@@ -18,11 +19,10 @@ GET  /api/uploads/{upload_id}                      # streams the file
 POST /api/messages/{message_id}/attachments        # { upload_id }
 ```
 
-- Upload size cap: `32 MiB` per request (`ParseMultipartForm(32 << 20)`).
-  Anything larger should use a future direct-to-storage flow.
-- The file is written to the upload directory (`<data>/uploads`) under a
-  random `upload-*` name. The original filename is recorded in the `uploads`
-  row but not used on disk.
+- Upload size cap: `64 MiB` per request.
+- The file is written to the configured upload backend under a random
+  `upload-*` key. The original filename is recorded in the `uploads` row but
+  not used as the storage key.
 - `Content-Type` falls back to `application/octet-stream` when the client
   doesn't send one.
 
@@ -44,6 +44,8 @@ types appear as authenticated download cards that link to
 
 ## Storage layout
 
+Local disk:
+
 ```
 <data>/
   clickclack.db
@@ -56,9 +58,21 @@ types appear as authenticated download cards that link to
 Configure `<data>` with `--data` or `CLICKCLACK_DATA`. The server creates
 `uploads/` on demand when the first request arrives.
 
+R2:
+
+```sh
+CLICKCLACK_UPLOADS=r2://clickclack-uploads/prod
+CLICKCLACK_R2_ACCOUNT_ID=...
+CLICKCLACK_R2_ACCESS_KEY_ID=...
+CLICKCLACK_R2_SECRET_ACCESS_KEY=...
+```
+
+R2 keys are stored in the database as `r2://bucket/prefix/upload-...`.
+Download requests are still authenticated by ClickClack before the object is
+fetched from R2.
+
 ## What is intentionally missing
 
-- Object storage (S3/GCS) — keep the local path single-node-only for V1.
 - Image thumbnailing/transcoding.
 - Virus scanning.
 - Per-workspace quotas.
