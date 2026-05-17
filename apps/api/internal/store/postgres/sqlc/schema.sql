@@ -182,6 +182,7 @@ CREATE TABLE message_attachments (
 );
 
 CREATE INDEX idx_message_attachments_message_created ON message_attachments(message_id, created_at, upload_id);
+CREATE INDEX idx_message_attachments_upload_message ON message_attachments(upload_id, message_id);
 
 CREATE TABLE invites (
   id TEXT PRIMARY KEY,
