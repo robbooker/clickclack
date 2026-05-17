@@ -1,6 +1,9 @@
 package httpapi
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 type magicLinkResponse struct {
 	ID          string  `json:"id"`
@@ -12,6 +15,10 @@ type magicLinkResponse struct {
 }
 
 func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+	if s.disableDevAuth {
+		writeError(w, http.StatusNotImplemented, errors.New("magic-link delivery is not configured"))
+		return
+	}
 	var body struct {
 		Email       string `json:"email"`
 		DisplayName string `json:"display_name"`
@@ -29,9 +36,7 @@ func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   link.ExpiresAt,
 		UsedAt:      link.UsedAt,
 	}}
-	if !s.disableDevAuth {
-		response["token"] = link.Token
-	}
+	response["token"] = link.Token
 	writeResultStatus(w, http.StatusCreated, response, err)
 }
 

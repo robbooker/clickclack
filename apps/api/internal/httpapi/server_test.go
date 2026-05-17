@@ -1203,15 +1203,7 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 
 	expectStatus(t, http.MethodGet, server.URL+"/api/me", nil, http.StatusUnauthorized)
 	expectStatus(t, http.MethodPatch, server.URL+"/api/me", strings.NewReader(`{"display_name":"Nope"}`), http.StatusUnauthorized)
-	link := postJSON[struct {
-		Token     string `json:"token"`
-		MagicLink struct {
-			Token string `json:"token"`
-		} `json:"magic_link"`
-	}](t, server.URL+"/api/auth/magic/request", map[string]string{"email": "no-token@example.com"})
-	if link.Token != "" || link.MagicLink.Token != "" {
-		t.Fatalf("production magic-link request leaked token: %#v", link)
-	}
+	expectStatus(t, http.MethodPost, server.URL+"/api/auth/magic/request", strings.NewReader(`{"email":"no-token@example.com"}`), http.StatusNotImplemented)
 	for _, tc := range []struct {
 		method string
 		path   string

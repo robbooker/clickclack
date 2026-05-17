@@ -113,6 +113,6 @@ clickclack serve \
   --config /etc/clickclack/config.json
 ```
 
-Combine with real auth (magic links or GitHub OAuth) so the
+Combine with real auth (CLI-created magic links or GitHub OAuth) so the
 "first-user-in-DB" dev auth fallback never kicks in. In containers, this is
 already the default; `CLICKCLACK_DEV_BOOTSTRAP=false` is only an explicit guard.

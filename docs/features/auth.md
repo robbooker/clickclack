@@ -44,9 +44,10 @@ the magic-link flow to mint a session.
 ## Magic links
 
 Magic-link tokens are short-lived bearer credentials. In local dev mode the
-HTTP request endpoint returns the token for convenience; with dev auth disabled
-it only records the request and tokens should be created or delivered out of
-band. The consume endpoint exchanges a token for a durable session.
+HTTP request endpoint returns the token for convenience. With dev auth disabled,
+the request endpoint is disabled until SMTP delivery exists; create tokens with
+the admin CLI instead. The consume endpoint exchanges a token for a durable
+session.
 
 ```http
 POST /api/auth/magic/request

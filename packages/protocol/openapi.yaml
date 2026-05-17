@@ -18,7 +18,9 @@ paths:
               $ref: "#/components/schemas/RequestMagicLinkRequest"
       responses:
         "201":
-          description: Created local magic-link token
+          description: Created local magic-link token in dev-bootstrap mode
+        "501":
+          description: Magic-link delivery is not configured
   /api/auth/magic/consume:
     post:
       operationId: consumeMagicLink

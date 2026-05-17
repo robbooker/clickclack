@@ -701,8 +701,15 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Created local magic-link token */
+      /** @description Created local magic-link token in dev-bootstrap mode */
       201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Magic-link delivery is not configured */
+      501: {
         headers: {
           [name: string]: unknown;
         };
