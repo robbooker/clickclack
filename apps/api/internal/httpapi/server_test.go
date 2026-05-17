@@ -889,6 +889,7 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected upload bot kind, got %#v", uploadBot)
 	}
 	postUploadForm(t, server.URL+"/api/uploads", uploadToken.Token, "ws_missing", http.StatusForbidden)
+	expectStatusWithBearer(t, uploadToken.Token, http.MethodPost, server.URL+"/api/messages/"+messageID+"/attachments", strings.NewReader(`{"upload_id":"upl_missing"}`), http.StatusForbidden)
 	noUploadServer := httptest.NewServer(New(st, realtime.NewHub(), Options{}).Handler())
 	t.Cleanup(noUploadServer.Close)
 	postUploadForm(t, noUploadServer.URL+"/api/uploads", uploadToken.Token, workspace.ID, http.StatusInternalServerError)

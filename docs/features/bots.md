@@ -160,7 +160,8 @@ MVP endpoint mapping:
 - `GET channel/DM/thread messages`: matching read scope
 - `POST channel/DM/thread messages`: matching write scope
 - `GET /api/realtime/events` and `/ws`: `realtime:read`
-- `POST /api/uploads` and attach: `uploads:write`
+- `POST /api/uploads`: `uploads:write`
+- `POST /api/messages/{id}/attachments`: `uploads:write` and `messages:write`
 - `POST /api/realtime/ephemeral`: `messages:write`
 - `PATCH /api/me`: human sessions only; bot tokens cannot mutate profiles.
 

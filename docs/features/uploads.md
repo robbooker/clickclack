@@ -35,9 +35,9 @@ POST /api/messages/{message_id}/attachments        # { upload_id }
 `ListMessages`/`GetThread`, so subsequent reads include the attachment list
 without an extra round-trip.
 
-The handler checks that the requesting user is a member of the message's
-workspace before linking. There is no "upload owner must equal message
-author" rule today.
+The handler checks that the requester can read the upload, can access the
+message workspace, and is the message author before linking. Bot tokens need
+both `uploads:write` and `messages:write`.
 
 The web client renders common previewable types in compact attachment cards:
 

@@ -337,7 +337,12 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotWorkspace(w, act, upload.WorkspaceID, nil) {
 		return
 	}
-	if _, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id")); !ok {
+	message, ok := s.requireBotMessageWorkspace(w, r, act, chi.URLParam(r, "message_id"))
+	if !ok {
+		return
+	}
+	if message.AuthorID != act.user.ID {
+		writeError(w, http.StatusForbidden, errors.New("message attachments can only be changed by the message author"))
 		return
 	}
 	err = s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})

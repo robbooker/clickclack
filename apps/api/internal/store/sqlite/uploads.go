@@ -115,6 +115,9 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
 		return err
 	}
+	if msg.AuthorID != input.UserID {
+		return errors.New("message attachments can only be changed by the message author")
+	}
 	uploadWorkspace, err := qtx.GetUploadWorkspace(ctx, input.UploadID)
 	if err != nil {
 		return err

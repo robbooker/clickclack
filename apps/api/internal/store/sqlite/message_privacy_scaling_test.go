@@ -406,6 +406,9 @@ func TestMessagePrivacyScalingChannelAndUploadVisibilityCoverage(t *testing.T) {
 	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: member.ID}); !errors.Is(err, store.ErrMessageNotWritable) {
 		t.Fatalf("expected member to be blocked from attaching to another user's message, got %v", err)
 	}
+	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err == nil {
+		t.Fatal("expected attaching to another user's message to be blocked")
+	}
 	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: member.ID}); err != nil {
 		t.Fatal(err)
 	}
