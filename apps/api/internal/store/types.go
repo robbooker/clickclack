@@ -30,6 +30,10 @@ var ErrMessageNotWritable = errors.New("message is not writable")
 // daily post budget.
 var ErrPostRateLimited = errors.New("waiting room post limit reached")
 
+// ErrUploadQuotaExceeded is returned when a user has exhausted their upload
+// budget in a workspace.
+var ErrUploadQuotaExceeded = errors.New("upload quota exceeded")
+
 const (
 	WorkspaceRoleOwner     = "owner"
 	WorkspaceRoleModerator = "moderator"
@@ -37,6 +41,9 @@ const (
 	WorkspaceRoleGuest     = "guest"
 	WorkspaceRoleBot       = "bot"
 	GuestPostLimit         = 3
+
+	UploadQuotaBytesPerUserWorkspace int64 = 512 << 20
+	UploadQuotaCountPerUserWorkspace int64 = 64
 )
 
 type User struct {
@@ -292,6 +299,22 @@ type CreateUploadInput struct {
 	StoragePath string
 }
 
+type UploadQuota struct {
+	MaxBytes       int64
+	UsedBytes      int64
+	RemainingBytes int64
+	MaxCount       int64
+	UsedCount      int64
+	RemainingCount int64
+}
+
+func (q UploadQuota) CanFit(byteSize int64) error {
+	if q.RemainingCount <= 0 || byteSize > q.RemainingBytes {
+		return ErrUploadQuotaExceeded
+	}
+	return nil
+}
+
 type AttachUploadInput struct {
 	MessageID string
 	UploadID  string
@@ -415,7 +438,8 @@ type Store interface {
 	ListWorkspaceMembers(ctx context.Context, workspaceID, actorUserID string) ([]MemberModeration, error)
 	UpdateMemberModeration(ctx context.Context, input UpdateMemberModerationInput) (MemberModeration, Event, error)
 	UserHasNonGuestMembership(ctx context.Context, userID string) (bool, error)
-	CanCreateUpload(ctx context.Context, workspaceID, userID string) error
+	UploadQuota(ctx context.Context, workspaceID, userID string) (UploadQuota, error)
+	CanCreateUpload(ctx context.Context, workspaceID, userID string, byteSize int64) error
 	FirstUser(ctx context.Context) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)

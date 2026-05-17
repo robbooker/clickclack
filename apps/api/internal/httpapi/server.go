@@ -1043,6 +1043,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrPostRateLimited):
 		writeError(w, http.StatusTooManyRequests, err)
+	case errors.Is(err, store.ErrUploadQuotaExceeded):
+		writeError(w, http.StatusRequestEntityTooLarge, err)
 	case errors.Is(err, store.ErrModerationRestricted):
 		writeError(w, http.StatusForbidden, err)
 	case errors.Is(err, store.ErrMessageNotWritable):

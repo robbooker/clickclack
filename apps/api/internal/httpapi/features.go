@@ -124,8 +124,13 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	fields := map[string]string{}
 	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
-	if workspaceID != "" && !s.authorizeUploadWorkspace(w, r, act, workspaceID) {
-		return
+	var quota store.UploadQuota
+	if workspaceID != "" {
+		var ok bool
+		quota, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
+		if !ok {
+			return
+		}
 	}
 	var upload store.CreateUploadInput
 	var savedPath string
@@ -159,7 +164,9 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 			fields[name] = string(body)
 			if name == "workspace_id" && workspaceID == "" {
 				workspaceID = strings.TrimSpace(fields[name])
-				if !s.authorizeUploadWorkspace(w, r, act, workspaceID) {
+				var ok bool
+				quota, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
+				if !ok {
 					return
 				}
 			} else if name == "workspace_id" && strings.TrimSpace(fields[name]) != "" && strings.TrimSpace(fields[name]) != workspaceID {
@@ -180,7 +187,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-		saved, err := s.uploadStorage.Save(r.Context(), part, uploadstore.SaveOptions{ContentType: contentType})
+		saved, err := s.uploadStorage.Save(r.Context(), &uploadQuotaReader{reader: part, remaining: quota.RemainingBytes}, uploadstore.SaveOptions{ContentType: contentType})
 		if err != nil {
 			writeUploadBodyError(w, err, http.StatusInternalServerError)
 			return
@@ -209,6 +216,10 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if err := s.store.CanCreateUpload(r.Context(), workspaceID, act.user.ID, upload.ByteSize); err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	created, err := s.store.CreateUpload(r.Context(), upload)
 	if err == nil {
 		committed = true
@@ -216,23 +227,59 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": created}, err)
 }
 
-func (s *Server) authorizeUploadWorkspace(w http.ResponseWriter, r *http.Request, act actor, workspaceID string) bool {
+type uploadQuotaReader struct {
+	reader    io.Reader
+	remaining int64
+}
+
+func (r *uploadQuotaReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if r.remaining <= 0 {
+		if len(p) > 1 {
+			p = p[:1]
+		}
+		n, err := r.reader.Read(p)
+		if n > 0 {
+			return 0, store.ErrUploadQuotaExceeded
+		}
+		return n, err
+	}
+	if int64(len(p)) > r.remaining {
+		p = p[:int(r.remaining)]
+	}
+	n, err := r.reader.Read(p)
+	r.remaining -= int64(n)
+	return n, err
+}
+
+func (s *Server) authorizeUploadWorkspace(w http.ResponseWriter, r *http.Request, act actor, workspaceID string) (store.UploadQuota, bool) {
 	if err := act.requireWorkspace(workspaceID); err != nil {
 		writeError(w, http.StatusForbidden, err)
-		return false
+		return store.UploadQuota{}, false
 	}
 	if _, err := s.store.GetWorkspace(r.Context(), workspaceID, act.user.ID); err != nil {
 		writeError(w, http.StatusForbidden, err)
-		return false
+		return store.UploadQuota{}, false
 	}
-	if err := s.store.CanCreateUpload(r.Context(), workspaceID, act.user.ID); err != nil {
+	quota, err := s.store.UploadQuota(r.Context(), workspaceID, act.user.ID)
+	if err != nil {
 		writeStoreError(w, err)
-		return false
+		return store.UploadQuota{}, false
 	}
-	return true
+	if err := quota.CanFit(0); err != nil {
+		writeStoreError(w, err)
+		return store.UploadQuota{}, false
+	}
+	return quota, true
 }
 
 func writeUploadBodyError(w http.ResponseWriter, err error, fallbackStatus int) {
+	if errors.Is(err, store.ErrUploadQuotaExceeded) {
+		writeStoreError(w, err)
+		return
+	}
 	var maxBytesErr *http.MaxBytesError
 	if errors.As(err, &maxBytesErr) {
 		writeError(w, http.StatusRequestEntityTooLarge, err)

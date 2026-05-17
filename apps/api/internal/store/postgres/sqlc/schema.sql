@@ -174,6 +174,8 @@ CREATE TABLE uploads (
   duration_ms BIGINT NOT NULL DEFAULT 0
 );
 
+CREATE INDEX idx_uploads_workspace_owner ON uploads(workspace_id, owner_id);
+
 CREATE TABLE message_attachments (
   message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   upload_id TEXT NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,

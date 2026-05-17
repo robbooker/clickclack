@@ -1797,6 +1797,21 @@ func TestUploadBodyErrorsClassifyOversizedRequests(t *testing.T) {
 	if readFailure.Code != http.StatusInternalServerError {
 		t.Fatalf("expected fallback status, got %d", readFailure.Code)
 	}
+
+	quota := httptest.NewRecorder()
+	writeUploadBodyError(quota, store.ErrUploadQuotaExceeded, http.StatusInternalServerError)
+	if quota.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected quota error to be 413, got %d", quota.Code)
+	}
+}
+
+func TestUploadQuotaReaderStopsOverBudget(t *testing.T) {
+	t.Parallel()
+	reader := &uploadQuotaReader{reader: strings.NewReader("abc"), remaining: 2}
+	body, err := io.ReadAll(reader)
+	if !errors.Is(err, store.ErrUploadQuotaExceeded) {
+		t.Fatalf("expected quota error, got body=%q err=%v", body, err)
+	}
 }
 
 func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {

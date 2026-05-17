@@ -248,6 +248,45 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 }
 
+func TestUploadQuotaRejectsOwnerWorkspaceOverflow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "quota-owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	if _, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     owner.ID,
+		Filename:    "almost-full.bin",
+		ContentType: "application/octet-stream",
+		ByteSize:    store.UploadQuotaBytesPerUserWorkspace - 1,
+		StoragePath: "/tmp/almost-full.bin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CanCreateUpload(ctx, workspace.ID, owner.ID, 2); !errors.Is(err, store.ErrUploadQuotaExceeded) {
+		t.Fatalf("expected quota denial, got %v", err)
+	}
+	if _, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     owner.ID,
+		Filename:    "overflow.bin",
+		ContentType: "application/octet-stream",
+		ByteSize:    2,
+		StoragePath: "/tmp/overflow.bin",
+	}); !errors.Is(err, store.ErrUploadQuotaExceeded) {
+		t.Fatalf("expected quota denial on create, got %v", err)
+	}
+}
+
 func TestAuthTimestampComparisonsParseRFC3339Nano(t *testing.T) {
 	t.Parallel()
 	current, err := time.Parse(time.RFC3339Nano, "2026-01-01T00:00:00.123Z")

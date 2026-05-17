@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -10,7 +11,12 @@ import (
 )
 
 func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput) (store.Upload, error) {
-	if err := s.CanCreateUpload(ctx, input.WorkspaceID, input.OwnerID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Upload{}, err
+	}
+	defer tx.Rollback()
+	if err := canCreateUploadTx(ctx, tx, input.WorkspaceID, input.OwnerID, input.ByteSize); err != nil {
 		return store.Upload{}, err
 	}
 	upload := store.Upload{
@@ -26,7 +32,7 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 		StoragePath: input.StoragePath,
 		CreatedAt:   now(),
 	}
-	return upload, s.q.InsertUpload(ctx, storedb.InsertUploadParams{
+	if err := s.q.WithTx(tx).InsertUpload(ctx, storedb.InsertUploadParams{
 		ID:          upload.ID,
 		WorkspaceID: upload.WorkspaceID,
 		OwnerID:     upload.OwnerID,
@@ -38,19 +44,69 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 		DurationMs:  int64(upload.DurationMS),
 		StoragePath: upload.StoragePath,
 		CreatedAt:   upload.CreatedAt,
-	})
+	}); err != nil {
+		return store.Upload{}, err
+	}
+	return upload, tx.Commit()
 }
 
-func (s *Store) CanCreateUpload(ctx context.Context, workspaceID, userID string) error {
+func (s *Store) UploadQuota(ctx context.Context, workspaceID, userID string) (store.UploadQuota, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.UploadQuota{}, err
+	}
+	defer tx.Rollback()
+	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuota{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuota{}, err
+	}
+	return uploadQuotaTx(ctx, tx, workspaceID, userID)
+}
+
+func (s *Store) CanCreateUpload(ctx context.Context, workspaceID, userID string, byteSize int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	return canCreateUploadTx(ctx, tx, workspaceID, userID, byteSize)
+}
+
+func canCreateUploadTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string, byteSize int64) error {
+	if byteSize < 0 {
+		return errors.New("upload byte size must be non-negative")
+	}
 	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
 		return err
 	}
-	return requireNoModerationBlockTx(ctx, tx, workspaceID, userID)
+	if err := requireNoModerationBlockTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	quota, err := uploadQuotaTx(ctx, tx, workspaceID, userID)
+	if err != nil {
+		return err
+	}
+	return quota.CanFit(byteSize)
+}
+
+func uploadQuotaTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) (store.UploadQuota, error) {
+	quota := store.UploadQuota{
+		MaxBytes: store.UploadQuotaBytesPerUserWorkspace,
+		MaxCount: store.UploadQuotaCountPerUserWorkspace,
+	}
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(byte_size), 0)
+		FROM uploads
+		WHERE workspace_id = ? AND owner_id = ?`,
+		workspaceID, userID,
+	).Scan(&quota.UsedCount, &quota.UsedBytes); err != nil {
+		return store.UploadQuota{}, err
+	}
+	quota.RemainingCount = max(quota.MaxCount-quota.UsedCount, 0)
+	quota.RemainingBytes = max(quota.MaxBytes-quota.UsedBytes, 0)
+	return quota, nil
 }
 
 func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.Upload, error) {
