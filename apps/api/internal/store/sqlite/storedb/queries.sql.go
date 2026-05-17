@@ -195,6 +195,16 @@ func (q *Queries) CountRecentWorkspaceMessagesByAuthor(ctx context.Context, arg 
 	return count, err
 }
 
+const deleteExpiredUploadQuotaReservations = `-- name: DeleteExpiredUploadQuotaReservations :exec
+DELETE FROM upload_quota_reservations
+WHERE expires_at <= ?1
+`
+
+func (q *Queries) DeleteExpiredUploadQuotaReservations(ctx context.Context, now string) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredUploadQuotaReservations, now)
+	return err
+}
+
 const deleteMessageBody = `-- name: DeleteMessageBody :execrows
 UPDATE messages
 SET body = '',
@@ -210,6 +220,24 @@ type DeleteMessageBodyParams struct {
 
 func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteMessageBody, arg.DeletedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteUploadQuotaReservation = `-- name: DeleteUploadQuotaReservation :execrows
+DELETE FROM upload_quota_reservations
+WHERE id = ?1 AND owner_id = ?2
+`
+
+type DeleteUploadQuotaReservationParams struct {
+	ID      string `json:"id"`
+	OwnerID string `json:"owner_id"`
+}
+
+func (q *Queries) DeleteUploadQuotaReservation(ctx context.Context, arg DeleteUploadQuotaReservationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUploadQuotaReservation, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -856,6 +884,26 @@ func (q *Queries) GetUpload(ctx context.Context, id string) (GetUploadRow, error
 		&i.DurationMs,
 		&i.StoragePath,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getUploadQuotaReservation = `-- name: GetUploadQuotaReservation :one
+SELECT id, workspace_id, owner_id, byte_size, created_at, expires_at
+FROM upload_quota_reservations
+WHERE id = ?1
+`
+
+func (q *Queries) GetUploadQuotaReservation(ctx context.Context, id string) (UploadQuotaReservation, error) {
+	row := q.db.QueryRowContext(ctx, getUploadQuotaReservation, id)
+	var i UploadQuotaReservation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerID,
+		&i.ByteSize,
+		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -1538,6 +1586,32 @@ func (q *Queries) InsertUpload(ctx context.Context, arg InsertUploadParams) erro
 		arg.DurationMs,
 		arg.StoragePath,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertUploadQuotaReservation = `-- name: InsertUploadQuotaReservation :exec
+INSERT INTO upload_quota_reservations (id, workspace_id, owner_id, byte_size, created_at, expires_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+`
+
+type InsertUploadQuotaReservationParams struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	OwnerID     string `json:"owner_id"`
+	ByteSize    int64  `json:"byte_size"`
+	CreatedAt   string `json:"created_at"`
+	ExpiresAt   string `json:"expires_at"`
+}
+
+func (q *Queries) InsertUploadQuotaReservation(ctx context.Context, arg InsertUploadQuotaReservationParams) error {
+	_, err := q.db.ExecContext(ctx, insertUploadQuotaReservation,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.OwnerID,
+		arg.ByteSize,
+		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	return err
 }

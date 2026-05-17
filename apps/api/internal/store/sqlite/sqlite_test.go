@@ -287,6 +287,48 @@ func TestUploadQuotaRejectsOwnerWorkspaceOverflow(t *testing.T) {
 	}
 }
 
+func TestReservedUploadRechecksModerationOnFinalize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "reserved-upload-owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	member, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Upload Member", Email: "reserved-upload-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, member.ID, store.WorkspaceRoleMember); err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := st.ReserveUploadQuota(ctx, workspace.ID, member.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := true
+	if _, _, err := st.UpdateMemberModeration(ctx, store.UpdateMemberModerationInput{WorkspaceID: workspace.ID, ActorUserID: owner.ID, TargetUserID: member.ID, Blocked: &blocked}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.CreateReservedUpload(ctx, reservation.ID, store.CreateUploadInput{
+		WorkspaceID: workspace.ID,
+		OwnerID:     member.ID,
+		Filename:    "blocked.bin",
+		ContentType: "application/octet-stream",
+		ByteSize:    1,
+		StoragePath: "/tmp/blocked.bin",
+	})
+	if !errors.Is(err, store.ErrModerationRestricted) {
+		t.Fatalf("expected moderation recheck failure, got %v", err)
+	}
+}
+
 func TestAuthTimestampComparisonsParseRFC3339Nano(t *testing.T) {
 	t.Parallel()
 	current, err := time.Parse(time.RFC3339Nano, "2026-01-01T00:00:00.123Z")

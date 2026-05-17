@@ -332,6 +332,23 @@ SELECT workspace_id
 FROM uploads
 WHERE id = sqlc.arg(id);
 
+-- name: InsertUploadQuotaReservation :exec
+INSERT INTO upload_quota_reservations (id, workspace_id, owner_id, byte_size, created_at, expires_at)
+VALUES (sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(owner_id), sqlc.arg(byte_size), sqlc.arg(created_at), sqlc.arg(expires_at));
+
+-- name: GetUploadQuotaReservation :one
+SELECT id, workspace_id, owner_id, byte_size, created_at, expires_at
+FROM upload_quota_reservations
+WHERE id = sqlc.arg(id);
+
+-- name: DeleteUploadQuotaReservation :execrows
+DELETE FROM upload_quota_reservations
+WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
+
+-- name: DeleteExpiredUploadQuotaReservations :exec
+DELETE FROM upload_quota_reservations
+WHERE expires_at <= sqlc.arg(now);
+
 -- name: AttachUpload :execrows
 INSERT OR IGNORE INTO message_attachments (message_id, upload_id, created_at)
 VALUES (sqlc.arg(message_id), sqlc.arg(upload_id), sqlc.arg(created_at));

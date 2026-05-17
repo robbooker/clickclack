@@ -22,6 +22,7 @@ import (
 	"github.com/openclaw/clickclack/apps/api/internal/realtime"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
+	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
 )
 
 func TestChatAPIVerticalSlice(t *testing.T) {
@@ -1812,6 +1813,77 @@ func TestUploadQuotaReaderStopsOverBudget(t *testing.T) {
 	if !errors.Is(err, store.ErrUploadQuotaExceeded) {
 		t.Fatalf("expected quota error, got body=%q err=%v", body, err)
 	}
+}
+
+func TestUploadReservesQuotaBeforeObjectStorage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := &quotaObservingUploadStore{
+		store:       st,
+		workspaceID: workspaces[0].ID,
+		userID:      owner.ID,
+		observed:    make(chan store.UploadQuota, 1),
+	}
+	server := httptest.NewServer(New(st, realtime.NewHub(), Options{UploadStorage: storage}).Handler())
+	t.Cleanup(server.Close)
+
+	upload := uploadFile(t, server.URL+"/api/uploads", workspaces[0].ID, "reserved.txt", "reserved body")
+	observed := <-storage.observed
+	if observed.UsedCount != 1 || observed.UsedBytes != int64(maxUploadBytes) {
+		t.Fatalf("storage started without full in-flight reservation: %#v", observed)
+	}
+	quota, err := st.UploadQuota(ctx, workspaces[0].ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quota.UsedCount != 1 || quota.UsedBytes != upload.ByteSize {
+		t.Fatalf("reservation was not replaced by final upload row: quota=%#v upload=%#v", quota, upload)
+	}
+}
+
+type quotaObservingUploadStore struct {
+	store       store.Store
+	workspaceID string
+	userID      string
+	observed    chan store.UploadQuota
+}
+
+func (s *quotaObservingUploadStore) Save(ctx context.Context, body io.Reader, _ uploadstore.SaveOptions) (uploadstore.SavedObject, error) {
+	quota, err := s.store.UploadQuota(ctx, s.workspaceID, s.userID)
+	if err != nil {
+		return uploadstore.SavedObject{}, err
+	}
+	s.observed <- quota
+	size, err := io.Copy(io.Discard, body)
+	if err != nil {
+		return uploadstore.SavedObject{}, err
+	}
+	return uploadstore.SavedObject{Path: "memory://reserved-upload", ByteSize: size}, nil
+}
+
+func (s *quotaObservingUploadStore) Delete(context.Context, string) error {
+	return nil
+}
+
+func (s *quotaObservingUploadStore) ServeHTTP(http.ResponseWriter, *http.Request, uploadstore.Object) error {
+	return uploadstore.ErrNotFound
 }
 
 func TestUploadRejectsInvalidMultipartShapes(t *testing.T) {

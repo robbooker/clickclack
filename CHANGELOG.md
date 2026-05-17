@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reserved upload quota before object storage writes so concurrent uploads cannot overspend a workspace budget.
 - Stopped blocked or timed-out moderators from receiving private member-moderation events.
 - Prevented workspace moderators from moderating privileged bot members.
 - Reserved the `guest` channel name, locked Postgres moderation role checks during member updates, and bounded direct-conversation member sets after DeepSec review.

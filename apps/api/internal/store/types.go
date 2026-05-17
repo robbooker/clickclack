@@ -317,6 +317,15 @@ func (q UploadQuota) CanFit(byteSize int64) error {
 	return nil
 }
 
+type UploadQuotaReservation struct {
+	ID          string
+	WorkspaceID string
+	OwnerID     string
+	ByteSize    int64
+	CreatedAt   string
+	ExpiresAt   string
+}
+
 type AttachUploadInput struct {
 	MessageID string
 	UploadID  string
@@ -442,6 +451,9 @@ type Store interface {
 	UserHasNonGuestMembership(ctx context.Context, userID string) (bool, error)
 	UploadQuota(ctx context.Context, workspaceID, userID string) (UploadQuota, error)
 	CanCreateUpload(ctx context.Context, workspaceID, userID string, byteSize int64) error
+	ReserveUploadQuota(ctx context.Context, workspaceID, userID string, byteSize int64) (UploadQuotaReservation, error)
+	CreateReservedUpload(ctx context.Context, reservationID string, input CreateUploadInput) (Upload, error)
+	ReleaseUploadQuotaReservation(ctx context.Context, reservationID, userID string) error
 	FirstUser(ctx context.Context) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error)

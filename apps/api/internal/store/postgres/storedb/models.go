@@ -171,6 +171,15 @@ type Upload struct {
 	DurationMs  int64  `json:"duration_ms"`
 }
 
+type UploadQuotaReservation struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	OwnerID     string `json:"owner_id"`
+	ByteSize    int64  `json:"byte_size"`
+	CreatedAt   string `json:"created_at"`
+	ExpiresAt   string `json:"expires_at"`
+}
+
 type User struct {
 	ID          string         `json:"id"`
 	DisplayName string         `json:"display_name"`

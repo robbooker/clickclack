@@ -124,22 +124,27 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	fields := map[string]string{}
 	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
-	var quota store.UploadQuota
 	if workspaceID != "" {
 		var ok bool
-		quota, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
+		_, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
 		if !ok {
 			return
 		}
 	}
 	var upload store.CreateUploadInput
 	var savedPath string
+	var reservationID string
 	committed := false
 	defer func() {
 		if savedPath != "" && !committed {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
 			defer cancel()
 			_ = s.uploadStorage.Delete(cleanupCtx, savedPath)
+		}
+		if reservationID != "" && !committed {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
+			defer cancel()
+			_ = s.store.ReleaseUploadQuotaReservation(cleanupCtx, reservationID, act.user.ID)
 		}
 	}()
 	for {
@@ -165,7 +170,7 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 			if name == "workspace_id" && workspaceID == "" {
 				workspaceID = strings.TrimSpace(fields[name])
 				var ok bool
-				quota, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
+				_, ok = s.authorizeUploadWorkspace(w, r, act, workspaceID)
 				if !ok {
 					return
 				}
@@ -187,7 +192,13 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-		saved, err := s.uploadStorage.Save(r.Context(), &uploadQuotaReader{reader: part, remaining: quota.RemainingBytes}, uploadstore.SaveOptions{ContentType: contentType})
+		reservation, err := s.store.ReserveUploadQuota(r.Context(), workspaceID, act.user.ID, int64(maxUploadBytes))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		reservationID = reservation.ID
+		saved, err := s.uploadStorage.Save(r.Context(), &uploadQuotaReader{reader: part, remaining: reservation.ByteSize}, uploadstore.SaveOptions{ContentType: contentType})
 		if err != nil {
 			writeUploadBodyError(w, err, http.StatusInternalServerError)
 			return
@@ -216,13 +227,10 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
-	if err := s.store.CanCreateUpload(r.Context(), workspaceID, act.user.ID, upload.ByteSize); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	created, err := s.store.CreateUpload(r.Context(), upload)
+	created, err := s.store.CreateReservedUpload(r.Context(), reservationID, upload)
 	if err == nil {
 		committed = true
+		reservationID = ""
 	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{"upload": created}, err)
 }

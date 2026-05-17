@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	"github.com/openclaw/clickclack/apps/api/internal/store/postgres/storedb"
 )
+
+const uploadQuotaReservationTTL = 15 * time.Minute
 
 func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput) (store.Upload, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -52,6 +55,129 @@ func (s *Store) CreateUpload(ctx context.Context, input store.CreateUploadInput)
 	return upload, tx.Commit()
 }
 
+func (s *Store) ReserveUploadQuota(ctx context.Context, workspaceID, userID string, byteSize int64) (store.UploadQuotaReservation, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	defer tx.Rollback()
+	if err := lockUploadQuotaTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	qtx := s.q.WithTx(tx)
+	reservationNow := time.Now().UTC()
+	if err := qtx.DeleteExpiredUploadQuotaReservations(ctx, uploadReservationTime(reservationNow)); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	if byteSize < 0 {
+		return store.UploadQuotaReservation{}, errors.New("upload byte size must be non-negative")
+	}
+	if err := requireMembershipTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	quota, err := uploadQuotaTx(ctx, tx, workspaceID, userID)
+	if err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	if err := quota.CanFit(0); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	reservation := store.UploadQuotaReservation{
+		ID:          newID("uqr"),
+		WorkspaceID: workspaceID,
+		OwnerID:     userID,
+		ByteSize:    min(byteSize, quota.RemainingBytes),
+		CreatedAt:   uploadReservationTime(reservationNow),
+		ExpiresAt:   uploadReservationTime(reservationNow.Add(uploadQuotaReservationTTL)),
+	}
+	if err := qtx.InsertUploadQuotaReservation(ctx, storedb.InsertUploadQuotaReservationParams{
+		ID:          reservation.ID,
+		WorkspaceID: reservation.WorkspaceID,
+		OwnerID:     reservation.OwnerID,
+		ByteSize:    reservation.ByteSize,
+		CreatedAt:   reservation.CreatedAt,
+		ExpiresAt:   reservation.ExpiresAt,
+	}); err != nil {
+		return store.UploadQuotaReservation{}, err
+	}
+	return reservation, tx.Commit()
+}
+
+func (s *Store) CreateReservedUpload(ctx context.Context, reservationID string, input store.CreateUploadInput) (store.Upload, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Upload{}, err
+	}
+	defer tx.Rollback()
+	if err := lockUploadQuotaTx(ctx, tx, input.WorkspaceID, input.OwnerID); err != nil {
+		return store.Upload{}, err
+	}
+	qtx := s.q.WithTx(tx)
+	if err := qtx.DeleteExpiredUploadQuotaReservations(ctx, uploadReservationTime(time.Now().UTC())); err != nil {
+		return store.Upload{}, err
+	}
+	reservation, err := qtx.GetUploadQuotaReservation(ctx, reservationID)
+	if err != nil {
+		return store.Upload{}, err
+	}
+	if reservation.WorkspaceID != input.WorkspaceID || reservation.OwnerID != input.OwnerID {
+		return store.Upload{}, errors.New("upload quota reservation does not match upload")
+	}
+	if err := requireMembershipTx(ctx, tx, input.WorkspaceID, input.OwnerID); err != nil {
+		return store.Upload{}, err
+	}
+	if err := requireNoModerationBlockTx(ctx, tx, input.WorkspaceID, input.OwnerID); err != nil {
+		return store.Upload{}, err
+	}
+	if input.ByteSize > reservation.ByteSize {
+		return store.Upload{}, store.ErrUploadQuotaExceeded
+	}
+	upload := store.Upload{
+		ID:          newID("upl"),
+		WorkspaceID: input.WorkspaceID,
+		OwnerID:     input.OwnerID,
+		Filename:    input.Filename,
+		ContentType: input.ContentType,
+		ByteSize:    input.ByteSize,
+		Width:       input.Width,
+		Height:      input.Height,
+		DurationMS:  input.DurationMS,
+		StoragePath: input.StoragePath,
+		CreatedAt:   now(),
+	}
+	if err := qtx.InsertUpload(ctx, storedb.InsertUploadParams{
+		ID:          upload.ID,
+		WorkspaceID: upload.WorkspaceID,
+		OwnerID:     upload.OwnerID,
+		Filename:    upload.Filename,
+		ContentType: upload.ContentType,
+		ByteSize:    upload.ByteSize,
+		Width:       int64(upload.Width),
+		Height:      int64(upload.Height),
+		DurationMs:  int64(upload.DurationMS),
+		StoragePath: upload.StoragePath,
+		CreatedAt:   upload.CreatedAt,
+	}); err != nil {
+		return store.Upload{}, err
+	}
+	rows, err := qtx.DeleteUploadQuotaReservation(ctx, storedb.DeleteUploadQuotaReservationParams{ID: reservationID, OwnerID: input.OwnerID})
+	if err != nil {
+		return store.Upload{}, err
+	}
+	if rows == 0 {
+		return store.Upload{}, errors.New("upload quota reservation was not released")
+	}
+	return upload, tx.Commit()
+}
+
+func (s *Store) ReleaseUploadQuotaReservation(ctx context.Context, reservationID, userID string) error {
+	_, err := s.q.DeleteUploadQuotaReservation(ctx, storedb.DeleteUploadQuotaReservationParams{ID: reservationID, OwnerID: userID})
+	return err
+}
+
 func (s *Store) UploadQuota(ctx context.Context, workspaceID, userID string) (store.UploadQuota, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -62,6 +188,9 @@ func (s *Store) UploadQuota(ctx context.Context, workspaceID, userID string) (st
 		return store.UploadQuota{}, err
 	}
 	if err := requireNoModerationBlockTx(ctx, tx, workspaceID, userID); err != nil {
+		return store.UploadQuota{}, err
+	}
+	if err := s.q.WithTx(tx).DeleteExpiredUploadQuotaReservations(ctx, uploadReservationTime(time.Now().UTC())); err != nil {
 		return store.UploadQuota{}, err
 	}
 	return uploadQuotaTx(ctx, tx, workspaceID, userID)
@@ -107,16 +236,23 @@ func uploadQuotaTx(ctx context.Context, tx *sql.Tx, workspaceID, userID string) 
 		MaxCount: store.UploadQuotaCountPerUserWorkspace,
 	}
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(byte_size), 0)
-		FROM uploads
-		WHERE workspace_id = $1 AND owner_id = $2`,
-		workspaceID, userID,
+		SELECT
+			(SELECT COUNT(*) FROM uploads WHERE workspace_id = $1 AND owner_id = $2)
+				+ (SELECT COUNT(*) FROM upload_quota_reservations WHERE workspace_id = $3 AND owner_id = $4 AND expires_at > $5),
+			(SELECT COALESCE(SUM(byte_size), 0) FROM uploads WHERE workspace_id = $6 AND owner_id = $7)
+				+ (SELECT COALESCE(SUM(byte_size), 0) FROM upload_quota_reservations WHERE workspace_id = $8 AND owner_id = $9 AND expires_at > $10)`,
+		workspaceID, userID, workspaceID, userID, uploadReservationTime(time.Now().UTC()),
+		workspaceID, userID, workspaceID, userID, uploadReservationTime(time.Now().UTC()),
 	).Scan(&quota.UsedCount, &quota.UsedBytes); err != nil {
 		return store.UploadQuota{}, err
 	}
 	quota.RemainingCount = max(quota.MaxCount-quota.UsedCount, 0)
 	quota.RemainingBytes = max(quota.MaxBytes-quota.UsedBytes, 0)
 	return quota, nil
+}
+
+func uploadReservationTime(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
 func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.Upload, error) {
