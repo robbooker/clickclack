@@ -548,11 +548,12 @@ SET body = sqlc.arg(body),
     edited_at = sqlc.arg(edited_at)
 WHERE id = sqlc.arg(id);
 
--- name: DeleteMessageBody :exec
+-- name: DeleteMessageBody :execrows
 UPDATE messages
 SET body = '',
     deleted_at = sqlc.arg(deleted_at)
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL;
 
 -- name: AddReaction :execrows
 INSERT INTO reactions (message_id, user_id, emoji, created_at)

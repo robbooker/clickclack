@@ -60,6 +60,13 @@ func TestMutationsCreateDurableEvents(t *testing.T) {
 	if deletedMessage.DeletedAt == nil || deleteEvent.Type != "message.deleted" {
 		t.Fatalf("unexpected message delete: %#v %#v", deletedMessage, deleteEvent)
 	}
+	repeatedDelete, repeatedDeleteEvent, err := st.DeleteMessage(ctx, store.DeleteMessageInput{MessageID: message.ID, UserID: owner.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repeatedDelete.DeletedAt == nil || *repeatedDelete.DeletedAt != *deletedMessage.DeletedAt || repeatedDeleteEvent.ID != "" {
+		t.Fatalf("expected repeated delete to preserve state without event, got %#v %#v", repeatedDelete, repeatedDeleteEvent)
+	}
 	second, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Second", Email: "second@example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -96,13 +103,20 @@ func TestMutationsCreateDurableEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
+	deletedEvents := 0
 	for _, event := range events {
 		seen[event.Type] = true
+		if event.Type == "message.deleted" {
+			deletedEvents++
+		}
 	}
 	for _, eventType := range []string{"channel.updated", "message.updated", "message.deleted"} {
 		if !seen[eventType] {
 			t.Fatalf("missing event %s in %#v", eventType, events)
 		}
+	}
+	if deletedEvents != 2 {
+		t.Fatalf("expected one delete event per deleted message, got %d in %#v", deletedEvents, events)
 	}
 }
 

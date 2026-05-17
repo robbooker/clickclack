@@ -194,11 +194,12 @@ func (q *Queries) CountRecentWorkspaceMessagesByAuthor(ctx context.Context, arg 
 	return count, err
 }
 
-const deleteMessageBody = `-- name: DeleteMessageBody :exec
+const deleteMessageBody = `-- name: DeleteMessageBody :execrows
 UPDATE messages
 SET body = '',
     deleted_at = $1
 WHERE id = $2
+  AND deleted_at IS NULL
 `
 
 type DeleteMessageBodyParams struct {
@@ -206,9 +207,12 @@ type DeleteMessageBodyParams struct {
 	ID        string         `json:"id"`
 }
 
-func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyParams) error {
-	_, err := q.db.ExecContext(ctx, deleteMessageBody, arg.DeletedAt, arg.ID)
-	return err
+func (q *Queries) DeleteMessageBody(ctx context.Context, arg DeleteMessageBodyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteMessageBody, arg.DeletedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const directConversationMemberIDs = `-- name: DirectConversationMemberIDs :many

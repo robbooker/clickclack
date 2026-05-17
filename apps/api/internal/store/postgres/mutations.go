@@ -125,9 +125,20 @@ func (s *Store) DeleteMessage(ctx context.Context, input store.DeleteMessageInpu
 	if msg.AuthorID != input.UserID {
 		return store.Message{}, store.Event{}, errors.New("only the author can delete a message")
 	}
+	if msg.DeletedAt != nil {
+		return msg, store.Event{}, tx.Commit()
+	}
 	deletedAt := now()
-	if err := s.q.WithTx(tx).DeleteMessageBody(ctx, storedb.DeleteMessageBodyParams{DeletedAt: sqlText(deletedAt), ID: msg.ID}); err != nil {
+	affected, err := s.q.WithTx(tx).DeleteMessageBody(ctx, storedb.DeleteMessageBodyParams{DeletedAt: sqlText(deletedAt), ID: msg.ID})
+	if err != nil {
 		return store.Message{}, store.Event{}, err
+	}
+	if affected == 0 {
+		msg, err := getMessageTx(ctx, tx, input.MessageID)
+		if err != nil {
+			return store.Message{}, store.Event{}, err
+		}
+		return msg, store.Event{}, tx.Commit()
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message_attachments WHERE message_id = $1`, msg.ID); err != nil {
 		return store.Message{}, store.Event{}, err

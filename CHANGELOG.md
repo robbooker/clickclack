@@ -30,6 +30,7 @@
 - Made channel and direct-message read receipt writes monotonic in SQLite and Postgres so concurrent older updates cannot move read cursors backwards.
 - Rejected cross-site browser requests from local dev magic-link minting and fallback auth even when the TCP peer is loopback.
 - Serialized SQLite message sequence allocation so concurrent channel, direct-message, and thread writes cannot collide on the same next sequence number.
+- Made repeated message deletes idempotent in SQLite and Postgres so deletion timestamps and durable events are not rewritten.
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
 - Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.
