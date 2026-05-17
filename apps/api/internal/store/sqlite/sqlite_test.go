@@ -61,7 +61,8 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if results, err := st.SearchMessages(ctx, workspace.ID, "", owner.ID, "", 10); err != nil || len(results) != 0 {
 		t.Fatalf("expected empty search results, got %#v err=%v", results, err)
 	}
-	if _, err := st.CreateInvite(ctx, workspace.ID, owner.ID); err != nil {
+	invite, err := st.CreateInvite(ctx, workspace.ID, owner.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	link, err := st.CreateMagicLink(ctx, "magic@example.com", "Magic User")
@@ -156,7 +157,7 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if len(exportBody["channel_reads"]) == 0 || len(exportBody["direct_reads"]) == 0 {
 		t.Fatalf("expected read receipt tables in export, got keys %#v", exportBody)
 	}
-	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) {
+	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) || bytes.Contains(exported.Bytes(), []byte(invite.Token)) {
 		t.Fatalf("export leaked bearer token: %s", exported.String())
 	}
 	for _, secret := range []string{tokenHash(link.Token), tokenHash(session.Token), tokenHash(botToken.Token), upload.StoragePath, pushoverUserKey} {
@@ -181,6 +182,12 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if exportBody["bot_tokens"][0]["token_hash"] != "[redacted]" {
 		t.Fatalf("bot token export was not redacted: %#v", exportBody["bot_tokens"][0])
+	}
+	if len(exportBody["invites"]) == 0 {
+		t.Fatalf("expected invites in export, got keys %#v", exportBody)
+	}
+	if exportBody["invites"][0]["token"] != "[redacted]" {
+		t.Fatalf("invite token export was not redacted: %#v", exportBody["invites"][0])
 	}
 	if exportBody["uploads"][0]["storage_path"] != "[redacted]" {
 		t.Fatalf("upload export was not redacted: %#v", exportBody["uploads"][0])

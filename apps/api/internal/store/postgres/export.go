@@ -84,6 +84,8 @@ func shouldRedactExportColumn(table, column string) bool {
 	switch table {
 	case "user_notification_settings":
 		return column == "pushover_user_key"
+	case "invites":
+		return column == "token"
 	case "auth_magic_links", "sessions":
 		return column == "token" || column == "token_hash"
 	case "bot_tokens":
