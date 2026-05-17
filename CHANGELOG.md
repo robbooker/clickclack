@@ -34,6 +34,7 @@
 - Parsed auth expiration and event retention timestamps instead of comparing raw timestamp text in SQLite and Postgres.
 - Joined GitHub allowed-org users to the explicit ClickClack default workspace instead of whichever workspace was created first.
 - Added a Postgres attachment lookup index so upload visibility checks can find shared messages by upload ID efficiently.
+- Limited the default-workspace owner repair migration to the ClickClack workspace so public guest workspaces are not promoted accidentally.
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
 - Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.

@@ -580,6 +580,27 @@ func TestMessagePrivacyScalingMigrationBackfillsCurrentMainDMThreadPrivacy(t *te
 	}
 }
 
+func TestDefaultWorkspaceOwnerMigrationSkipsGuests(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+	applySQLiteMigrations(t, ctx, st, "0001_initial.sql")
+	mustExecSQL(t, ctx, st, `INSERT INTO users (id, display_name, avatar_url, created_at) VALUES ('usr_default', 'Default', '', '2026-01-01T00:00:00Z')`)
+	mustExecSQL(t, ctx, st, `INSERT INTO users (id, display_name, avatar_url, created_at) VALUES ('usr_guest', 'Guest', '', '2026-01-01T00:00:00Z')`)
+	mustExecSQL(t, ctx, st, `INSERT INTO workspaces (id, name, slug, created_at) VALUES ('wsp_default', 'ClickClack', 'clickclack', '2026-01-01T00:00:00Z')`)
+	mustExecSQL(t, ctx, st, `INSERT INTO workspaces (id, name, slug, created_at) VALUES ('wsp_guests', 'Guests', 'guests', '2026-01-01T00:00:00Z')`)
+	mustExecSQL(t, ctx, st, `INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES ('wsp_default', 'usr_default', 'member', '2026-01-01T00:00:00Z')`)
+	mustExecSQL(t, ctx, st, `INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES ('wsp_guests', 'usr_guest', 'member', '2026-01-01T00:00:00Z')`)
+
+	applySQLiteMigrations(t, ctx, st, "0013_default_workspace_owner.sql")
+	if got := scalarCount(t, ctx, st, `SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'wsp_default' AND user_id = 'usr_default' AND role = 'owner'`); got != 1 {
+		t.Fatalf("expected default workspace member to become owner, got %d", got)
+	}
+	if got := scalarCount(t, ctx, st, `SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'wsp_guests' AND user_id = 'usr_guest' AND role = 'owner'`); got != 0 {
+		t.Fatalf("guest workspace member should not become owner, got %d", got)
+	}
+}
+
 func TestMessagePrivacyScalingHotPathQueryPlans(t *testing.T) {
 	t.Parallel()
 	ctx, st, _, _, _ := seededStore(t)

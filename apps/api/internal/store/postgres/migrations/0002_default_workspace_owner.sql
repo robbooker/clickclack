@@ -1,6 +1,11 @@
 UPDATE workspace_members wm
 SET role = 'owner'
 WHERE wm.role <> 'bot'
+  AND wm.workspace_id = (
+    SELECT id
+    FROM workspaces
+    WHERE slug = 'clickclack'
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM workspace_members owners
