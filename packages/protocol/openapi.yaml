@@ -19,6 +19,8 @@ paths:
       responses:
         "201":
           description: Created local magic-link token in dev-bootstrap mode
+        "403":
+          description: Dev-bootstrap token minting requires a loopback client and local request host
         "501":
           description: Magic-link delivery is not configured
   /api/auth/magic/consume:

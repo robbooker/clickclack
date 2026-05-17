@@ -879,6 +879,33 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	expectStatus(t, http.MethodGet, server.URL+"/api/search?workspace_id=missing&q=x", nil, http.StatusBadRequest)
 }
 
+func TestMagicLinkRequestRequiresLoopbackDevClient(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/request", strings.NewReader(`{"email":"remote@example.com"}`))
+	req.RemoteAddr = "203.0.113.10:45678"
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	recorder := httptest.NewRecorder()
+	New(nil, nil, Options{}).Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected remote dev magic-link request to be forbidden, got %d", recorder.Code)
+	}
+}
+
+func TestMagicLinkRequestRejectsPublicReverseProxyHost(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/request", strings.NewReader(`{"email":"remote@example.com"}`))
+	req.RemoteAddr = "127.0.0.1:45678"
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("X-Forwarded-Host", "chat.example.com")
+	recorder := httptest.NewRecorder()
+	New(nil, nil, Options{}).Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected proxied public dev magic-link request to be forbidden, got %d", recorder.Code)
+	}
+}
+
 func getJSON[T any](t *testing.T, endpoint string) T {
 	t.Helper()
 	resp, err := http.Get(endpoint)

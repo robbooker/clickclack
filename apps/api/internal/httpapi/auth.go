@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 )
 
 type magicLinkResponse struct {
@@ -17,6 +19,10 @@ type magicLinkResponse struct {
 func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	if s.disableDevAuth {
 		writeError(w, http.StatusNotImplemented, errors.New("magic-link delivery is not configured"))
+		return
+	}
+	if !isLocalMagicLinkRequest(r) {
+		writeError(w, http.StatusForbidden, errors.New("magic-link token minting is only available from loopback clients"))
 		return
 	}
 	var body struct {
@@ -55,4 +61,64 @@ func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "session": session, "token": session.Token})
+}
+
+func isLocalMagicLinkRequest(r *http.Request) bool {
+	if !isLocalHostPort(r.RemoteAddr) || !isLocalHostPort(r.Host) {
+		return false
+	}
+	if !headerHostsAreLocal(r.Header.Values("X-Forwarded-Host")) {
+		return false
+	}
+	if !headerHostsAreLocal(r.Header.Values("X-Forwarded-For")) || !headerHostsAreLocal(r.Header.Values("X-Real-IP")) {
+		return false
+	}
+	return forwardedHeaderIsLocal(r.Header.Values("Forwarded"))
+}
+
+func headerHostsAreLocal(values []string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if strings.TrimSpace(part) != "" && !isLocalHostPort(part) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func forwardedHeaderIsLocal(values []string) bool {
+	for _, value := range values {
+		for _, hop := range strings.Split(value, ",") {
+			for _, field := range strings.Split(hop, ";") {
+				key, raw, ok := strings.Cut(strings.TrimSpace(field), "=")
+				if !ok {
+					continue
+				}
+				switch strings.ToLower(strings.TrimSpace(key)) {
+				case "for", "host":
+					if !isLocalHostPort(strings.Trim(strings.TrimSpace(raw), `"`)) {
+						return false
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
+func isLocalHostPort(value string) bool {
+	host := strings.TrimSpace(value)
+	if host == "" {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

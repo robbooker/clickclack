@@ -708,6 +708,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Dev-bootstrap token minting requires a loopback client and local request host */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Magic-link delivery is not configured */
       501: {
         headers: {
