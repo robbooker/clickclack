@@ -9,13 +9,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openclaw/clickclack/apps/api/internal/store"
 	"github.com/openclaw/clickclack/apps/api/internal/uploadstore"
 )
 
-const maxUploadBytes = 64 << 20
+const (
+	maxUploadBytes       = 64 << 20
+	uploadCleanupTimeout = 5 * time.Second
+)
 
 func formInt(values map[string]string, key string) int {
 	v, err := strconv.Atoi(values[key])
@@ -125,7 +129,9 @@ func (s *Server) createUpload(w http.ResponseWriter, r *http.Request) {
 	committed := false
 	defer func() {
 		if savedPath != "" && !committed {
-			_ = s.uploadStorage.Delete(context.Background(), savedPath)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
+			defer cancel()
+			_ = s.uploadStorage.Delete(cleanupCtx, savedPath)
 		}
 	}()
 	for {

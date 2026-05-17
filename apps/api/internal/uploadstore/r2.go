@@ -12,10 +12,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
 )
+
+const defaultR2ResponseHeaderTimeout = 30 * time.Second
 
 type R2Config struct {
 	AccountID       string
@@ -62,7 +65,7 @@ func NewR2(cfg R2Config) (*R2, error) {
 	}
 	client := cfg.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultR2HTTPClient()
 	}
 	prefix := strings.Trim(cfg.Prefix, "/")
 	if prefix != "" {
@@ -80,23 +83,51 @@ func NewR2(cfg R2Config) (*R2, error) {
 	}, nil
 }
 
+func defaultR2HTTPClient() *http.Client {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{}
+	}
+	cloned := transport.Clone()
+	cloned.ResponseHeaderTimeout = defaultR2ResponseHeaderTimeout
+	return &http.Client{Transport: cloned}
+}
+
 func (s *R2) Save(ctx context.Context, body io.Reader, options SaveOptions) (SavedObject, error) {
-	payload, err := io.ReadAll(body)
+	tmp, err := os.CreateTemp("", "clickclack-r2-*")
 	if err != nil {
+		return SavedObject{}, err
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+	hasher := sha256.New()
+	size, err := io.Copy(tmp, io.TeeReader(body, hasher))
+	if err != nil {
+		return SavedObject{}, err
+	}
+	payloadHash := hex.EncodeToString(hasher.Sum(nil))
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return SavedObject{}, err
 	}
 	key, err := randomKey(s.prefix)
 	if err != nil {
 		return SavedObject{}, err
 	}
-	req, err := s.newRequest(ctx, http.MethodPut, key, bytes.NewReader(payload))
+	var reqBody io.Reader = tmp
+	if size == 0 {
+		reqBody = bytes.NewReader(nil)
+	}
+	req, err := s.newRequest(ctx, http.MethodPut, key, reqBody)
 	if err != nil {
 		return SavedObject{}, err
 	}
+	req.ContentLength = size
 	if options.ContentType != "" {
 		req.Header.Set("Content-Type", options.ContentType)
 	}
-	s.sign(req, payload)
+	s.signHash(req, payloadHash)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return SavedObject{}, err
@@ -105,7 +136,7 @@ func (s *R2) Save(ctx context.Context, body io.Reader, options SaveOptions) (Sav
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return SavedObject{}, responseError("save r2 upload", resp)
 	}
-	return SavedObject{Path: s.objectPath(key), ByteSize: int64(len(payload))}, nil
+	return SavedObject{Path: s.objectPath(key), ByteSize: size}, nil
 }
 
 func (s *R2) Delete(ctx context.Context, objectPath string) error {
@@ -205,20 +236,30 @@ func (s *R2) keyFromPath(objectPath string) (string, error) {
 		if key == "" {
 			return "", ErrNotFound
 		}
-		return key, nil
+		return s.validateKey(key)
 	}
 	key := strings.TrimLeft(objectPath, "/")
 	if key == "" {
+		return "", ErrNotFound
+	}
+	return s.validateKey(key)
+}
+
+func (s *R2) validateKey(key string) (string, error) {
+	if s.prefix != "" && !strings.HasPrefix(key, s.prefix) {
 		return "", ErrNotFound
 	}
 	return key, nil
 }
 
 func (s *R2) sign(req *http.Request, payload []byte) {
+	s.signHash(req, sha256Hex(payload))
+}
+
+func (s *R2) signHash(req *http.Request, payloadHash string) {
 	now := time.Now().UTC()
 	amzDate := now.Format("20060102T150405Z")
 	dateStamp := now.Format("20060102")
-	payloadHash := sha256Hex(payload)
 	req.Header.Set("Host", req.URL.Host)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	req.Header.Set("X-Amz-Date", amzDate)

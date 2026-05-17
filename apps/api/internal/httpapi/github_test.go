@@ -16,6 +16,19 @@ import (
 	sqlitestore "github.com/openclaw/clickclack/apps/api/internal/store/sqlite"
 )
 
+func TestGitHubOAuthDefaultHTTPClientTimeout(t *testing.T) {
+	t.Parallel()
+	cfg := GitHubOAuthConfig{}.withDefaults()
+	if cfg.HTTPClient == nil || cfg.HTTPClient.Timeout != defaultGitHubHTTPTimeout {
+		t.Fatalf("expected default timeout %s, got %#v", defaultGitHubHTTPTimeout, cfg.HTTPClient)
+	}
+	customClient := &http.Client{}
+	cfg = GitHubOAuthConfig{HTTPClient: customClient}.withDefaults()
+	if cfg.HTTPClient != customClient {
+		t.Fatal("expected custom client to be preserved")
+	}
+}
+
 func TestGitHubOAuthFlow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

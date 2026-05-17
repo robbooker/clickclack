@@ -2,6 +2,7 @@ package uploadstore
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,9 @@ func TestR2SaveServeAndDelete(t *testing.T) {
 		}
 		switch r.Method {
 		case http.MethodPut:
+			if r.ContentLength != 8 {
+				t.Fatalf("unexpected put content length: %d", r.ContentLength)
+			}
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
@@ -112,5 +116,91 @@ func TestR2ConfigValidation(t *testing.T) {
 	}
 	if _, err := NewR2(R2Config{AccountID: "account", AccessKeyID: "access", SecretAccessKey: "secret"}); err == nil {
 		t.Fatal("expected missing bucket error")
+	}
+	store, err := NewR2(R2Config{AccountID: "account", AccessKeyID: "access", SecretAccessKey: "secret", Bucket: "bucket"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.httpClient == nil || store.httpClient.Timeout != 0 {
+		t.Fatalf("expected streaming-safe client timeout, got %#v", store.httpClient)
+	}
+	transport, ok := store.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected default transport, got %#v", store.httpClient.Transport)
+	}
+	if transport.ResponseHeaderTimeout != defaultR2ResponseHeaderTimeout {
+		t.Fatalf("expected response header timeout %s, got %s", defaultR2ResponseHeaderTimeout, transport.ResponseHeaderTimeout)
+	}
+	customClient := &http.Client{}
+	store, err = NewR2(R2Config{AccountID: "account", AccessKeyID: "access", SecretAccessKey: "secret", Bucket: "bucket", HTTPClient: customClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.httpClient != customClient {
+		t.Fatal("expected custom client to be preserved")
+	}
+}
+
+func TestR2SaveEmptyUploadUsesContentLength(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+			t.Fatalf("expected content-length zero, got length=%d transfer=%v", r.ContentLength, r.TransferEncoding)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != "" {
+			t.Fatalf("unexpected body %q", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	store, err := NewR2(R2Config{
+		AccountID:       "account",
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
+		Bucket:          "bucket",
+		Endpoint:        server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.Save(context.Background(), strings.NewReader(""), SaveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.ByteSize != 0 {
+		t.Fatalf("unexpected byte size %d", saved.ByteSize)
+	}
+}
+
+func TestR2RejectsKeysOutsidePrefix(t *testing.T) {
+	t.Parallel()
+	store, err := NewR2(R2Config{
+		AccountID:       "account",
+		AccessKeyID:     "access",
+		SecretAccessKey: "secret",
+		Bucket:          "bucket",
+		Prefix:          "prefix",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, objectPath := range []string{"r2://bucket/other/upload-1", "other/upload-1"} {
+		if _, err := store.keyFromPath(objectPath); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected %q outside prefix to be rejected, got %v", objectPath, err)
+		}
+	}
+	key, err := store.keyFromPath("r2://bucket/prefix/upload-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "prefix/upload-1" {
+		t.Fatalf("unexpected key: %q", key)
 	}
 }

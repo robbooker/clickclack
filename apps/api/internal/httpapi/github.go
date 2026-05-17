@@ -31,6 +31,8 @@ type GitHubOAuthConfig struct {
 
 var errGitHubOrgDenied = errors.New("github account is not a member of the allowed organization")
 
+const defaultGitHubHTTPTimeout = 30 * time.Second
+
 func (c GitHubOAuthConfig) withDefaults() GitHubOAuthConfig {
 	if c.AuthURL == "" {
 		c.AuthURL = "https://github.com/login/oauth/authorize"
@@ -48,7 +50,7 @@ func (c GitHubOAuthConfig) withDefaults() GitHubOAuthConfig {
 		c.MembershipURL = "https://api.github.com/user/memberships/orgs/"
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = http.DefaultClient
+		c.HTTPClient = &http.Client{Timeout: defaultGitHubHTTPTimeout}
 	}
 	return c
 }
