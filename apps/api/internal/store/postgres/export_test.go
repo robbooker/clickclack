@@ -11,6 +11,8 @@ func TestShouldRedactExportColumn(t *testing.T) {
 	}{
 		{table: "auth_magic_links", column: "token", want: true},
 		{table: "auth_magic_links", column: "token_hash", want: true},
+		{table: "user_notification_settings", column: "pushover_user_key", want: true},
+		{table: "user_notification_settings", column: "pushover_enabled", want: false},
 		{table: "sessions", column: "token", want: true},
 		{table: "sessions", column: "token_hash", want: true},
 		{table: "bot_tokens", column: "token_hash", want: true},

@@ -29,6 +29,14 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspace := workspaces[0]
+	pushoverUserKey := "abcdefghijklmnopqrstuvwxyz1234"
+	if _, err := st.UpdateNotificationSettings(ctx, store.UpdateNotificationSettingsInput{
+		UserID:          owner.ID,
+		PushoverEnabled: true,
+		PushoverUserKey: pushoverUserKey,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -151,10 +159,16 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) {
 		t.Fatalf("export leaked bearer token: %s", exported.String())
 	}
-	for _, secret := range []string{tokenHash(link.Token), tokenHash(session.Token), tokenHash(botToken.Token), upload.StoragePath} {
+	for _, secret := range []string{tokenHash(link.Token), tokenHash(session.Token), tokenHash(botToken.Token), upload.StoragePath, pushoverUserKey} {
 		if bytes.Contains(exported.Bytes(), []byte(secret)) {
 			t.Fatalf("export leaked sensitive stored value %q: %s", secret, exported.String())
 		}
+	}
+	if len(exportBody["user_notification_settings"]) == 0 {
+		t.Fatalf("expected user_notification_settings in export, got keys %#v", exportBody)
+	}
+	if exportBody["user_notification_settings"][0]["pushover_user_key"] != "[redacted]" {
+		t.Fatalf("pushover user key export was not redacted: %#v", exportBody["user_notification_settings"][0])
 	}
 	if exportBody["auth_magic_links"][0]["token"] != "[redacted]" || exportBody["auth_magic_links"][0]["token_hash"] != "[redacted]" {
 		t.Fatalf("magic link export was not redacted: %#v", exportBody["auth_magic_links"][0])
