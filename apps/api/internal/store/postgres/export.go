@@ -13,6 +13,12 @@ func (s *Store) Backup(ctx context.Context, outPath string) error {
 }
 
 func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	out := map[string]any{}
 	tables := []string{
 		"users", "user_notification_settings", "identities", "workspaces", "workspace_members", "channels",
@@ -22,7 +28,7 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 		"invites", "auth_magic_links", "sessions", "bot_tokens",
 	}
 	for _, table := range tables {
-		rows, err := s.db.QueryContext(ctx, `SELECT * FROM `+table)
+		rows, err := tx.QueryContext(ctx, `SELECT * FROM `+table)
 		if err != nil {
 			return err
 		}
@@ -31,6 +37,9 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 			return err
 		}
 		out[table] = values
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
