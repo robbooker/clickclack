@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,6 +190,115 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	}
 	if added.Type != "reaction.added" || removed.Type != "reaction.removed" {
 		t.Fatalf("unexpected reaction events: %#v %#v", added, removed)
+	}
+}
+
+func TestMessageSequenceAllocationIsConcurrentSafe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := workspaces[0]
+	channels, err := st.ListChannels(ctx, workspace.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := channels[0]
+	other, err := st.CreateUser(ctx, store.CreateUserInput{DisplayName: "Other", Email: "seq-other@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, other.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	dm, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{
+		WorkspaceID: workspace.ID,
+		UserID:      owner.ID,
+		MemberIDs:   []string{other.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "thread root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	channelSeqs := createConcurrentMessages(t, 16, func(i int) (*int64, error) {
+		msg, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: fmt.Sprintf("channel %02d", i)})
+		return msg.ChannelSeq, err
+	})
+	assertContiguousSeqs(t, channelSeqs, 2)
+
+	directSeqs := createConcurrentMessages(t, 16, func(i int) (*int64, error) {
+		msg, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: owner.ID, Body: fmt.Sprintf("dm %02d", i)})
+		return msg.ChannelSeq, err
+	})
+	assertContiguousSeqs(t, directSeqs, 1)
+
+	threadSeqs := createConcurrentMessages(t, 16, func(i int) (*int64, error) {
+		msg, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{RootMessageID: root.ID, AuthorID: owner.ID, Body: fmt.Sprintf("reply %02d", i)})
+		return msg.ThreadSeq, err
+	})
+	assertContiguousSeqs(t, threadSeqs, 1)
+}
+
+func createConcurrentMessages(t *testing.T, count int, create func(int) (*int64, error)) []int64 {
+	t.Helper()
+	start := make(chan struct{})
+	errs := make(chan error, count)
+	seqs := make(chan int64, count)
+	var wg sync.WaitGroup
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			seq, err := create(i)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if seq == nil {
+				errs <- errors.New("message sequence is nil")
+				return
+			}
+			seqs <- *seq
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	close(seqs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	got := make([]int64, 0, count)
+	for seq := range seqs {
+		got = append(got, seq)
+	}
+	if len(got) != count {
+		t.Fatalf("got %d sequences, want %d: %v", len(got), count, got)
+	}
+	return got
+}
+
+func assertContiguousSeqs(t *testing.T, got []int64, start int64) {
+	t.Helper()
+	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	for i, seq := range got {
+		want := start + int64(i)
+		if seq != want {
+			t.Fatalf("seq[%d] = %d, want %d; all seqs: %v", i, seq, want, got)
+		}
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
@@ -22,8 +23,9 @@ import (
 var migrationsFS embed.FS
 
 type Store struct {
-	db *sql.DB
-	q  *storedb.Queries
+	db         *sql.DB
+	q          *storedb.Queries
+	sequenceMu sync.Mutex
 }
 
 func Open(dbURL string) (*Store, error) {
@@ -468,6 +470,9 @@ func requireMessageAccessTx(ctx context.Context, tx *sql.Tx, message store.Messa
 }
 
 func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInput) (store.Message, store.Event, error) {
+	s.sequenceMu.Lock()
+	defer s.sequenceMu.Unlock()
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
@@ -598,6 +603,9 @@ func (s *Store) GetThread(ctx context.Context, rootMessageID, userID string, lim
 }
 
 func (s *Store) CreateThreadReply(ctx context.Context, input store.CreateThreadReplyInput) (store.Message, store.ThreadState, []store.Event, error) {
+	s.sequenceMu.Lock()
+	defer s.sequenceMu.Unlock()
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return store.Message{}, store.ThreadState{}, nil, err

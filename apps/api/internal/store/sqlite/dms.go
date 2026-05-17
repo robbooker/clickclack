@@ -139,6 +139,9 @@ func (s *Store) ListDirectMessages(ctx context.Context, conversationID, userID s
 }
 
 func (s *Store) CreateDirectMessage(ctx context.Context, input store.CreateDirectMessageInput) (store.Message, store.Event, error) {
+	s.sequenceMu.Lock()
+	defer s.sequenceMu.Unlock()
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
