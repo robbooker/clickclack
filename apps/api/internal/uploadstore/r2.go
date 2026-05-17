@@ -153,6 +153,14 @@ func (s *R2) ServeHTTP(w http.ResponseWriter, r *http.Request, object Object) er
 	if resp.StatusCode == http.StatusNotFound {
 		return ErrNotFound
 	}
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		copyHeader(w.Header(), resp.Header, "Accept-Ranges")
+		copyHeader(w.Header(), resp.Header, "Content-Length")
+		copyHeader(w.Header(), resp.Header, "Content-Range")
+		w.WriteHeader(resp.StatusCode)
+		_, err = io.Copy(w, resp.Body)
+		return err
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return responseError("serve r2 upload", resp)
 	}

@@ -33,6 +33,11 @@ func TestR2SaveServeAndDelete(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusOK)
 		case http.MethodGet:
+			if r.Header.Get("Range") == "bytes=99-100" {
+				w.Header().Set("Content-Range", "bytes */8")
+				w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+				return
+			}
 			if r.Header.Get("Range") != "bytes=0-4" {
 				t.Fatalf("expected range passthrough, got %q", r.Header.Get("Range"))
 			}
@@ -79,6 +84,15 @@ func TestR2SaveServeAndDelete(t *testing.T) {
 	}
 	if recorder.Header().Get("Content-Type") != "text/plain" || recorder.Header().Get("Content-Range") != "bytes 0-4/8" {
 		t.Fatalf("unexpected serve headers: %#v", recorder.Header())
+	}
+	recorder = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/uploads/upl_1", nil)
+	req.Header.Set("Range", "bytes=99-100")
+	if err := store.ServeHTTP(recorder, req, Object{Path: saved.Path, ContentType: "text/plain", ByteSize: saved.ByteSize}); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusRequestedRangeNotSatisfiable || recorder.Header().Get("Content-Range") != "bytes */8" {
+		t.Fatalf("unexpected unsatisfiable range response: %d %#v", recorder.Code, recorder.Header())
 	}
 	if err := store.Delete(context.Background(), savedPath); err != nil {
 		t.Fatal(err)
