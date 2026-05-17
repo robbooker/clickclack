@@ -1306,6 +1306,55 @@ func TestDisableDevAuthRequiresSession(t *testing.T) {
 	}
 }
 
+func TestDevAuthFallbackRequiresLocalClient(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	st, err := sqlitestore.Open("sqlite://" + filepath.Join(dataDir, "clickclack.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(st, realtime.NewHub(), Options{}).Handler()
+	for _, tc := range []struct {
+		name       string
+		remoteAddr string
+		host       string
+		userHeader bool
+		forwarded  bool
+	}{
+		{name: "remote_first_user_fallback", remoteAddr: "203.0.113.10:45678", host: "127.0.0.1:8080"},
+		{name: "remote_user_header", remoteAddr: "203.0.113.10:45678", host: "127.0.0.1:8080", userHeader: true},
+		{name: "public_reverse_proxy", remoteAddr: "127.0.0.1:45678", host: "app.example.test", userHeader: true, forwarded: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+			req.RemoteAddr = tc.remoteAddr
+			req.Host = tc.host
+			if tc.userHeader {
+				req.Header.Set("X-ClickClack-User", owner.ID)
+			}
+			if tc.forwarded {
+				req.Header.Set("X-Forwarded-For", "203.0.113.10")
+				req.Header.Set("X-Forwarded-Host", tc.host)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("expected remote dev auth request to be unauthorized, got %d", recorder.Code)
+			}
+		})
+	}
+}
+
 func TestSecureCookiesFollowPublicURL(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

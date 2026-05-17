@@ -8,6 +8,7 @@
 - Allowed upload clients to pass `workspace_id` as a query parameter so multipart file parts no longer depend on form field ordering.
 - Disabled public magic-link request minting when dev auth is off, keeping CLI-created magic links as the production path until delivery is configured.
 - Restricted dev-bootstrap magic-link token minting to loopback clients.
+- Restricted dev-bootstrap user-header and first-user fallback auth to loopback clients.
 - Defaulted session cookies to `Secure` outside local dev HTTP, even when proxy HTTPS headers are missing.
 - Kept Pushover notification HTTP calls bounded even when a notifier is constructed without an explicit client.
 - Included channel and direct-message read receipts in JSON exports.

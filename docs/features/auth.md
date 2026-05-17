@@ -15,10 +15,12 @@ resolver lives in `apps/api/internal/httpapi/server.go` (`currentActor`).
 2. `cc_session` cookie — HTTP-only session cookie set by magic-link consume and
    GitHub OAuth callback.
 3. `X-ClickClack-User: usr_...` header — explicit user impersonation for local
-   development and tests.
+   development and tests, accepted only from loopback clients using local
+   request hosts.
 4. Dev fallback — the very first user in the database. Enabled only by
    `clickclack serve --dev-bootstrap=true` so a fresh checkout can boot into a
-   working app without any token plumbing.
+   working app without any token plumbing, and accepted only from local
+   requests.
 
 The dev fallback must stay off in any non-local deployment. `--dev-bootstrap=false`
 is the default; require real sessions.

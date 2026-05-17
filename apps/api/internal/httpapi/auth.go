@@ -21,7 +21,7 @@ func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, errors.New("magic-link delivery is not configured"))
 		return
 	}
-	if !isLocalMagicLinkRequest(r) {
+	if !isLocalDevRequest(r) {
 		writeError(w, http.StatusForbidden, errors.New("magic-link token minting is only available from loopback clients"))
 		return
 	}
@@ -63,7 +63,7 @@ func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "session": session, "token": session.Token})
 }
 
-func isLocalMagicLinkRequest(r *http.Request) bool {
+func isLocalDevRequest(r *http.Request) bool {
 	if !isLocalHostPort(r.RemoteAddr) || !isLocalHostPort(r.Host) {
 		return false
 	}

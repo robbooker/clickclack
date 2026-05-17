@@ -699,6 +699,9 @@ func (s *Server) currentActor(r *http.Request) (actor, error) {
 	if s.disableDevAuth {
 		return actor{}, errors.New("authentication required")
 	}
+	if !isLocalDevRequest(r) {
+		return actor{}, errors.New("authentication required")
+	}
 	if id := r.Header.Get("X-ClickClack-User"); id != "" {
 		user, err := s.store.GetUser(r.Context(), id)
 		return actor{user: user}, err
