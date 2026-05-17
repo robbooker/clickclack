@@ -30,6 +30,7 @@ export class ClickClackContainer extends Container {
     CLICKCLACK_R2_ENDPOINT: env.CLICKCLACK_R2_ENDPOINT ?? "",
     ...optionalContainerEnv({
       CLICKCLACK_GITHUB_ALLOWED_ORG: env.CLICKCLACK_GITHUB_ALLOWED_ORG,
+      CLICKCLACK_GITHUB_MODERATOR_ORG: env.CLICKCLACK_GITHUB_MODERATOR_ORG,
     }),
   };
 }
