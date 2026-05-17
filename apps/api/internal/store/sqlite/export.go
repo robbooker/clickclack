@@ -17,6 +17,7 @@ func (s *Store) ExportJSON(ctx context.Context, writer io.Writer) error {
 	tables := []string{
 		"users", "user_notification_settings", "identities", "workspaces", "workspace_members", "channels",
 		"messages", "thread_state", "reactions", "events", "event_recipients", "uploads",
+		"channel_reads", "direct_reads",
 		"message_attachments", "direct_conversations", "direct_conversation_members",
 		"invites", "auth_magic_links", "sessions", "bot_tokens",
 	}

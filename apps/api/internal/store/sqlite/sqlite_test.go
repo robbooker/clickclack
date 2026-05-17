@@ -41,6 +41,12 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID}); err == nil {
 		t.Fatal("expected empty message error")
 	}
+	if _, _, err := st.CreateMessage(ctx, store.CreateMessageInput{ChannelID: channel.ID, AuthorID: owner.ID, Body: "read me"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.MarkChannelRead(ctx, channel.ID, owner.ID, 1); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{RootMessageID: channel.ID, AuthorID: owner.ID, Body: "nope"}); err == nil {
 		t.Fatal("expected missing root message error")
 	}
@@ -67,6 +73,19 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	}
 	if sessionUser.ID != magicUser.ID {
 		t.Fatalf("expected session user %s, got %s", magicUser.ID, sessionUser.ID)
+	}
+	if err := st.AddWorkspaceMember(ctx, workspace.ID, magicUser.ID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	readDM, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{WorkspaceID: workspace.ID, UserID: owner.ID, MemberIDs: []string{magicUser.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: readDM.ID, AuthorID: magicUser.ID, Body: "dm read me"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.MarkDirectRead(ctx, readDM.ID, owner.ID, 1); err != nil {
+		t.Fatal(err)
 	}
 	if _, _, err := st.ConsumeMagicLink(ctx, link.Token); err == nil {
 		t.Fatal("expected consumed magic link error")
@@ -126,6 +145,9 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if len(exportBody["auth_magic_links"]) == 0 || len(exportBody["sessions"]) == 0 {
 		t.Fatalf("expected auth tables in export, got keys %#v", exportBody)
 	}
+	if len(exportBody["channel_reads"]) == 0 || len(exportBody["direct_reads"]) == 0 {
+		t.Fatalf("expected read receipt tables in export, got keys %#v", exportBody)
+	}
 	if string(exported.Bytes()) == "" || bytes.Contains(exported.Bytes(), []byte(link.Token)) || bytes.Contains(exported.Bytes(), []byte(session.Token)) {
 		t.Fatalf("export leaked bearer token: %s", exported.String())
 	}
@@ -177,7 +199,13 @@ func TestStoreValidationAndAdminHelpers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dms) != 1 || dms[0].ID != dm.ID {
+	foundDM := false
+	for _, item := range dms {
+		if item.ID == dm.ID {
+			foundDM = true
+		}
+	}
+	if !foundDM {
 		t.Fatalf("unexpected dm list: %#v", dms)
 	}
 	if _, _, err := st.CreateDirectMessage(ctx, store.CreateDirectMessageInput{ConversationID: dm.ID, AuthorID: second.ID}); err == nil {
