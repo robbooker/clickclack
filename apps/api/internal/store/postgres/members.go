@@ -35,26 +35,39 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 		return store.Workspace{}, err
 	}
 	if err == sql.ErrNoRows {
-		memberRole = "owner"
 		workspace = store.Workspace{ID: newID("wsp"), Name: "ClickClack", Slug: "clickclack", CreatedAt: now()}
 		insertedWorkspace := false
+		createdWorkspace := false
 		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
 			workspaceRouteID, err := newRouteID('T')
 			if err != nil {
 				return store.Workspace{}, err
 			}
 			workspace.RouteID = workspaceRouteID
-			if err := qtx.InsertWorkspace(ctx, storedb.InsertWorkspaceParams{
-				ID:        workspace.ID,
-				RouteID:   sqlText(workspace.RouteID),
-				Name:      workspace.Name,
-				Slug:      workspace.Slug,
-				CreatedAt: workspace.CreatedAt,
-			}); err != nil {
-				if isRouteIDConflict(err) {
-					continue
-				}
+			result, err := tx.ExecContext(ctx, `
+				INSERT INTO workspaces (id, route_id, name, slug, created_at)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT DO NOTHING`,
+				workspace.ID, sqlText(workspace.RouteID), workspace.Name, workspace.Slug, workspace.CreatedAt,
+			)
+			if err != nil {
 				return store.Workspace{}, err
+			}
+			rowsAffected, err := result.RowsAffected()
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			existingWorkspace, err := postgresWorkspaceBySlugTx(ctx, tx, "clickclack")
+			if err == sql.ErrNoRows {
+				continue
+			}
+			if err != nil {
+				return store.Workspace{}, err
+			}
+			workspace = existingWorkspace
+			createdWorkspace = rowsAffected == 1
+			if createdWorkspace {
+				memberRole = "owner"
 			}
 			insertedWorkspace = true
 			break
@@ -62,29 +75,31 @@ func (s *Store) EnsureDefaultWorkspaceMember(ctx context.Context, userID string)
 		if !insertedWorkspace {
 			return store.Workspace{}, errors.New("could not create workspace route_id after collision retries")
 		}
-		channelID := newID("chn")
-		insertedChannel := false
-		for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
-			channelRouteID, err := newRouteID('C')
-			if err != nil {
-				return store.Workspace{}, err
-			}
-			if err := qtx.InsertDefaultChannel(ctx, storedb.InsertDefaultChannelParams{
-				ID:          channelID,
-				RouteID:     sqlText(channelRouteID),
-				WorkspaceID: workspace.ID,
-				CreatedAt:   workspace.CreatedAt,
-			}); err != nil {
-				if isRouteIDConflict(err) {
-					continue
+		if createdWorkspace {
+			channelID := newID("chn")
+			insertedChannel := false
+			for attempt := 0; attempt < routeIDInsertAttempts; attempt++ {
+				channelRouteID, err := newRouteID('C')
+				if err != nil {
+					return store.Workspace{}, err
 				}
-				return store.Workspace{}, err
+				if err := qtx.InsertDefaultChannel(ctx, storedb.InsertDefaultChannelParams{
+					ID:          channelID,
+					RouteID:     sqlText(channelRouteID),
+					WorkspaceID: workspace.ID,
+					CreatedAt:   workspace.CreatedAt,
+				}); err != nil {
+					if isRouteIDConflict(err) {
+						continue
+					}
+					return store.Workspace{}, err
+				}
+				insertedChannel = true
+				break
 			}
-			insertedChannel = true
-			break
-		}
-		if !insertedChannel {
-			return store.Workspace{}, errors.New("could not create channel route_id after collision retries")
+			if !insertedChannel {
+				return store.Workspace{}, errors.New("could not create channel route_id after collision retries")
+			}
 		}
 	}
 	if err := qtx.InsertDefaultWorkspaceMember(ctx, storedb.InsertDefaultWorkspaceMemberParams{
