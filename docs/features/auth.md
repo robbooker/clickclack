@@ -60,6 +60,10 @@ POST /api/auth/magic/consume
 { "token": "<token>" }
 ```
 
+Magic-link consume requests must use `Content-Type: application/json`. Browser
+requests with cross-site `Origin` or `Sec-Fetch-Site` headers are rejected so a
+foreign site cannot force a browser session onto another account.
+
 For production-style deployments, use the CLI delivery path until SMTP delivery
 exists:
 

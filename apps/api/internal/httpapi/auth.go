@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"errors"
+	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -47,6 +49,9 @@ func (s *Server) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSameOriginJSON(w, r) {
+		return
+	}
 	var body struct {
 		Token string `json:"token"`
 	}
@@ -61,6 +66,99 @@ func (s *Server) consumeMagicLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, r, session)
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "session": session, "token": session.Token})
+}
+
+func (s *Server) requireSameOriginJSON(w http.ResponseWriter, r *http.Request) bool {
+	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, errors.New("content-type must be application/json"))
+		return false
+	}
+	if fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); fetchSite != "" && fetchSite != "same-origin" && fetchSite != "none" {
+		writeError(w, http.StatusForbidden, errors.New("cross-site login requests are not allowed"))
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	if !s.sameOrigin(r, origin) {
+		writeError(w, http.StatusForbidden, errors.New("cross-site login requests are not allowed"))
+		return false
+	}
+	return true
+}
+
+func (s *Server) sameOrigin(r *http.Request, origin string) bool {
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil || parsedOrigin.Host == "" {
+		return false
+	}
+	if parsedOrigin.Scheme != "http" && parsedOrigin.Scheme != "https" {
+		return false
+	}
+	if publicURL, err := url.Parse(strings.TrimSpace(s.githubOAuth.PublicURL)); err == nil && publicURL.Scheme != "" && publicURL.Host != "" {
+		publicOrigin, ok := canonicalOrigin(publicURL)
+		if !ok {
+			return false
+		}
+		requestOrigin, ok := canonicalOrigin(parsedOrigin)
+		return ok && requestOrigin == publicOrigin
+	}
+	return originHostMatchesRequest(parsedOrigin, r.Host)
+}
+
+func canonicalOrigin(value *url.URL) (string, bool) {
+	scheme := strings.ToLower(value.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+	host := strings.ToLower(value.Hostname())
+	if host == "" {
+		return "", false
+	}
+	port := value.Port()
+	if port == defaultPort(scheme) {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return scheme + "://" + host, true
+}
+
+func defaultPort(scheme string) string {
+	switch scheme {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+func originHostMatchesRequest(origin *url.URL, requestHost string) bool {
+	originHost := strings.ToLower(origin.Hostname())
+	requestHostname, requestPort := splitHostPort(requestHost)
+	if originHost == "" || requestHostname == "" || !strings.EqualFold(originHost, requestHostname) {
+		return false
+	}
+	originPort := origin.Port()
+	if originPort == "" {
+		originPort = defaultPort(origin.Scheme)
+	}
+	if requestPort == "" {
+		return originPort == defaultPort(origin.Scheme)
+	}
+	return originPort == requestPort
+}
+
+func splitHostPort(value string) (string, string) {
+	host := strings.TrimSpace(value)
+	if parsedHost, port, err := net.SplitHostPort(host); err == nil {
+		return strings.Trim(strings.ToLower(parsedHost), "[]"), port
+	}
+	return strings.Trim(strings.TrimSuffix(strings.ToLower(host), "."), "[]"), ""
 }
 
 func isLocalDevRequest(r *http.Request) bool {

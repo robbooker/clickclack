@@ -971,6 +971,94 @@ func TestMagicLinkRequestRejectsPublicReverseProxyHost(t *testing.T) {
 	}
 }
 
+func TestMagicLinkConsumeRequiresJSONAndSameOrigin(t *testing.T) {
+	t.Parallel()
+	st := newHTTPStore(t)
+	handler := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "https://chat.example.com"}}).Handler()
+
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{
+			name:    "text plain",
+			headers: map[string]string{"Content-Type": "text/plain"},
+			want:    http.StatusUnsupportedMediaType,
+		},
+		{
+			name:    "cross-site origin",
+			headers: map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"},
+			want:    http.StatusForbidden,
+		},
+		{
+			name:    "cross-site fetch metadata",
+			headers: map[string]string{"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"},
+			want:    http.StatusForbidden,
+		},
+		{
+			name:    "same origin reaches token validation",
+			headers: map[string]string{"Content-Type": "application/json; charset=utf-8", "Origin": "https://chat.example.com", "Sec-Fetch-Site": "same-origin"},
+			want:    http.StatusBadRequest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/consume", strings.NewReader(`{"token":"missing"}`))
+			req.Host = "chat.example.com"
+			for key, value := range tc.headers {
+				req.Header.Set(key, value)
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != tc.want {
+				t.Fatalf("expected %d, got %d: %s", tc.want, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestMagicLinkConsumeAllowsTLSProxyOriginWithoutPublicURL(t *testing.T) {
+	t.Parallel()
+	st := newHTTPStore(t)
+	handler := New(st, realtime.NewHub(), Options{}).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/consume", strings.NewReader(`{"token":"missing"}`))
+	req.Host = "chat.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://chat.example.com")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected token validation to run, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/magic/consume", strings.NewReader(`{"token":"missing"}`))
+	req.Host = "chat.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://chat.example.com:8443")
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected non-default origin port to be rejected, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMagicLinkConsumeNormalizesPublicURLOrigin(t *testing.T) {
+	t.Parallel()
+	st := newHTTPStore(t)
+	handler := New(st, realtime.NewHub(), Options{GitHubOAuth: GitHubOAuthConfig{PublicURL: "https://Chat.Example.com:443/app"}}).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/consume", strings.NewReader(`{"token":"missing"}`))
+	req.Host = "chat.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://chat.example.com")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected token validation to run, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func getJSON[T any](t *testing.T, endpoint string) T {
 	t.Helper()
 	resp, err := http.Get(endpoint)
