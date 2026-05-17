@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -35,7 +36,9 @@ type Server struct {
 const (
 	websocketBearerProtocolPrefix = "clickclack.bearer."
 	maxJSONBodyBytes              = 1 << 20
+	readHeaderTimeout             = 5 * time.Second
 	httpRequestTimeout            = 30 * time.Second
+	idleTimeout                   = 120 * time.Second
 )
 
 type actor struct {
@@ -933,7 +936,18 @@ func writeWS(ctx context.Context, conn *websocket.Conn, event store.Event) error
 func readJSON(w http.ResponseWriter, r *http.Request, out any) error {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
-	return json.NewDecoder(r.Body).Decode(out)
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(out)
+	if err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err == nil {
+		return errors.New("json request body must contain a single JSON value")
+	} else if !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 func writeResult(w http.ResponseWriter, body any, err error) {
@@ -1090,12 +1104,7 @@ func writeMessagePage(w http.ResponseWriter, page store.MessagePage, err error) 
 }
 
 func ListenAndServe(ctx context.Context, addr string, handler http.Handler) error {
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           withHTTPDeadlines(handler),
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
+	server := newHTTPServer(addr, handler)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1123,4 +1132,13 @@ func withHTTPDeadlines(handler http.Handler) http.Handler {
 		}()
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           withHTTPDeadlines(handler),
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 }

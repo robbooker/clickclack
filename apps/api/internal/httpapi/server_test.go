@@ -1059,6 +1059,62 @@ func TestMagicLinkConsumeNormalizesPublicURLOrigin(t *testing.T) {
 	}
 }
 
+func TestJSONBodiesAreBounded(t *testing.T) {
+	t.Parallel()
+	st := newHTTPStore(t)
+	handler := New(st, realtime.NewHub(), Options{}).Handler()
+
+	for _, tc := range []struct {
+		name                 string
+		body                 string
+		unknownContentLength bool
+	}{
+		{
+			name: "large value",
+			body: `{"token":"` + strings.Repeat("x", maxJSONBodyBytes) + `"}`,
+		},
+		{
+			name: "declared large tail",
+			body: `{"token":"missing"}` + strings.Repeat(" ", maxJSONBodyBytes),
+		},
+		{
+			name:                 "chunked large tail",
+			body:                 `{"token":"missing"}` + strings.Repeat(" ", maxJSONBodyBytes),
+			unknownContentLength: true,
+		},
+		{
+			name:                 "chunked second json large tail",
+			body:                 `{"token":"missing"}{}` + strings.Repeat(" ", maxJSONBodyBytes),
+			unknownContentLength: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/consume", strings.NewReader(tc.body))
+			req.Host = "chat.example.com"
+			req.Header.Set("Content-Type", "application/json")
+			if tc.unknownContentLength {
+				req.ContentLength = -1
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("expected body limit error, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestHTTPServerTimeouts(t *testing.T) {
+	t.Parallel()
+	server := newHTTPServer("127.0.0.1:0", http.NotFoundHandler())
+	if server.ReadHeaderTimeout != readHeaderTimeout {
+		t.Fatalf("unexpected read header timeout %s", server.ReadHeaderTimeout)
+	}
+	if server.ReadTimeout != requestReadTimeout {
+		t.Fatalf("unexpected request read timeout %s", server.ReadTimeout)
+	}
+}
+
 func getJSON[T any](t *testing.T, endpoint string) T {
 	t.Helper()
 	resp, err := http.Get(endpoint)
