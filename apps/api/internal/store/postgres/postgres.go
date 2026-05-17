@@ -19,6 +19,8 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+const postgresMigrationAdvisoryLockKey int64 = 0x636c69636b636c61
+
 type Store struct {
 	db *sql.DB
 	q  *storedb.Queries
@@ -42,8 +44,27 @@ func Open(dbURL string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
+func (s *Store) Migrate(ctx context.Context) (err error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := conn.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, postgresMigrationAdvisoryLockKey); err != nil {
+		return err
+	}
+	defer func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if _, unlockErr := conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock($1)`, postgresMigrationAdvisoryLockKey); err == nil && unlockErr != nil {
+			err = unlockErr
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
 		return err
 	}
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
@@ -54,7 +75,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	for _, entry := range entries {
 		name := entry.Name()
 		var applied string
-		err := s.db.QueryRowContext(ctx, `SELECT name FROM schema_migrations WHERE name = $1`, name).Scan(&applied)
+		err := conn.QueryRowContext(ctx, `SELECT name FROM schema_migrations WHERE name = $1`, name).Scan(&applied)
 		if err == nil {
 			continue
 		}
@@ -65,7 +86,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		tx, err := s.db.BeginTx(ctx, nil)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
