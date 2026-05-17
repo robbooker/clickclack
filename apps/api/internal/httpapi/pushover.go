@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-const pushoverMessagesURL = "https://api.pushover.net/1/messages.json"
+const (
+	pushoverMessagesURL        = "https://api.pushover.net/1/messages.json"
+	defaultPushoverHTTPTimeout = 5 * time.Second
+)
 
 type PushoverNotifier struct {
 	Token  string
@@ -21,7 +24,7 @@ type PushoverNotifier struct {
 func NewPushoverNotifier(token string) *PushoverNotifier {
 	return &PushoverNotifier{
 		Token:  strings.TrimSpace(token),
-		Client: &http.Client{Timeout: 5 * time.Second},
+		Client: &http.Client{Timeout: defaultPushoverHTTPTimeout},
 	}
 }
 
@@ -43,11 +46,7 @@ func (p *PushoverNotifier) Notify(ctx context.Context, notification PushNotifica
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	client := p.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
+	resp, err := p.httpClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -66,4 +65,11 @@ func (p *PushoverNotifier) Notify(ctx context.Context, notification PushNotifica
 		return fmt.Errorf("pushover rejected notification with status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (p *PushoverNotifier) httpClient() *http.Client {
+	if p.Client != nil {
+		return p.Client
+	}
+	return &http.Client{Timeout: defaultPushoverHTTPTimeout}
 }

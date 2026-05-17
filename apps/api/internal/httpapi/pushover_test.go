@@ -60,6 +60,17 @@ func TestPushoverNotifierReportsFailures(t *testing.T) {
 	}
 }
 
+func TestPushoverNotifierDefaultClientIsBounded(t *testing.T) {
+	notifier := NewPushoverNotifier("app-token")
+	if notifier.Client.Timeout != defaultPushoverHTTPTimeout {
+		t.Fatalf("unexpected constructor timeout %s", notifier.Client.Timeout)
+	}
+	notifier.Client = nil
+	if notifier.httpClient().Timeout != defaultPushoverHTTPTimeout {
+		t.Fatalf("unexpected fallback timeout %s", notifier.httpClient().Timeout)
+	}
+}
+
 func TestPushoverNotifierValidatesInputsAndFailures(t *testing.T) {
 	var nilNotifier *PushoverNotifier
 	if err := nilNotifier.Notify(context.Background(), PushNotification{RecipientKey: "user-key"}); err == nil {

@@ -7,6 +7,7 @@
 - Bounded outbound upload and GitHub OAuth HTTP calls with default timeouts, streamed R2 upload saves without full in-memory buffering, and constrained R2 object access to the configured prefix.
 - Allowed upload clients to pass `workspace_id` as a query parameter so multipart file parts no longer depend on form field ordering.
 - Disabled public magic-link request minting when dev auth is off, keeping CLI-created magic links as the production path until delivery is configured.
+- Kept Pushover notification HTTP calls bounded even when a notifier is constructed without an explicit client.
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
 - Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.
