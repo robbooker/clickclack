@@ -332,7 +332,7 @@ SELECT workspace_id
 FROM uploads
 WHERE id = sqlc.arg(id);
 
--- name: AttachUpload :exec
+-- name: AttachUpload :execrows
 INSERT OR IGNORE INTO message_attachments (message_id, upload_id, created_at)
 VALUES (sqlc.arg(message_id), sqlc.arg(upload_id), sqlc.arg(created_at));
 

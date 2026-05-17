@@ -513,7 +513,8 @@ func TestStoreClosedDatabaseErrors(t *testing.T) {
 			return err
 		}},
 		{"attach upload", func() error {
-			return st.AttachUpload(ctx, store.AttachUploadInput{})
+			_, err := st.AttachUpload(ctx, store.AttachUploadInput{})
+			return err
 		}},
 		{"create dm", func() error {
 			_, err := st.CreateDirectConversation(ctx, store.CreateDirectConversationInput{})

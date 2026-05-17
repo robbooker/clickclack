@@ -166,17 +166,17 @@ func TestMessagePrivacyScalingPrivacyAndDMThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: workspaceOnly.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: workspaceOnly.ID}); err == nil {
 		t.Fatal("expected non-DM member to be blocked from attaching to a DM message")
 	}
 	privateUpload, err := st.CreateUpload(ctx, store.CreateUploadInput{WorkspaceID: workspace.ID, OwnerID: owner.ID, Filename: "private.txt", ContentType: "text/plain", ByteSize: 1, StoragePath: "/tmp/private.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: publicMessage.ID, UploadID: privateUpload.ID, UserID: member.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: publicMessage.ID, UploadID: privateUpload.ID, UserID: member.ID}); err == nil {
 		t.Fatal("expected member to be blocked from attaching another user's private upload")
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.GetUpload(ctx, upload.ID, workspaceOnly.ID); err == nil {
@@ -313,7 +313,7 @@ func TestDeletedMessageAttachmentsAreHidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err != nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.GetUpload(ctx, channelUpload.ID, member.ID); err != nil {
@@ -335,7 +335,7 @@ func TestDeletedMessageAttachmentsAreHidden(t *testing.T) {
 	if len(deletedChannelMessage.Attachments) != 0 {
 		t.Fatalf("expected deleted message attachments to be hidden, got %#v", deletedChannelMessage.Attachments)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: channelMessage.ID, UploadID: channelUpload.ID, UserID: owner.ID}); err == nil {
 		t.Fatal("expected attaching to a deleted message to fail")
 	}
 
@@ -351,7 +351,7 @@ func TestDeletedMessageAttachmentsAreHidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: dmUpload.ID, UserID: owner.ID}); err != nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: dmMessage.ID, UploadID: dmUpload.ID, UserID: owner.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.GetUpload(ctx, dmUpload.ID, member.ID); err != nil {
@@ -465,22 +465,30 @@ func TestMessagePrivacyScalingChannelAndUploadVisibilityCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+	firstEvent, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+	if firstEvent.ID == "" {
+		t.Fatalf("expected first attachment to emit event, got %#v", firstEvent)
+	}
+	duplicateEvent, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: owner.ID})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if duplicateEvent.ID != "" {
+		t.Fatalf("expected duplicate attachment to be a no-op, got event %#v", duplicateEvent)
 	}
 	if _, err := st.GetUpload(ctx, upload.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: member.ID}); !errors.Is(err, store.ErrMessageNotWritable) {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: upload.ID, UserID: member.ID}); !errors.Is(err, store.ErrMessageNotWritable) {
 		t.Fatalf("expected member to be blocked from attaching to another user's message, got %v", err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: owner.ID}); err == nil {
 		t.Fatal("expected attaching to another user's message to be blocked")
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: member.ID}); err != nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: memberMessage.ID, UploadID: upload.ID, UserID: member.ID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -492,7 +500,7 @@ func TestMessagePrivacyScalingChannelAndUploadVisibilityCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: otherUpload.ID, UserID: owner.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: ownerMessage.ID, UploadID: otherUpload.ID, UserID: owner.ID}); err == nil {
 		t.Fatal("expected cross-workspace upload attach to be blocked")
 	}
 }

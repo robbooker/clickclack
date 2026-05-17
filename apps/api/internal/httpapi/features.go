@@ -345,7 +345,10 @@ func (s *Server) attachUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("message attachments can only be changed by the message author"))
 		return
 	}
-	err = s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})
+	event, err := s.store.AttachUpload(r.Context(), store.AttachUploadInput{MessageID: chi.URLParam(r, "message_id"), UploadID: body.UploadID, UserID: act.user.ID})
+	if err == nil && event.ID != "" {
+		s.hub.Publish(event)
+	}
 	writeResult(w, map[string]any{"ok": true}, err)
 }
 

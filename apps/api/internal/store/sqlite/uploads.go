@@ -99,42 +99,42 @@ func (s *Store) GetUpload(ctx context.Context, uploadID, userID string) (store.U
 	return upload, nil
 }
 
-func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput) error {
+func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput) (store.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return store.Event{}, err
 	}
 	defer tx.Rollback()
 	qtx := s.q.WithTx(tx)
 	msg, err := getMessageTx(ctx, tx, input.MessageID)
 	if err != nil {
-		return err
+		return store.Event{}, err
 	}
 	if err := requireMessageAccessTx(ctx, tx, msg, input.UserID); err != nil {
-		return err
+		return store.Event{}, err
 	}
 	if msg.AuthorID != input.UserID {
 		return store.ErrMessageNotWritable
 	}
 	if err := requireNoModerationBlockTx(ctx, tx, msg.WorkspaceID, input.UserID); err != nil {
-		return err
+		return store.Event{}, err
 	}
 	if msg.AuthorID != input.UserID {
-		return errors.New("message attachments can only be changed by the message author")
+		return store.Event{}, errors.New("message attachments can only be changed by the message author")
 	}
 	if msg.DeletedAt != nil {
-		return errors.New("deleted messages cannot have attachments")
+		return store.Event{}, errors.New("deleted messages cannot have attachments")
 	}
 	uploadWorkspace, err := qtx.GetUploadWorkspace(ctx, input.UploadID)
 	if err != nil {
-		return err
+		return store.Event{}, err
 	}
 	if uploadWorkspace != msg.WorkspaceID {
-		return errors.New("upload and message workspaces differ")
+		return store.Event{}, errors.New("upload and message workspaces differ")
 	}
 	uploadRow, err := qtx.GetUpload(ctx, input.UploadID)
 	if err != nil {
-		return err
+		return store.Event{}, err
 	}
 	upload := storeUploadFromGetUpload(uploadRow)
 	if upload.OwnerID != input.UserID {
@@ -144,23 +144,23 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 			JOIN messages m ON m.id = ma.message_id
 			WHERE ma.upload_id = ? AND m.deleted_at IS NULL`, input.UploadID)
 		if err != nil {
-			return err
+			return store.Event{}, err
 		}
 		messageIDs := []string{}
 		for rows.Next() {
 			var messageID string
 			if err := rows.Scan(&messageID); err != nil {
 				rows.Close()
-				return err
+				return store.Event{}, err
 			}
 			messageIDs = append(messageIDs, messageID)
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return err
+			return store.Event{}, err
 		}
 		if err := rows.Close(); err != nil {
-			return err
+			return store.Event{}, err
 		}
 		visible := false
 		for _, messageID := range messageIDs {
@@ -171,17 +171,29 @@ func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput)
 			}
 		}
 		if !visible {
-			return errors.New("upload is not visible")
+			return store.Event{}, errors.New("upload is not visible")
 		}
 	}
-	if err := qtx.AttachUpload(ctx, storedb.AttachUploadParams{
+	rows, err := qtx.AttachUpload(ctx, storedb.AttachUploadParams{
 		MessageID: input.MessageID,
 		UploadID:  input.UploadID,
 		CreatedAt: now(),
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return store.Event{}, err
 	}
-	return tx.Commit()
+	if rows == 0 {
+		return store.Event{}, tx.Commit()
+	}
+	recipients, err := eventRecipientsForMessageTx(ctx, tx, msg)
+	if err != nil {
+		return store.Event{}, err
+	}
+	event, err := insertEventWithRecipients(ctx, tx, msg.WorkspaceID, msg.ChannelID, "message.updated", msg.ChannelSeq, messagePayload(msg), recipients)
+	if err != nil {
+		return store.Event{}, err
+	}
+	return event, tx.Commit()
 }
 
 func (s *Store) hydrateAttachments(ctx context.Context, messages []store.Message) ([]store.Message, error) {

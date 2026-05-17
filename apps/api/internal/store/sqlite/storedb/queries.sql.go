@@ -35,7 +35,7 @@ func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (int64
 	return result.RowsAffected()
 }
 
-const attachUpload = `-- name: AttachUpload :exec
+const attachUpload = `-- name: AttachUpload :execrows
 INSERT OR IGNORE INTO message_attachments (message_id, upload_id, created_at)
 VALUES (?1, ?2, ?3)
 `
@@ -46,9 +46,12 @@ type AttachUploadParams struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (q *Queries) AttachUpload(ctx context.Context, arg AttachUploadParams) error {
-	_, err := q.db.ExecContext(ctx, attachUpload, arg.MessageID, arg.UploadID, arg.CreatedAt)
-	return err
+func (q *Queries) AttachUpload(ctx context.Context, arg AttachUploadParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, attachUpload, arg.MessageID, arg.UploadID, arg.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const channelLastSeq = `-- name: ChannelLastSeq :one

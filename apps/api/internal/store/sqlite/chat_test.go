@@ -168,8 +168,13 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	if gotUpload.ID != upload.ID || gotUpload.Filename != "note.txt" {
 		t.Fatalf("unexpected upload: %#v", gotUpload)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: owner.ID}); err != nil {
+	attachEvent, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: owner.ID})
+	if err != nil {
 		t.Fatal(err)
+	}
+	attachPayload, _ := attachEvent.Payload.(map[string]string)
+	if attachEvent.Type != "message.updated" || attachPayload["message_id"] != root.ID {
+		t.Fatalf("unexpected attachment event: %#v", attachEvent)
 	}
 	withAttachmentPage, err := st.ListMessages(ctx, channel.ID, owner.ID, store.MessagePageRequest{Limit: 10})
 	if err != nil {
@@ -511,7 +516,8 @@ func TestStoreAccessErrors(t *testing.T) {
 			return err
 		}},
 		{"attach denied", func() error {
-			return st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: outsider.ID})
+			_, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: outsider.ID})
+			return err
 		}},
 	}
 	for _, tc := range errorCases {
@@ -745,7 +751,7 @@ func TestStoreBranchCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: otherUpload.ID, UserID: owner.ID}); err == nil {
+	if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: otherUpload.ID, UserID: owner.ID}); err == nil {
 		t.Fatal("expected mismatched upload workspace error")
 	}
 	reply, _, _, err := st.CreateThreadReply(ctx, store.CreateThreadReplyInput{RootMessageID: root.ID, AuthorID: owner.ID, Body: "reply"})

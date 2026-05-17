@@ -104,7 +104,7 @@ func TestStoreFaultBranches(t *testing.T) {
 		if _, err := st.GetUpload(ctx, upload.ID, owner.ID); err == nil {
 			t.Fatal("expected get upload failure")
 		}
-		if err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: owner.ID}); err == nil {
+		if _, err := st.AttachUpload(ctx, store.AttachUploadInput{MessageID: root.ID, UploadID: upload.ID, UserID: owner.ID}); err == nil {
 			t.Fatal("expected attach upload failure")
 		}
 	})
