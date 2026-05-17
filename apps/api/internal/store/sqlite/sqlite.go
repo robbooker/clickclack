@@ -98,6 +98,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.backfillAuthTokenHashes(ctx); err != nil {
+		return err
+	}
 	return s.backfillRouteIDsOnce(ctx)
 }
 

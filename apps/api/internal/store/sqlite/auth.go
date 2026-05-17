@@ -154,3 +154,54 @@ func tokenHash(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
 }
+
+func (s *Store) backfillAuthTokenHashes(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := backfillAuthMagicLinkTokenHashes(ctx, tx); err != nil {
+		return err
+	}
+	if err := backfillSessionTokenHashes(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func backfillAuthMagicLinkTokenHashes(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, token FROM auth_magic_links WHERE token_hash = '' AND token <> '' AND token <> id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, token string
+		if err := rows.Scan(&id, &token); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE auth_magic_links SET token_hash = ?, token = id WHERE id = ? AND token_hash = ''`, tokenHash(token), id); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func backfillSessionTokenHashes(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, token FROM sessions WHERE token_hash = '' AND token <> '' AND token <> id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, token string
+		if err := rows.Scan(&id, &token); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET token_hash = ?, token = id WHERE id = ? AND token_hash = ''`, tokenHash(token), id); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}

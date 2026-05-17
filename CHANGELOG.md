@@ -42,6 +42,7 @@
 - Rejected cookie-authenticated unsafe API requests unless they carry the first-party CSRF header and pass same-origin browser checks.
 - Required ephemeral realtime events with `channel_id` to target a channel the sender can access in the requested workspace.
 - Blocked legacy direct-message realtime backlog events for guests when payloads only referenced message IDs.
+- Preserved existing SQLite magic links and sessions while backfilling token hashes during auth-token migrations.
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
 - Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.
