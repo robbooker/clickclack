@@ -971,6 +971,34 @@ func TestMagicLinkRequestRejectsPublicReverseProxyHost(t *testing.T) {
 	}
 }
 
+func TestMagicLinkRequestRejectsCrossSiteLocalBrowser(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/magic/request", strings.NewReader(`{"email":"remote@example.com"}`))
+	req.RemoteAddr = "127.0.0.1:45678"
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	recorder := httptest.NewRecorder()
+	New(nil, nil, Options{}).Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected cross-site local dev magic-link request to be forbidden, got %d", recorder.Code)
+	}
+}
+
+func TestDevFallbackAuthRejectsCrossSiteLocalBrowser(t *testing.T) {
+	t.Parallel()
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.RemoteAddr = "127.0.0.1:45678"
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	recorder := httptest.NewRecorder()
+	New(nil, nil, Options{}).Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected cross-site local dev fallback auth to be unauthorized, got %d", recorder.Code)
+	}
+}
+
 func TestMagicLinkConsumeRequiresJSONAndSameOrigin(t *testing.T) {
 	t.Parallel()
 	st := newHTTPStore(t)

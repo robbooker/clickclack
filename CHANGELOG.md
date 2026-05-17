@@ -28,6 +28,7 @@
 - Serialized Postgres migrations with an advisory lock to avoid multi-instance startup races.
 - Kept the infra SQLite migration mirror in sync with the embedded auth token-hash migration.
 - Made channel and direct-message read receipt writes monotonic in SQLite and Postgres so concurrent older updates cannot move read cursors backwards.
+- Rejected cross-site browser requests from local dev magic-link minting and fallback auth even when the TCP peer is loopback.
 - Hardened production defaults and deepsec-reported security edges: dev auth now requires explicit opt-in, Docker starts fail-closed, WebSockets enforce origin checks while supporting SDK bearer-token protocols, uploads no longer expose storage paths or execute as same-origin HTML, magic-link consumption is atomic, session cookies become secure on HTTPS public URLs, and CI/release supply-chain refs are pinned.
 - Added optional Cloudflare R2 upload storage via `CLICKCLACK_UPLOADS=r2://bucket/prefix`, keeping local disk as the default backend.
 - Added Postgres as an alternate server store via `postgres://` / `postgresql://` DB URLs, including migrations, search, CLI env defaults, and an opt-in Postgres integration smoke test.

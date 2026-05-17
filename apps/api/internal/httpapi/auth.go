@@ -165,6 +165,9 @@ func isLocalDevRequest(r *http.Request) bool {
 	if !isLocalHostPort(r.RemoteAddr) || !isLocalHostPort(r.Host) {
 		return false
 	}
+	if !localDevBrowserOriginAllowed(r) {
+		return false
+	}
 	if !headerHostsAreLocal(r.Header.Values("X-Forwarded-Host")) {
 		return false
 	}
@@ -172,6 +175,24 @@ func isLocalDevRequest(r *http.Request) bool {
 		return false
 	}
 	return forwardedHeaderIsLocal(r.Header.Values("Forwarded"))
+}
+
+func localDevBrowserOriginAllowed(r *http.Request) bool {
+	if fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); fetchSite != "" && fetchSite != "same-origin" && fetchSite != "none" {
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil || parsedOrigin.Host == "" {
+		return false
+	}
+	if parsedOrigin.Scheme != "http" && parsedOrigin.Scheme != "https" {
+		return false
+	}
+	return originHostMatchesRequest(parsedOrigin, r.Host)
 }
 
 func headerHostsAreLocal(values []string) bool {
