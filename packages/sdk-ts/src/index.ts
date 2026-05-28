@@ -82,6 +82,30 @@ export type EventDeliveryAttempt = {
 	completed_at: string;
 };
 
+export type AuditLogEntry = {
+	id: string;
+	workspace_id: string;
+	actor_user_id: string;
+	action: string;
+	target_type: string;
+	target_id: string;
+	metadata: Record<string, unknown>;
+	created_at: string;
+};
+
+export type ConnectedAccount = {
+	id: string;
+	workspace_id: string;
+	user_id: string;
+	provider: string;
+	provider_account_id: string;
+	display_name: string;
+	scopes: string[];
+	metadata: Record<string, unknown>;
+	created_at: string;
+	revoked_at?: string;
+};
+
 export type BotEventHandler = (
   event: RealtimeEvent,
   client: ClickClackClient,
@@ -447,6 +471,54 @@ export class ClickClackClient {
         `/api/event-subscriptions/${subscriptionId}/deliveries`,
       );
       return data.event_delivery_attempts;
+    },
+  };
+
+  auditLog = {
+    list: async (workspaceId: string, limit = 100): Promise<AuditLogEntry[]> => {
+      const data = await this.request<{ audit_log_entries: AuditLogEntry[] }>(
+        `/api/workspaces/${workspaceId}/audit-log?limit=${limit}`,
+      );
+      return data.audit_log_entries;
+    },
+  };
+
+  connectedAccounts = {
+    list: async (workspaceId: string): Promise<ConnectedAccount[]> => {
+      const data = await this.request<{ connected_accounts: ConnectedAccount[] }>(
+        `/api/workspaces/${workspaceId}/connected-accounts`,
+      );
+      return data.connected_accounts;
+    },
+    create: async (
+      workspaceId: string,
+      input: {
+        user_id: string;
+        provider: string;
+        provider_account_id: string;
+        display_name?: string;
+        scopes?: string[];
+        metadata?: Record<string, unknown>;
+      },
+    ): Promise<ConnectedAccount> => {
+      const data = await this.request<{ connected_account: ConnectedAccount }>(
+        `/api/workspaces/${workspaceId}/connected-accounts`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.connected_account;
+    },
+    revoke: async (accountId: string): Promise<ConnectedAccount> => {
+      const data = await this.request<{ connected_account: ConnectedAccount }>(
+        `/api/connected-accounts/${accountId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return data.connected_account;
     },
   };
 

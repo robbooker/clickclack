@@ -380,6 +380,51 @@ paths:
       responses:
         "200":
           description: Event delivery attempts
+  /api/workspaces/{workspace_id}/audit-log:
+    get:
+      operationId: listAuditLogEntries
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workspace audit log entries
+  /api/workspaces/{workspace_id}/connected-accounts:
+    get:
+      operationId: listConnectedAccounts
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Active connected accounts
+    post:
+      operationId: createConnectedAccount
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConnectedAccountRequest"
+      responses:
+        "201":
+          description: Created connected account
+  /api/connected-accounts/{account_id}/revoke:
+    post:
+      operationId: revokeConnectedAccount
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked connected account
   /api/channels/{channel_id}:
     patch:
       operationId: updateChannel
@@ -1096,6 +1141,76 @@ components:
         completed_at:
           type: string
           format: date-time
+    AuditLogEntry:
+      type: object
+      required: [id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        actor_user_id:
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ConnectedAccount:
+      type: object
+      required: [id, workspace_id, user_id, provider, provider_account_id, display_name, scopes, metadata, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        user_id:
+          type: string
+        provider:
+          type: string
+        provider_account_id:
+          type: string
+        display_name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    CreateConnectedAccountRequest:
+      type: object
+      required: [user_id, provider, provider_account_id]
+      properties:
+        user_id:
+          type: string
+        provider:
+          type: string
+        provider_account_id:
+          type: string
+        display_name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
     NotificationSettings:
       type: object
       required: [pushover_enabled, pushover_user_key]

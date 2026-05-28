@@ -70,6 +70,8 @@ See [features/auth.md](features/auth.md).
 | `apps`        | `list`, `install`, `revoke` |
 | `slashCommands` | `list`, `create`, `revoke` |
 | `eventSubscriptions` | `list`, `create`, `revoke`, `deliveries` |
+| `auditLog`     | `list` |
+| `connectedAccounts` | `list`, `create`, `revoke` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |

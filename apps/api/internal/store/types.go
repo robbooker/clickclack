@@ -319,6 +319,50 @@ type CreateEventDeliveryAttemptInput struct {
 	Error          string
 }
 
+type AuditLogEntry struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	ActorUserID string         `json:"actor_user_id"`
+	Action      string         `json:"action"`
+	TargetType  string         `json:"target_type"`
+	TargetID    string         `json:"target_id"`
+	Metadata    map[string]any `json:"metadata"`
+	CreatedAt   string         `json:"created_at"`
+}
+
+type CreateAuditLogEntryInput struct {
+	WorkspaceID string
+	ActorUserID string
+	Action      string
+	TargetType  string
+	TargetID    string
+	Metadata    map[string]any
+}
+
+type ConnectedAccount struct {
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	UserID            string         `json:"user_id"`
+	Provider          string         `json:"provider"`
+	ProviderAccountID string         `json:"provider_account_id"`
+	DisplayName       string         `json:"display_name"`
+	Scopes            []string       `json:"scopes"`
+	Metadata          map[string]any `json:"metadata"`
+	CreatedAt         string         `json:"created_at"`
+	RevokedAt         *string        `json:"revoked_at,omitempty"`
+}
+
+type CreateConnectedAccountInput struct {
+	WorkspaceID       string
+	UserID            string
+	Provider          string
+	ProviderAccountID string
+	DisplayName       string
+	Scopes            []string
+	Metadata          map[string]any
+	CreatedBy         string
+}
+
 type BotTokenAuth struct {
 	User        User
 	TokenID     string
@@ -584,6 +628,11 @@ type Store interface {
 	ListEventSubscriptionsForEvent(ctx context.Context, event Event) ([]EventSubscription, error)
 	CreateEventDeliveryAttempt(ctx context.Context, input CreateEventDeliveryAttemptInput) (EventDeliveryAttempt, error)
 	ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string) ([]EventDeliveryAttempt, error)
+	CreateAuditLogEntry(ctx context.Context, input CreateAuditLogEntryInput) (AuditLogEntry, error)
+	ListAuditLogEntries(ctx context.Context, workspaceID, requesterID string, limit int) ([]AuditLogEntry, error)
+	ListConnectedAccounts(ctx context.Context, workspaceID, requesterID string) ([]ConnectedAccount, error)
+	CreateConnectedAccount(ctx context.Context, input CreateConnectedAccountInput) (ConnectedAccount, error)
+	RevokeConnectedAccount(ctx context.Context, accountID, requesterID string) (ConnectedAccount, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)

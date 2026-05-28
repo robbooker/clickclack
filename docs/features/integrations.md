@@ -141,6 +141,39 @@ The TypeScript SDK exposes this as
 `client.eventSubscriptions.revoke(id)`, and
 `client.eventSubscriptions.deliveries(id)`.
 
+## Connected accounts and audit log
+
+Connected accounts record external identities or app-side account bindings for a
+workspace user:
+
+```http
+POST /api/workspaces/{workspace_id}/connected-accounts
+Content-Type: application/json
+
+{
+  "user_id": "usr_...",
+  "provider": "github",
+  "provider_account_id": "123456",
+  "display_name": "octocat",
+  "scopes": ["repo:read"],
+  "metadata": {"login": "octocat"}
+}
+```
+
+Behavior:
+
+- Requires a human session.
+- The target `user_id` must be a member of the workspace.
+- `GET /api/workspaces/{workspace_id}/connected-accounts` lists active
+  connected accounts.
+- `POST /api/connected-accounts/{account_id}/revoke` revokes the account
+  binding.
+- Create and revoke write audit entries.
+
+Audit entries are available from `GET /api/workspaces/{workspace_id}/audit-log`.
+The SDK exposes these as `client.connectedAccounts.*` and
+`client.auditLog.list(workspaceId)`.
+
 ## Compatibility slash command callback
 
 ```http

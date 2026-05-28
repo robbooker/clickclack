@@ -965,6 +965,37 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if revokedSubscription.EventSubscription.RevokedAt == nil {
 		t.Fatalf("expected revoked_at on event subscription, got %#v", revokedSubscription.EventSubscription)
 	}
+	connectedAccount := postJSONAsUser[struct {
+		ConnectedAccount store.ConnectedAccount `json:"connected_account"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/connected-accounts", map[string]any{
+		"user_id":             owner.ID,
+		"provider":            "github",
+		"provider_account_id": "octo-123",
+		"display_name":        "octocat",
+		"scopes":              []string{"repo:read"},
+		"metadata":            map[string]any{"login": "octocat"},
+	})
+	if connectedAccount.ConnectedAccount.Provider != "github" || connectedAccount.ConnectedAccount.UserID != owner.ID {
+		t.Fatalf("unexpected connected account: %#v", connectedAccount.ConnectedAccount)
+	}
+	accounts := getJSONAsUser[struct {
+		ConnectedAccounts []store.ConnectedAccount `json:"connected_accounts"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/connected-accounts")
+	if len(accounts.ConnectedAccounts) != 1 || accounts.ConnectedAccounts[0].ID != connectedAccount.ConnectedAccount.ID {
+		t.Fatalf("expected connected account in list, got %#v", accounts.ConnectedAccounts)
+	}
+	revokedAccount := postJSONAsUser[struct {
+		ConnectedAccount store.ConnectedAccount `json:"connected_account"`
+	}](t, owner.ID, server.URL+"/api/connected-accounts/"+connectedAccount.ConnectedAccount.ID+"/revoke", map[string]any{})
+	if revokedAccount.ConnectedAccount.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on connected account, got %#v", revokedAccount.ConnectedAccount)
+	}
+	auditLog := getJSONAsUser[struct {
+		AuditLogEntries []store.AuditLogEntry `json:"audit_log_entries"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/audit-log")
+	if len(auditLog.AuditLogEntries) < 2 || auditLog.AuditLogEntries[0].Action != "connected_account.revoked" {
+		t.Fatalf("expected connected account audit entries, got %#v", auditLog.AuditLogEntries)
+	}
 	revokedInstall := postJSONAsUser[struct {
 		AppInstallation store.AppInstallation `json:"app_installation"`
 	}](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})

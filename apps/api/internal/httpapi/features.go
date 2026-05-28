@@ -708,6 +708,89 @@ func (s *Server) listEventDeliveryAttempts(w http.ResponseWriter, r *http.Reques
 	writeResult(w, map[string]any{"event_delivery_attempts": attempts}, err)
 }
 
+func (s *Server) listAuditLogEntries(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot list audit log entries"))
+		return
+	}
+	entries, err := s.store.ListAuditLogEntries(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID, queryInt(r, "limit", 100))
+	writeResult(w, map[string]any{"audit_log_entries": entries}, err)
+}
+
+func (s *Server) listConnectedAccounts(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot list connected accounts"))
+		return
+	}
+	accounts, err := s.store.ListConnectedAccounts(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"connected_accounts": accounts}, err)
+}
+
+func (s *Server) createConnectedAccount(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create connected accounts"))
+		return
+	}
+	var body struct {
+		UserID            string         `json:"user_id"`
+		Provider          string         `json:"provider"`
+		ProviderAccountID string         `json:"provider_account_id"`
+		DisplayName       string         `json:"display_name"`
+		Scopes            []string       `json:"scopes"`
+		Metadata          map[string]any `json:"metadata"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	account, err := s.store.CreateConnectedAccount(r.Context(), store.CreateConnectedAccountInput{
+		WorkspaceID:       chi.URLParam(r, "workspace_id"),
+		UserID:            body.UserID,
+		Provider:          body.Provider,
+		ProviderAccountID: body.ProviderAccountID,
+		DisplayName:       body.DisplayName,
+		Scopes:            body.Scopes,
+		Metadata:          body.Metadata,
+		CreatedBy:         act.user.ID,
+	})
+	if err == nil {
+		s.recordAudit(r.Context(), account.WorkspaceID, act.user.ID, "connected_account.created", "connected_account", account.ID, map[string]any{"provider": account.Provider})
+	}
+	writeResultStatus(w, http.StatusCreated, map[string]any{"connected_account": account}, err)
+}
+
+func (s *Server) revokeConnectedAccount(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke connected accounts"))
+		return
+	}
+	account, err := s.store.RevokeConnectedAccount(r.Context(), chi.URLParam(r, "account_id"), act.user.ID)
+	if err == nil {
+		s.recordAudit(r.Context(), account.WorkspaceID, act.user.ID, "connected_account.revoked", "connected_account", account.ID, map[string]any{"provider": account.Provider})
+	}
+	writeResult(w, map[string]any{"connected_account": account}, err)
+}
+
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -960,6 +1043,17 @@ func (s *Server) publishEvent(ctx context.Context, event store.Event) {
 		return
 	}
 	s.deliverEventSubscriptions(ctx, event)
+}
+
+func (s *Server) recordAudit(ctx context.Context, workspaceID, actorUserID, action, targetType, targetID string, metadata map[string]any) {
+	_, _ = s.store.CreateAuditLogEntry(ctx, store.CreateAuditLogEntryInput{
+		WorkspaceID: workspaceID,
+		ActorUserID: actorUserID,
+		Action:      action,
+		TargetType:  targetType,
+		TargetID:    targetID,
+		Metadata:    metadata,
+	})
 }
 
 func (s *Server) publishEvents(ctx context.Context, events []store.Event) {
