@@ -202,6 +202,228 @@ func (s *Store) GetBotTokenAuth(ctx context.Context, token string) (store.BotTok
 	return auth, nil
 }
 
+func (s *Store) ListBots(ctx context.Context, workspaceID, requesterID string) ([]store.BotWithTokens, error) {
+	if err := s.requireMembership(ctx, workspaceID, requesterID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at
+		FROM users u
+		JOIN workspace_members wm ON wm.user_id = u.id
+		WHERE wm.workspace_id = $1 AND u.kind = 'bot'
+		ORDER BY u.display_name, u.id`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	bots := []store.User{}
+	for rows.Next() {
+		bot, err := scanUser(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		bots = append(bots, bot)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := []store.BotWithTokens{}
+	for _, bot := range bots {
+		tokens, err := s.listBotTokensForBot(ctx, bot.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, store.BotWithTokens{Bot: bot, Tokens: tokens})
+	}
+	return out, nil
+}
+
+func (s *Store) CreateBotToken(ctx context.Context, input store.CreateBotTokenInput) (store.BotToken, error) {
+	botUserID := strings.TrimSpace(input.BotUserID)
+	if botUserID == "" {
+		return store.BotToken{}, errors.New("bot_user_id is required")
+	}
+	tokenName := strings.TrimSpace(input.Name)
+	if tokenName == "" {
+		tokenName = "default"
+	}
+	scopes, err := normalizeBotScopes(input.Scopes)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	defer tx.Rollback()
+	bot, err := scanUser(tx.QueryRowContext(ctx, `SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at FROM users WHERE id = $1`, botUserID))
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	if bot.Kind != "bot" {
+		return store.BotToken{}, errors.New("bot_user_id must refer to a bot")
+	}
+	var workspaceID string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT workspace_id
+		FROM workspace_members
+		WHERE user_id = $1
+		ORDER BY created_at
+		LIMIT 1`, bot.ID).Scan(&workspaceID); err != nil {
+		return store.BotToken{}, err
+	}
+	if err := requireMembershipTx(ctx, tx, workspaceID, strings.TrimSpace(input.CreatedBy)); err != nil {
+		return store.BotToken{}, err
+	}
+	token := newID("ccb")
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	botToken := store.BotToken{
+		ID:          newID("btok"),
+		Token:       token,
+		BotUserID:   bot.ID,
+		WorkspaceID: workspaceID,
+		OwnerUserID: bot.OwnerUserID,
+		Name:        tokenName,
+		Scopes:      scopes,
+		CreatedBy:   strings.TrimSpace(input.CreatedBy),
+		CreatedAt:   now(),
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		botToken.ID,
+		hashBotToken(token),
+		botToken.BotUserID,
+		botToken.WorkspaceID,
+		sqlOptionalText(botToken.OwnerUserID),
+		botToken.Name,
+		string(scopesJSON),
+		sqlOptionalText(botToken.CreatedBy),
+		botToken.CreatedAt,
+	)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	return botToken, tx.Commit()
+}
+
+func (s *Store) ListBotTokens(ctx context.Context, botUserID, requesterID string) ([]store.BotToken, error) {
+	workspaceID, err := s.botWorkspace(ctx, botUserID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireMembership(ctx, workspaceID, requesterID); err != nil {
+		return nil, err
+	}
+	return s.listBotTokensForBot(ctx, botUserID)
+}
+
+func (s *Store) RevokeBotToken(ctx context.Context, tokenID, requesterID string) (store.BotToken, error) {
+	tokenID = strings.TrimSpace(tokenID)
+	if tokenID == "" {
+		return store.BotToken{}, errors.New("token_id is required")
+	}
+	token, err := s.getBotTokenByID(ctx, tokenID)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	if err := s.requireMembership(ctx, token.WorkspaceID, requesterID); err != nil {
+		return store.BotToken{}, err
+	}
+	revokedAt := now()
+	if _, err := s.db.ExecContext(ctx, `UPDATE bot_tokens SET revoked_at = COALESCE(revoked_at, $1) WHERE id = $2`, revokedAt, tokenID); err != nil {
+		return store.BotToken{}, err
+	}
+	return s.getBotTokenByID(ctx, tokenID)
+}
+
+func (s *Store) botWorkspace(ctx context.Context, botUserID string) (string, error) {
+	var workspaceID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT wm.workspace_id
+		FROM workspace_members wm
+		JOIN users u ON u.id = wm.user_id
+		WHERE wm.user_id = $1 AND u.kind = 'bot'
+		ORDER BY wm.created_at
+		LIMIT 1`, botUserID).Scan(&workspaceID)
+	return workspaceID, err
+}
+
+func (s *Store) listBotTokensForBot(ctx context.Context, botUserID string) ([]store.BotToken, error) {
+	rows, err := s.db.QueryContext(ctx, botTokenSelect()+`
+		WHERE bot_user_id = $1
+		ORDER BY created_at DESC`, botUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanBotTokens(rows)
+}
+
+func (s *Store) getBotTokenByID(ctx context.Context, tokenID string) (store.BotToken, error) {
+	return scanBotToken(s.db.QueryRowContext(ctx, botTokenSelect()+` WHERE id = $1`, tokenID))
+}
+
+func botTokenSelect() string {
+	return `SELECT id, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at, last_used_at, revoked_at FROM bot_tokens`
+}
+
+func scanBotTokens(rows *sql.Rows) ([]store.BotToken, error) {
+	out := []store.BotToken{}
+	for rows.Next() {
+		token, err := scanBotToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, token)
+	}
+	return out, rows.Err()
+}
+
+func scanBotToken(row scanner) (store.BotToken, error) {
+	var token store.BotToken
+	var ownerUserID, createdBy, lastUsedAt, revokedAt sql.NullString
+	var scopesJSON string
+	err := row.Scan(
+		&token.ID,
+		&token.BotUserID,
+		&token.WorkspaceID,
+		&ownerUserID,
+		&token.Name,
+		&scopesJSON,
+		&createdBy,
+		&token.CreatedAt,
+		&lastUsedAt,
+		&revokedAt,
+	)
+	if err != nil {
+		return store.BotToken{}, err
+	}
+	if ownerUserID.Valid {
+		token.OwnerUserID = ownerUserID.String
+	}
+	if createdBy.Valid {
+		token.CreatedBy = createdBy.String
+	}
+	if lastUsedAt.Valid {
+		token.LastUsedAt = &lastUsedAt.String
+	}
+	if revokedAt.Valid {
+		token.RevokedAt = &revokedAt.String
+	}
+	if err := json.Unmarshal([]byte(scopesJSON), &token.Scopes); err != nil {
+		return store.BotToken{}, err
+	}
+	return token, nil
+}
+
 func normalizeBotScopes(values []string) ([]string, error) {
 	seen := map[string]bool{}
 	var scopes []string

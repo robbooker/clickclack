@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -15,7 +15,7 @@ func (s *Store) ListSlashCommands(ctx context.Context, workspaceID, requesterID 
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, slashCommandSelect(false)+`
-		WHERE workspace_id = ? AND revoked_at IS NULL
+		WHERE workspace_id = $1 AND revoked_at IS NULL
 		ORDER BY command`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func (s *Store) CreateSlashCommand(ctx context.Context, input store.CreateSlashC
 		if err := tx.QueryRowContext(ctx, `
 			SELECT 1
 			FROM app_installations
-			WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, appInstallationID, workspaceID).Scan(&one); err != nil {
+			WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL`, appInstallationID, workspaceID).Scan(&one); err != nil {
 			return store.SlashCommand{}, err
 		}
 	}
@@ -81,7 +81,7 @@ func (s *Store) CreateSlashCommand(ctx context.Context, input store.CreateSlashC
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO slash_commands (id, workspace_id, app_installation_id, command, description, callback_url, signing_secret, bot_user_id, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		cmd.ID,
 		cmd.WorkspaceID,
 		sqlOptionalText(cmd.AppInstallationID),
@@ -115,7 +115,7 @@ func (s *Store) RevokeSlashCommand(ctx context.Context, commandID, requesterID s
 		return store.SlashCommand{}, err
 	}
 	revokedAt := now()
-	if _, err := s.db.ExecContext(ctx, `UPDATE slash_commands SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`, revokedAt, commandID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE slash_commands SET revoked_at = COALESCE(revoked_at, $1) WHERE id = $2`, revokedAt, commandID); err != nil {
 		return store.SlashCommand{}, err
 	}
 	return s.getSlashCommand(ctx, commandID, false)
@@ -125,8 +125,8 @@ func (s *Store) GetSlashCommandForChannel(ctx context.Context, channelID, comman
 	command = normalizeSlashCommand(command)
 	return scanSlashCommand(s.db.QueryRowContext(ctx, slashCommandSelect(true)+`
 		JOIN channels c ON c.workspace_id = sc.workspace_id
-		JOIN workspace_members wm ON wm.workspace_id = sc.workspace_id AND wm.user_id = ?
-		WHERE c.id = ? AND sc.command = ? AND sc.revoked_at IS NULL`,
+		JOIN workspace_members wm ON wm.workspace_id = sc.workspace_id AND wm.user_id = $1
+		WHERE c.id = $2 AND sc.command = $3 AND sc.revoked_at IS NULL`,
 		requesterID,
 		channelID,
 		command,
@@ -149,7 +149,7 @@ func (s *Store) CreateSlashCommandInvocation(ctx context.Context, input store.Cr
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO slash_command_invocations (id, command_id, workspace_id, channel_id, user_id, text, payload_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		invocation.ID,
 		invocation.CommandID,
 		invocation.WorkspaceID,
@@ -166,15 +166,15 @@ func (s *Store) CompleteSlashCommandInvocation(ctx context.Context, invocationID
 	completedAt := now()
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE slash_command_invocations
-		SET response_status = ?, response_body = ?, error = ?, completed_at = ?
-		WHERE id = ?`, status, responseBody, invokeError, completedAt, invocationID); err != nil {
+		SET response_status = $1, response_body = $2, error = $3, completed_at = $4
+		WHERE id = $5`, status, responseBody, invokeError, completedAt, invocationID); err != nil {
 		return store.SlashCommandInvocation{}, err
 	}
-	return scanSlashCommandInvocation(s.db.QueryRowContext(ctx, slashCommandInvocationSelect()+` WHERE id = ?`, invocationID))
+	return scanSlashCommandInvocation(s.db.QueryRowContext(ctx, slashCommandInvocationSelect()+` WHERE id = $1`, invocationID))
 }
 
 func (s *Store) getSlashCommand(ctx context.Context, commandID string, includeSecret bool) (store.SlashCommand, error) {
-	return scanSlashCommand(s.db.QueryRowContext(ctx, slashCommandSelect(includeSecret)+` WHERE id = ?`, commandID))
+	return scanSlashCommand(s.db.QueryRowContext(ctx, slashCommandSelect(includeSecret)+` WHERE id = $1`, commandID))
 }
 
 func requireWorkspaceBotTx(ctx context.Context, tx *sql.Tx, workspaceID, botUserID string) error {
@@ -183,7 +183,7 @@ func requireWorkspaceBotTx(ctx context.Context, tx *sql.Tx, workspaceID, botUser
 		SELECT u.kind
 		FROM users u
 		JOIN workspace_members wm ON wm.user_id = u.id
-		WHERE u.id = ? AND wm.workspace_id = ?`, botUserID, workspaceID).Scan(&kind); err != nil {
+		WHERE u.id = $1 AND wm.workspace_id = $2`, botUserID, workspaceID).Scan(&kind); err != nil {
 		return err
 	}
 	if kind != "bot" {

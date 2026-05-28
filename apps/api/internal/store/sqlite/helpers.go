@@ -22,6 +22,16 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+func scanUser(row scanner) (store.User, error) {
+	var user store.User
+	var owner sql.NullString
+	if err := row.Scan(&user.ID, &user.Kind, &owner, &user.DisplayName, &user.Handle, &user.AvatarURL, &user.CreatedAt); err != nil {
+		return store.User{}, err
+	}
+	user.OwnerUserID = stringFromNull(owner)
+	return user, nil
+}
+
 var (
 	idMu      sync.Mutex
 	idEntropy = ulid.Monotonic(rand.Reader, 0)

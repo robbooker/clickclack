@@ -8,6 +8,29 @@ import (
 	"database/sql"
 )
 
+type AppInstallation struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	AppSlug     string         `json:"app_slug"`
+	DisplayName string         `json:"display_name"`
+	BotUserID   string         `json:"bot_user_id"`
+	ConfigJson  string         `json:"config_json"`
+	CreatedBy   sql.NullString `json:"created_by"`
+	CreatedAt   string         `json:"created_at"`
+	RevokedAt   sql.NullString `json:"revoked_at"`
+}
+
+type AuditLogEntry struct {
+	ID           string `json:"id"`
+	WorkspaceID  string `json:"workspace_id"`
+	ActorUserID  string `json:"actor_user_id"`
+	Action       string `json:"action"`
+	TargetType   string `json:"target_type"`
+	TargetID     string `json:"target_id"`
+	MetadataJson string `json:"metadata_json"`
+	CreatedAt    string `json:"created_at"`
+}
+
 type AuthMagicLink struct {
 	ID          string         `json:"id"`
 	Token       string         `json:"token"`
@@ -50,6 +73,19 @@ type ChannelRead struct {
 	LastReadAt  string `json:"last_read_at"`
 }
 
+type ConnectedAccount struct {
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	UserID            string         `json:"user_id"`
+	Provider          string         `json:"provider"`
+	ProviderAccountID string         `json:"provider_account_id"`
+	DisplayName       string         `json:"display_name"`
+	ScopesJson        string         `json:"scopes_json"`
+	MetadataJson      string         `json:"metadata_json"`
+	CreatedAt         string         `json:"created_at"`
+	RevokedAt         sql.NullString `json:"revoked_at"`
+}
+
 type DirectConversation struct {
 	ID          string         `json:"id"`
 	WorkspaceID string         `json:"workspace_id"`
@@ -82,9 +118,36 @@ type Event struct {
 	IsPrivate   int64          `json:"is_private"`
 }
 
+type EventDeliveryAttempt struct {
+	ID             string `json:"id"`
+	SubscriptionID string `json:"subscription_id"`
+	EventID        string `json:"event_id"`
+	WorkspaceID    string `json:"workspace_id"`
+	EventType      string `json:"event_type"`
+	Attempt        int64  `json:"attempt"`
+	RequestJson    string `json:"request_json"`
+	ResponseStatus int64  `json:"response_status"`
+	ResponseBody   string `json:"response_body"`
+	Error          string `json:"error"`
+	CreatedAt      string `json:"created_at"`
+	CompletedAt    string `json:"completed_at"`
+}
+
 type EventRecipient struct {
 	EventID string `json:"event_id"`
 	UserID  string `json:"user_id"`
+}
+
+type EventSubscription struct {
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	AppInstallationID sql.NullString `json:"app_installation_id"`
+	EventTypesJson    string         `json:"event_types_json"`
+	CallbackUrl       string         `json:"callback_url"`
+	SigningSecret     string         `json:"signing_secret"`
+	CreatedBy         sql.NullString `json:"created_by"`
+	CreatedAt         string         `json:"created_at"`
+	RevokedAt         sql.NullString `json:"revoked_at"`
 }
 
 type Identity struct {
@@ -113,6 +176,7 @@ type Message struct {
 	AuthorID             string         `json:"author_id"`
 	ParentMessageID      sql.NullString `json:"parent_message_id"`
 	ThreadRootID         string         `json:"thread_root_id"`
+	TopicID              sql.NullString `json:"topic_id"`
 	ChannelSeq           sql.NullInt64  `json:"channel_seq"`
 	ThreadSeq            sql.NullInt64  `json:"thread_seq"`
 	Body                 string         `json:"body"`
@@ -150,11 +214,50 @@ type Session struct {
 	RevokedAt sql.NullString `json:"revoked_at"`
 }
 
+type SlashCommand struct {
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	AppInstallationID sql.NullString `json:"app_installation_id"`
+	Command           string         `json:"command"`
+	Description       string         `json:"description"`
+	CallbackUrl       string         `json:"callback_url"`
+	SigningSecret     string         `json:"signing_secret"`
+	BotUserID         string         `json:"bot_user_id"`
+	CreatedBy         sql.NullString `json:"created_by"`
+	CreatedAt         string         `json:"created_at"`
+	RevokedAt         sql.NullString `json:"revoked_at"`
+}
+
+type SlashCommandInvocation struct {
+	ID             string         `json:"id"`
+	CommandID      string         `json:"command_id"`
+	WorkspaceID    string         `json:"workspace_id"`
+	ChannelID      string         `json:"channel_id"`
+	UserID         string         `json:"user_id"`
+	Text           string         `json:"text"`
+	PayloadJson    string         `json:"payload_json"`
+	ResponseStatus int64          `json:"response_status"`
+	ResponseBody   string         `json:"response_body"`
+	Error          string         `json:"error"`
+	CreatedAt      string         `json:"created_at"`
+	CompletedAt    sql.NullString `json:"completed_at"`
+}
+
 type ThreadState struct {
 	RootMessageID          string         `json:"root_message_id"`
 	ReplyCount             int64          `json:"reply_count"`
 	LastReplyAt            sql.NullString `json:"last_reply_at"`
 	LastReplyAuthorIdsJson string         `json:"last_reply_author_ids_json"`
+}
+
+type Topic struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	ChannelID   sql.NullString `json:"channel_id"`
+	Name        string         `json:"name"`
+	CreatedBy   sql.NullString `json:"created_by"`
+	CreatedAt   string         `json:"created_at"`
+	ArchivedAt  sql.NullString `json:"archived_at"`
 }
 
 type Upload struct {

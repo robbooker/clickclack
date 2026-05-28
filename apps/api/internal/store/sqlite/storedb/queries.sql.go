@@ -1172,8 +1172,8 @@ func (q *Queries) InsertChannel(ctx context.Context, arg InsertChannelParams) er
 }
 
 const insertChannelMessage = `-- name: InsertChannelMessage :exec
-INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
-VALUES (?1, ?2, ?3, NULL, ?4, NULL, ?5, ?6, NULL, ?7, 'markdown', ?8, ?9, ?10, ?11, ?12)
+INSERT INTO messages (id, workspace_id, channel_id, direct_conversation_id, author_id, parent_message_id, thread_root_id, topic_id, channel_seq, thread_seq, body, body_format, created_at, quoted_message_id, quoted_body_snapshot, quoted_author_id, client_nonce)
+VALUES (?1, ?2, ?3, NULL, ?4, NULL, ?5, ?6, ?7, NULL, ?8, 'markdown', ?9, ?10, ?11, ?12, ?13)
 `
 
 type InsertChannelMessageParams struct {
@@ -1182,6 +1182,7 @@ type InsertChannelMessageParams struct {
 	ChannelID          sql.NullString `json:"channel_id"`
 	AuthorID           string         `json:"author_id"`
 	ThreadRootID       string         `json:"thread_root_id"`
+	TopicID            sql.NullString `json:"topic_id"`
 	ChannelSeq         sql.NullInt64  `json:"channel_seq"`
 	Body               string         `json:"body"`
 	CreatedAt          string         `json:"created_at"`
@@ -1198,6 +1199,7 @@ func (q *Queries) InsertChannelMessage(ctx context.Context, arg InsertChannelMes
 		arg.ChannelID,
 		arg.AuthorID,
 		arg.ThreadRootID,
+		arg.TopicID,
 		arg.ChannelSeq,
 		arg.Body,
 		arg.CreatedAt,

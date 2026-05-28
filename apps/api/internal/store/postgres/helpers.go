@@ -22,6 +22,16 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+func scanUser(row scanner) (store.User, error) {
+	var user store.User
+	var owner sql.NullString
+	if err := row.Scan(&user.ID, &user.Kind, &owner, &user.DisplayName, &user.Handle, &user.AvatarURL, &user.CreatedAt); err != nil {
+		return store.User{}, err
+	}
+	user.OwnerUserID = stringFromNull(owner)
+	return user, nil
+}
+
 var (
 	idMu      sync.Mutex
 	idEntropy = ulid.Monotonic(rand.Reader, 0)
@@ -36,7 +46,7 @@ func getMessageTx(ctx context.Context, tx *sql.Tx, id string) (store.Message, er
 }
 
 func messageSelect() string {
-	return `SELECT m.id, COALESCE(m.route_id, ''), m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, m.channel_seq, m.thread_seq,
+	return `SELECT m.id, COALESCE(m.route_id, ''), m.workspace_id, COALESCE(m.channel_id, ''), COALESCE(m.direct_conversation_id, ''), m.author_id, m.parent_message_id, m.thread_root_id, COALESCE(m.topic_id, ''), m.channel_seq, m.thread_seq,
 		       m.body, m.body_format, m.created_at, m.edited_at, m.deleted_at,
 		       u.id, u.kind, u.owner_user_id, u.display_name, u.handle, u.avatar_url, u.created_at,
 		       m.quoted_message_id, m.quoted_body_snapshot, m.quoted_author_id,
@@ -57,7 +67,7 @@ func scanMessage(row scanner) (store.Message, error) {
 	var quAuthorID, quKind, quOwnerID, quDisplayName, quHandle, quAvatarURL, quCreatedAt sql.NullString
 	var nonce string
 	err := row.Scan(
-		&m.ID, &m.RouteID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &channelSeq, &threadSeq,
+		&m.ID, &m.RouteID, &m.WorkspaceID, &m.ChannelID, &m.DirectConversationID, &m.AuthorID, &parent, &m.ThreadRootID, &m.TopicID, &channelSeq, &threadSeq,
 		&m.Body, &m.BodyFormat, &m.CreatedAt, &edited, &deleted,
 		&author.ID, &author.Kind, &authorOwnerID, &author.DisplayName, &author.Handle, &author.AvatarURL, &author.CreatedAt,
 		&quotedMessageID, &m.QuotedBodySnapshot, &quotedAuthorID,

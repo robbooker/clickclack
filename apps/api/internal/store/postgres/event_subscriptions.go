@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -15,7 +15,7 @@ func (s *Store) ListEventSubscriptions(ctx context.Context, workspaceID, request
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, eventSubscriptionSelect(false)+`
-		WHERE workspace_id = ? AND revoked_at IS NULL
+		WHERE workspace_id = $1 AND revoked_at IS NULL
 		ORDER BY created_at`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (s *Store) CreateEventSubscription(ctx context.Context, input store.CreateE
 		if err := tx.QueryRowContext(ctx, `
 			SELECT 1
 			FROM app_installations
-			WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, appInstallationID, workspaceID).Scan(&one); err != nil {
+			WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL`, appInstallationID, workspaceID).Scan(&one); err != nil {
 			return store.EventSubscription{}, err
 		}
 	}
@@ -72,7 +72,7 @@ func (s *Store) CreateEventSubscription(ctx context.Context, input store.CreateE
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO event_subscriptions (id, workspace_id, app_installation_id, event_types_json, callback_url, signing_secret, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		subscription.ID,
 		subscription.WorkspaceID,
 		sqlOptionalText(subscription.AppInstallationID),
@@ -101,7 +101,7 @@ func (s *Store) RevokeEventSubscription(ctx context.Context, subscriptionID, req
 		return store.EventSubscription{}, err
 	}
 	revokedAt := now()
-	if _, err := s.db.ExecContext(ctx, `UPDATE event_subscriptions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`, revokedAt, subscriptionID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE event_subscriptions SET revoked_at = COALESCE(revoked_at, $1) WHERE id = $2`, revokedAt, subscriptionID); err != nil {
 		return store.EventSubscription{}, err
 	}
 	return s.getEventSubscription(ctx, subscriptionID, false)
@@ -112,7 +112,7 @@ func (s *Store) ListEventSubscriptionsForEvent(ctx context.Context, event store.
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, eventSubscriptionSelect(true)+`
-		WHERE workspace_id = ? AND revoked_at IS NULL
+		WHERE workspace_id = $1 AND revoked_at IS NULL
 		ORDER BY created_at`, event.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -154,13 +154,13 @@ func (s *Store) CreateEventDeliveryAttempt(ctx context.Context, input store.Crea
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(attempt), 0) + 1
 		FROM event_delivery_attempts
-		WHERE subscription_id = ? AND event_id = ?`, attempt.SubscriptionID, attempt.EventID).Scan(&nextAttempt); err != nil {
+		WHERE subscription_id = $1 AND event_id = $2`, attempt.SubscriptionID, attempt.EventID).Scan(&nextAttempt); err != nil {
 		return store.EventDeliveryAttempt{}, err
 	}
 	attempt.Attempt = nextAttempt
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO event_delivery_attempts (id, subscription_id, event_id, workspace_id, event_type, attempt, request_json, response_status, response_body, error, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		attempt.ID,
 		attempt.SubscriptionID,
 		attempt.EventID,
@@ -186,7 +186,7 @@ func (s *Store) ListEventDeliveryAttempts(ctx context.Context, subscriptionID, r
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, eventDeliveryAttemptSelect()+`
-		WHERE subscription_id = ?
+		WHERE subscription_id = $1
 		ORDER BY created_at DESC`, subscriptionID)
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func (s *Store) ListEventDeliveryAttempts(ctx context.Context, subscriptionID, r
 }
 
 func (s *Store) getEventSubscription(ctx context.Context, subscriptionID string, includeSecret bool) (store.EventSubscription, error) {
-	return scanEventSubscription(s.db.QueryRowContext(ctx, eventSubscriptionSelect(includeSecret)+` WHERE id = ?`, subscriptionID))
+	return scanEventSubscription(s.db.QueryRowContext(ctx, eventSubscriptionSelect(includeSecret)+` WHERE id = $1`, subscriptionID))
 }
 
 func normalizeEventTypes(values []string) ([]string, error) {

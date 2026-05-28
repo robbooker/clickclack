@@ -300,10 +300,10 @@ func (s *Store) CreateBotToken(ctx context.Context, input store.CreateBotTokenIn
 		hashBotToken(token),
 		botToken.BotUserID,
 		botToken.WorkspaceID,
-		nullableString(botToken.OwnerUserID),
+		sqlOptionalText(botToken.OwnerUserID),
 		botToken.Name,
 		string(scopesJSON),
-		nullableString(botToken.CreatedBy),
+		sqlOptionalText(botToken.CreatedBy),
 		botToken.CreatedAt,
 	)
 	if err != nil {

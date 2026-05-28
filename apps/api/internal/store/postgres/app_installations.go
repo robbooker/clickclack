@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -15,7 +15,7 @@ func (s *Store) ListAppInstallations(ctx context.Context, workspaceID, requester
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, appInstallationSelect()+`
-		WHERE workspace_id = ? AND revoked_at IS NULL
+		WHERE workspace_id = $1 AND revoked_at IS NULL
 		ORDER BY app_slug`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 		SELECT u.kind
 		FROM users u
 		JOIN workspace_members wm ON wm.user_id = u.id
-		WHERE u.id = ? AND wm.workspace_id = ?`, botUserID, workspaceID).Scan(&botKind); err != nil {
+		WHERE u.id = $1 AND wm.workspace_id = $2`, botUserID, workspaceID).Scan(&botKind); err != nil {
 		return store.AppInstallation{}, err
 	}
 	if botKind != "bot" {
@@ -84,7 +84,7 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO app_installations (id, workspace_id, app_slug, display_name, bot_user_id, config_json, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		installation.ID,
 		installation.WorkspaceID,
 		installation.AppSlug,
@@ -116,14 +116,14 @@ func (s *Store) RevokeAppInstallation(ctx context.Context, installationID, reque
 		return store.AppInstallation{}, err
 	}
 	revokedAt := now()
-	if _, err := s.db.ExecContext(ctx, `UPDATE app_installations SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`, revokedAt, installationID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE app_installations SET revoked_at = COALESCE(revoked_at, $1) WHERE id = $2`, revokedAt, installationID); err != nil {
 		return store.AppInstallation{}, err
 	}
 	return s.getAppInstallation(ctx, installationID)
 }
 
 func (s *Store) getAppInstallation(ctx context.Context, installationID string) (store.AppInstallation, error) {
-	return scanAppInstallation(s.db.QueryRowContext(ctx, appInstallationSelect()+` WHERE id = ?`, installationID))
+	return scanAppInstallation(s.db.QueryRowContext(ctx, appInstallationSelect()+` WHERE id = $1`, installationID))
 }
 
 func appInstallationSelect() string {

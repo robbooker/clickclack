@@ -1,4 +1,4 @@
-package sqlite
+package postgres
 
 import (
 	"context"
@@ -14,7 +14,7 @@ func (s *Store) ListTopics(ctx context.Context, workspaceID, requesterID string)
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, topicSelect()+`
-		WHERE workspace_id = ? AND archived_at IS NULL
+		WHERE workspace_id = $1 AND archived_at IS NULL
 		ORDER BY name`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func (s *Store) CreateTopic(ctx context.Context, input store.CreateTopicInput) (
 	channelID := strings.TrimSpace(input.ChannelID)
 	if channelID != "" {
 		var channelWorkspace string
-		if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = ?`, channelID).Scan(&channelWorkspace); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT workspace_id FROM channels WHERE id = $1`, channelID).Scan(&channelWorkspace); err != nil {
 			return store.Topic{}, err
 		}
 		if channelWorkspace != workspaceID {
@@ -61,7 +61,7 @@ func (s *Store) CreateTopic(ctx context.Context, input store.CreateTopicInput) (
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO topics (id, workspace_id, channel_id, name, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6)`,
 		topic.ID,
 		topic.WorkspaceID,
 		sqlOptionalText(topic.ChannelID),
@@ -81,7 +81,7 @@ func requireTopicTx(ctx context.Context, tx *sql.Tx, workspaceID, channelID, top
 		return nil
 	}
 	var topicWorkspace, topicChannel string
-	if err := tx.QueryRowContext(ctx, `SELECT workspace_id, COALESCE(channel_id, '') FROM topics WHERE id = ? AND archived_at IS NULL`, topicID).Scan(&topicWorkspace, &topicChannel); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT workspace_id, COALESCE(channel_id, '') FROM topics WHERE id = $1 AND archived_at IS NULL`, topicID).Scan(&topicWorkspace, &topicChannel); err != nil {
 		return err
 	}
 	if topicWorkspace != workspaceID {

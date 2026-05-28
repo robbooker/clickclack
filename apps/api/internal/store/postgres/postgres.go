@@ -489,6 +489,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	if err := requireMembershipTx(ctx, tx, workspaceID, input.AuthorID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
+	if err := requireTopicTx(ctx, tx, workspaceID, input.ChannelID, input.TopicID); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
 	if err := lockMessageSequenceTx(ctx, tx, "channel", input.ChannelID); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
@@ -511,7 +514,7 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		quotedID = strings.TrimSpace(*input.QuotedMessageID)
 	}
 	if existing, err := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); err == nil {
-		if existing.ChannelID != input.ChannelID || existing.DirectConversationID != "" || existing.ParentMessageID != nil || existing.Body != body || !sameQuotedMessageID(existing, quotedID) {
+		if existing.ChannelID != input.ChannelID || existing.DirectConversationID != "" || existing.ParentMessageID != nil || existing.Body != body || existing.TopicID != input.TopicID || !sameQuotedMessageID(existing, quotedID) {
 			return store.Message{}, store.Event{}, store.ErrClientNonceConflict
 		}
 		if err := requireMessageAccessTx(ctx, tx, existing, input.AuthorID); err != nil {
@@ -538,6 +541,7 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		ChannelID:          sqlText(input.ChannelID),
 		AuthorID:           input.AuthorID,
 		ThreadRootID:       id,
+		TopicID:            sqlOptionalText(input.TopicID),
 		ChannelSeq:         sqlInt64(seq),
 		Body:               body,
 		CreatedAt:          createdAt,
@@ -547,7 +551,7 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		ClientNonce:        nonce,
 	}); err != nil {
 		if existing, lookupErr := getMessageByClientNonceTx(ctx, tx, input.AuthorID, nonce); lookupErr == nil {
-			if existing.ChannelID == input.ChannelID && existing.DirectConversationID == "" && existing.ParentMessageID == nil && existing.Body == body && sameQuotedMessageID(existing, quotedID) {
+			if existing.ChannelID == input.ChannelID && existing.DirectConversationID == "" && existing.ParentMessageID == nil && existing.Body == body && existing.TopicID == input.TopicID && sameQuotedMessageID(existing, quotedID) {
 				if err := requireMessageAccessTx(ctx, tx, existing, input.AuthorID); err != nil {
 					return store.Message{}, store.Event{}, err
 				}
@@ -560,7 +564,11 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	if err := qtx.InsertThreadState(ctx, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
-	event, err := insertEvent(ctx, tx, workspaceID, input.ChannelID, "message.created", &seq, eventPayload(map[string]string{"message_id": id, "author_id": input.AuthorID}, nonce))
+	eventFields := map[string]string{"message_id": id, "author_id": input.AuthorID}
+	if input.TopicID != "" {
+		eventFields["topic_id"] = input.TopicID
+	}
+	event, err := insertEvent(ctx, tx, workspaceID, input.ChannelID, "message.created", &seq, eventPayload(eventFields, nonce))
 	if err != nil {
 		return store.Message{}, store.Event{}, err
 	}
