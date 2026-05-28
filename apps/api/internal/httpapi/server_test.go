@@ -962,6 +962,12 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if eventSigningSecret == "" {
 		t.Fatalf("expected one-time event signing secret: %#v", eventSubscription.EventSubscription)
 	}
+	listedSubscriptions := getJSONAsUser[struct {
+		EventSubscriptions []store.EventSubscription `json:"event_subscriptions"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/event-subscriptions")
+	if len(listedSubscriptions.EventSubscriptions) != 1 || listedSubscriptions.EventSubscriptions[0].ID != eventSubscription.EventSubscription.ID {
+		t.Fatalf("expected event subscription in list, got %#v", listedSubscriptions.EventSubscriptions)
+	}
 	topicMessage := postJSONAsUser[struct {
 		Message store.Message `json:"message"`
 	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "deliver me", "topic_id": createdTopic.Topic.ID})
@@ -1079,6 +1085,25 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		{"list dm messages", http.MethodGet, "/api/dms/dm_missing/messages", "", ""},
 		{"create dm message", http.MethodPost, "/api/dms/dm_missing/messages", `{"body":"dm"}`, "application/json"},
 		{"mark dm read", http.MethodPost, "/api/dms/dm_missing/read", `{"seq":1}`, "application/json"},
+		{"list bots", http.MethodGet, "/api/workspaces/" + workspace.ID + "/bots", "", ""},
+		{"create bot", http.MethodPost, "/api/workspaces/" + workspace.ID + "/bots", `{"display_name":"Nope"}`, "application/json"},
+		{"list bot tokens", http.MethodGet, "/api/bots/" + createdBot.Bot.ID + "/tokens", "", ""},
+		{"create bot token", http.MethodPost, "/api/bots/" + createdBot.Bot.ID + "/tokens", `{"name":"Nope"}`, "application/json"},
+		{"revoke bot token", http.MethodPost, "/api/bot-tokens/" + rotatedToken.BotToken.ID + "/revoke", `{}`, "application/json"},
+		{"list app installations", http.MethodGet, "/api/workspaces/" + workspace.ID + "/app-installations", "", ""},
+		{"create app installation", http.MethodPost, "/api/workspaces/" + workspace.ID + "/app-installations", `{"app_slug":"x"}`, "application/json"},
+		{"revoke app installation", http.MethodPost, "/api/app-installations/" + createdInstall.AppInstallation.ID + "/revoke", `{}`, "application/json"},
+		{"list slash commands", http.MethodGet, "/api/workspaces/" + workspace.ID + "/slash-commands", "", ""},
+		{"create slash command", http.MethodPost, "/api/workspaces/" + workspace.ID + "/slash-commands", `{"command":"/x"}`, "application/json"},
+		{"revoke slash command", http.MethodPost, "/api/slash-commands/" + registeredCommand.SlashCommand.ID + "/revoke", `{}`, "application/json"},
+		{"list event subscriptions", http.MethodGet, "/api/workspaces/" + workspace.ID + "/event-subscriptions", "", ""},
+		{"create event subscription", http.MethodPost, "/api/workspaces/" + workspace.ID + "/event-subscriptions", `{"event_types":["message.created"]}`, "application/json"},
+		{"revoke event subscription", http.MethodPost, "/api/event-subscriptions/" + eventSubscription.EventSubscription.ID + "/revoke", `{}`, "application/json"},
+		{"list event deliveries", http.MethodGet, "/api/event-subscriptions/" + eventSubscription.EventSubscription.ID + "/deliveries", "", ""},
+		{"list audit log", http.MethodGet, "/api/workspaces/" + workspace.ID + "/audit-log", "", ""},
+		{"list connected accounts", http.MethodGet, "/api/workspaces/" + workspace.ID + "/connected-accounts", "", ""},
+		{"create connected account", http.MethodPost, "/api/workspaces/" + workspace.ID + "/connected-accounts", `{"provider":"x"}`, "application/json"},
+		{"revoke connected account", http.MethodPost, "/api/connected-accounts/" + connectedAccount.ConnectedAccount.ID + "/revoke", `{}`, "application/json"},
 		{"mattermost webhook", http.MethodPost, "/api/hooks/mattermost/" + channel.ID, `{"text":"hook"}`, "application/json"},
 		{"slash command", http.MethodPost, "/api/hooks/slash/" + channel.ID, "command=/bot&text=hello", "application/x-www-form-urlencoded"},
 		{"ephemeral", http.MethodPost, "/api/realtime/ephemeral", `{"workspace_id":"` + workspace.ID + `","type":"typing.started"}`, "application/json"},
