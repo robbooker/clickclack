@@ -67,6 +67,7 @@ See [features/auth.md](features/auth.md).
 | `me()`, `updateMe()` | get or edit the current user's profile |
 | `workspaces`  | `list`, `create` |
 | `bots`        | `list`, `create`, `listTokens`, `createToken`, `revokeToken` |
+| `apps`        | `list`, `install`, `revoke` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |

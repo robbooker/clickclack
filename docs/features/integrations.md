@@ -9,6 +9,38 @@ read_when:
 ClickClack ships two integration surfaces designed to look like a small subset
 of Mattermost so existing scripts can post messages without rewriting.
 
+## App installations
+
+An app installation binds a named integration to a workspace and to the bot user
+that will act for it. It is control-plane metadata, not a runtime plugin loader.
+
+```http
+POST /api/workspaces/{workspace_id}/app-installations
+Content-Type: application/json
+
+{
+  "app_slug": "openclaw",
+  "display_name": "OpenClaw",
+  "bot_user_id": "usr_...",
+  "config": {
+    "default_channel_id": "chn_..."
+  }
+}
+```
+
+Behavior:
+
+- Requires a human session. Bot tokens cannot create, list, or revoke app
+  installations.
+- `bot_user_id` must be a bot member of the same workspace.
+- `GET /api/workspaces/{workspace_id}/app-installations` lists active
+  installations.
+- `POST /api/app-installations/{installation_id}/revoke` revokes the binding
+  without deleting historical metadata.
+
+The TypeScript SDK exposes this as `client.apps.list(workspaceId)`,
+`client.apps.install(workspaceId, input)`, and `client.apps.revoke(id)`.
+
 ## Incoming webhook
 
 ```http
@@ -60,5 +92,4 @@ post directly through `/api/channels/{id}/messages` with the SDK.
 ## What is intentionally missing
 
 - Outgoing webhooks.
-- Bot accounts with their own permissions.
 - Mattermost client compatibility (REST, WebSocket protocol).

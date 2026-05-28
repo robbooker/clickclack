@@ -29,6 +29,18 @@ export type BotWithTokens = {
   tokens: BotToken[];
 };
 
+export type AppInstallation = {
+	id: string;
+	workspace_id: string;
+	app_slug: string;
+	display_name: string;
+	bot_user_id: string;
+	config: Record<string, unknown>;
+	created_by?: string;
+	created_at: string;
+	revoked_at?: string;
+};
+
 export type BotEventHandler = (
   event: RealtimeEvent,
   client: ClickClackClient,
@@ -277,6 +289,43 @@ export class ClickClackClient {
         },
       );
       return data.bot_token;
+    },
+  };
+
+  apps = {
+    list: async (workspaceId: string): Promise<AppInstallation[]> => {
+      const data = await this.request<{ app_installations: AppInstallation[] }>(
+        `/api/workspaces/${workspaceId}/app-installations`,
+      );
+      return data.app_installations;
+    },
+    install: async (
+      workspaceId: string,
+      input: {
+        app_slug: string;
+        display_name?: string;
+        bot_user_id: string;
+        config?: Record<string, unknown>;
+      },
+    ): Promise<AppInstallation> => {
+      const data = await this.request<{ app_installation: AppInstallation }>(
+        `/api/workspaces/${workspaceId}/app-installations`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.app_installation;
+    },
+    revoke: async (installationId: string): Promise<AppInstallation> => {
+      const data = await this.request<{ app_installation: AppInstallation }>(
+        `/api/app-installations/${installationId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return data.app_installation;
     },
   };
 

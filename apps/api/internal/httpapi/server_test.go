@@ -847,6 +847,29 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected revoked token to fail auth, got %s %s", resp.Status, string(body))
 	}
 	resp.Body.Close()
+	createdInstall := postJSONAsUser[struct {
+		AppInstallation store.AppInstallation `json:"app_installation"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/app-installations", map[string]any{
+		"app_slug":     "openclaw",
+		"display_name": "OpenClaw",
+		"bot_user_id":  createdBot.Bot.ID,
+		"config":       map[string]any{"default_channel_id": channel.ID},
+	})
+	if createdInstall.AppInstallation.AppSlug != "openclaw" || createdInstall.AppInstallation.BotUserID != createdBot.Bot.ID {
+		t.Fatalf("unexpected app installation: %#v", createdInstall.AppInstallation)
+	}
+	listedInstalls := getJSONAsUser[struct {
+		AppInstallations []store.AppInstallation `json:"app_installations"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/app-installations")
+	if len(listedInstalls.AppInstallations) != 1 || listedInstalls.AppInstallations[0].ID != createdInstall.AppInstallation.ID {
+		t.Fatalf("expected active app installation in list, got %#v", listedInstalls.AppInstallations)
+	}
+	revokedInstall := postJSONAsUser[struct {
+		AppInstallation store.AppInstallation `json:"app_installation"`
+	}](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})
+	if revokedInstall.AppInstallation.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on app installation, got %#v", revokedInstall.AppInstallation)
+	}
 	readOnlyBot, readOnlyToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
 		WorkspaceID: workspace.ID,
 		DisplayName: "Read Bot",

@@ -228,6 +228,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/app-installations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAppInstallations"];
+        put?: never;
+        post: operations["createAppInstallation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/app-installations/{installation_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeAppInstallation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/{channel_id}": {
         parameters: {
             query?: never;
@@ -631,6 +663,29 @@ export interface components {
         CreateBotTokenRequest: {
             name?: string;
             scopes?: string[];
+        };
+        AppInstallation: {
+            id: string;
+            workspace_id: string;
+            app_slug: string;
+            display_name: string;
+            bot_user_id: string;
+            config: {
+                [key: string]: unknown;
+            };
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            revoked_at?: string;
+        };
+        CreateAppInstallationRequest: {
+            app_slug: string;
+            display_name?: string;
+            bot_user_id: string;
+            config?: {
+                [key: string]: unknown;
+            };
         };
         NotificationSettings: {
             pushover_enabled: boolean;
@@ -1286,6 +1341,70 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Revoked bot token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAppInstallations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active app installations for a workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAppInstallationRequest"];
+            };
+        };
+        responses: {
+            /** @description Installed app binding */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revokeAppInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                installation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked app installation */
             200: {
                 headers: {
                     [name: string]: unknown;

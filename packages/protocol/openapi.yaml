@@ -269,6 +269,39 @@ paths:
       responses:
         "200":
           description: Revoked bot token
+  /api/workspaces/{workspace_id}/app-installations:
+    get:
+      operationId: listAppInstallations
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Active app installations for a workspace
+    post:
+      operationId: createAppInstallation
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppInstallationRequest"
+      responses:
+        "201":
+          description: Installed app binding
+  /api/app-installations/{installation_id}/revoke:
+    post:
+      operationId: revokeAppInstallation
+      parameters:
+        - name: installation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked app installation
   /api/channels/{channel_id}:
     patch:
       operationId: updateChannel
@@ -828,6 +861,45 @@ components:
           type: array
           items:
             type: string
+    AppInstallation:
+      type: object
+      required: [id, workspace_id, app_slug, display_name, bot_user_id, config, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        app_slug:
+          type: string
+        display_name:
+          type: string
+        bot_user_id:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    CreateAppInstallationRequest:
+      type: object
+      required: [app_slug, bot_user_id]
+      properties:
+        app_slug:
+          type: string
+        display_name:
+          type: string
+          maxLength: 80
+        bot_user_id:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
     NotificationSettings:
       type: object
       required: [pushover_enabled, pushover_user_key]

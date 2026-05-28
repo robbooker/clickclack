@@ -511,6 +511,65 @@ func (s *Server) revokeBotToken(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, map[string]any{"bot_token": token}, err)
 }
 
+func (s *Server) listAppInstallations(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot manage app installations"))
+		return
+	}
+	installations, err := s.store.ListAppInstallations(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"app_installations": installations}, err)
+}
+
+func (s *Server) createAppInstallation(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create app installations"))
+		return
+	}
+	var body struct {
+		AppSlug     string         `json:"app_slug"`
+		DisplayName string         `json:"display_name"`
+		BotUserID   string         `json:"bot_user_id"`
+		Config      map[string]any `json:"config"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	installation, err := s.store.CreateAppInstallation(r.Context(), store.CreateAppInstallationInput{
+		WorkspaceID: chi.URLParam(r, "workspace_id"),
+		AppSlug:     body.AppSlug,
+		DisplayName: body.DisplayName,
+		BotUserID:   body.BotUserID,
+		Config:      body.Config,
+		CreatedBy:   act.user.ID,
+	})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"app_installation": installation}, err)
+}
+
+func (s *Server) revokeAppInstallation(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke app installations"))
+		return
+	}
+	installation, err := s.store.RevokeAppInstallation(r.Context(), chi.URLParam(r, "installation_id"), act.user.ID)
+	writeResult(w, map[string]any{"app_installation": installation}, err)
+}
+
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {

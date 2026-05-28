@@ -204,6 +204,27 @@ type CreateBotTokenInput struct {
 	CreatedBy string
 }
 
+type AppInstallation struct {
+	ID          string         `json:"id"`
+	WorkspaceID string         `json:"workspace_id"`
+	AppSlug     string         `json:"app_slug"`
+	DisplayName string         `json:"display_name"`
+	BotUserID   string         `json:"bot_user_id"`
+	Config      map[string]any `json:"config"`
+	CreatedBy   string         `json:"created_by,omitempty"`
+	CreatedAt   string         `json:"created_at"`
+	RevokedAt   *string        `json:"revoked_at,omitempty"`
+}
+
+type CreateAppInstallationInput struct {
+	WorkspaceID string
+	AppSlug     string
+	DisplayName string
+	BotUserID   string
+	Config      map[string]any
+	CreatedBy   string
+}
+
 type BotTokenAuth struct {
 	User        User
 	TokenID     string
@@ -454,6 +475,9 @@ type Store interface {
 	CreateBotToken(ctx context.Context, input CreateBotTokenInput) (BotToken, error)
 	ListBotTokens(ctx context.Context, botUserID, requesterID string) ([]BotToken, error)
 	RevokeBotToken(ctx context.Context, tokenID, requesterID string) (BotToken, error)
+	ListAppInstallations(ctx context.Context, workspaceID, requesterID string) ([]AppInstallation, error)
+	CreateAppInstallation(ctx context.Context, input CreateAppInstallationInput) (AppInstallation, error)
+	RevokeAppInstallation(ctx context.Context, installationID, requesterID string) (AppInstallation, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)
