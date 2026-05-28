@@ -335,6 +335,51 @@ paths:
       responses:
         "200":
           description: Revoked slash command
+  /api/workspaces/{workspace_id}/event-subscriptions:
+    get:
+      operationId: listEventSubscriptions
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      responses:
+        "200":
+          description: Active outgoing event subscriptions
+    post:
+      operationId: createEventSubscription
+      parameters:
+        - $ref: "#/components/parameters/workspace_id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventSubscriptionRequest"
+      responses:
+        "201":
+          description: Created event subscription and one-time signing secret
+  /api/event-subscriptions/{subscription_id}/revoke:
+    post:
+      operationId: revokeEventSubscription
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked event subscription
+  /api/event-subscriptions/{subscription_id}/deliveries:
+    get:
+      operationId: listEventDeliveryAttempts
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event delivery attempts
   /api/channels/{channel_id}:
     patch:
       operationId: updateChannel
@@ -980,6 +1025,77 @@ components:
           format: uri
         bot_user_id:
           type: string
+    EventSubscription:
+      type: object
+      required: [id, workspace_id, event_types, callback_url, created_at]
+      properties:
+        id:
+          type: string
+        workspace_id:
+          type: string
+        app_installation_id:
+          type: string
+        event_types:
+          type: array
+          items:
+            type: string
+        callback_url:
+          type: string
+          format: uri
+        signing_secret:
+          type: string
+          description: One-time callback signing secret. Present only immediately after creation.
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    CreateEventSubscriptionRequest:
+      type: object
+      required: [event_types, callback_url]
+      properties:
+        app_installation_id:
+          type: string
+        event_types:
+          type: array
+          items:
+            type: string
+        callback_url:
+          type: string
+          format: uri
+    EventDeliveryAttempt:
+      type: object
+      required: [id, subscription_id, event_id, workspace_id, event_type, attempt, response_status, created_at, completed_at]
+      properties:
+        id:
+          type: string
+        subscription_id:
+          type: string
+        event_id:
+          type: string
+        workspace_id:
+          type: string
+        event_type:
+          type: string
+        attempt:
+          type: integer
+        request_json:
+          type: string
+        response_status:
+          type: integer
+        response_body:
+          type: string
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
     NotificationSettings:
       type: object
       required: [pushover_enabled, pushover_user_key]

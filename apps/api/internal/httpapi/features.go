@@ -57,7 +57,7 @@ func (s *Server) markChannelRead(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt, event, err := s.store.MarkChannelRead(r.Context(), chi.URLParam(r, "channel_id"), act.user.ID, body.Seq)
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResult(w, map[string]any{"receipt": receipt}, err)
 }
@@ -84,7 +84,7 @@ func (s *Server) markDirectRead(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt, event, err := s.store.MarkDirectRead(r.Context(), chi.URLParam(r, "conversation_id"), act.user.ID, body.Seq)
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResult(w, map[string]any{"receipt": receipt}, err)
 }
@@ -637,6 +637,77 @@ func (s *Server) revokeSlashCommand(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, map[string]any{"slash_command": command}, err)
 }
 
+func (s *Server) listEventSubscriptions(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot manage event subscriptions"))
+		return
+	}
+	subscriptions, err := s.store.ListEventSubscriptions(r.Context(), chi.URLParam(r, "workspace_id"), act.user.ID)
+	writeResult(w, map[string]any{"event_subscriptions": subscriptions}, err)
+}
+
+func (s *Server) createEventSubscription(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot create event subscriptions"))
+		return
+	}
+	var body struct {
+		AppInstallationID string   `json:"app_installation_id"`
+		EventTypes        []string `json:"event_types"`
+		CallbackURL       string   `json:"callback_url"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	subscription, err := s.store.CreateEventSubscription(r.Context(), store.CreateEventSubscriptionInput{
+		WorkspaceID:       chi.URLParam(r, "workspace_id"),
+		AppInstallationID: body.AppInstallationID,
+		EventTypes:        body.EventTypes,
+		CallbackURL:       body.CallbackURL,
+		CreatedBy:         act.user.ID,
+	})
+	writeResultStatus(w, http.StatusCreated, map[string]any{"event_subscription": subscription}, err)
+}
+
+func (s *Server) revokeEventSubscription(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke event subscriptions"))
+		return
+	}
+	subscription, err := s.store.RevokeEventSubscription(r.Context(), chi.URLParam(r, "subscription_id"), act.user.ID)
+	writeResult(w, map[string]any{"event_subscription": subscription}, err)
+}
+
+func (s *Server) listEventDeliveryAttempts(w http.ResponseWriter, r *http.Request) {
+	act, err := s.currentActor(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if act.botTokenID != "" {
+		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot list event delivery attempts"))
+		return
+	}
+	attempts, err := s.store.ListEventDeliveryAttempts(r.Context(), chi.URLParam(r, "subscription_id"), act.user.ID)
+	writeResult(w, map[string]any{"event_delivery_attempts": attempts}, err)
+}
+
 func (s *Server) listDirectConversations(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -728,7 +799,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeMessageCreateResult(w, message, event, err)
@@ -756,7 +827,7 @@ func (s *Server) mattermostWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Text})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{"message": message, "event": event}, err)
@@ -797,7 +868,7 @@ func (s *Server) slashCommand(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(command + " " + text)
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{
@@ -871,7 +942,7 @@ func (s *Server) invokeRegisteredSlashCommand(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -881,6 +952,77 @@ func (s *Server) invokeRegisteredSlashCommand(w http.ResponseWriter, r *http.Req
 		"event":         event,
 		"invocation":    invocation,
 	})
+}
+
+func (s *Server) publishEvent(ctx context.Context, event store.Event) {
+	s.hub.Publish(event)
+	if event.ID == "" || event.Cursor == "" {
+		return
+	}
+	s.deliverEventSubscriptions(ctx, event)
+}
+
+func (s *Server) publishEvents(ctx context.Context, events []store.Event) {
+	for _, event := range events {
+		s.publishEvent(ctx, event)
+	}
+}
+
+func (s *Server) deliverEventSubscriptions(ctx context.Context, event store.Event) {
+	subscriptions, err := s.store.ListEventSubscriptionsForEvent(ctx, event)
+	if err != nil {
+		return
+	}
+	for _, subscription := range subscriptions {
+		payload, err := json.Marshal(map[string]any{
+			"subscription_id": subscription.ID,
+			"event":           event,
+		})
+		if err != nil {
+			continue
+		}
+		status, responseBody, deliveryErr := postEventCallback(ctx, subscription, event, payload)
+		errorText := ""
+		if deliveryErr != nil {
+			errorText = deliveryErr.Error()
+		}
+		_, _ = s.store.CreateEventDeliveryAttempt(ctx, store.CreateEventDeliveryAttemptInput{
+			SubscriptionID: subscription.ID,
+			EventID:        event.ID,
+			WorkspaceID:    event.WorkspaceID,
+			EventType:      event.Type,
+			RequestJSON:    string(payload),
+			ResponseStatus: status,
+			ResponseBody:   responseBody,
+			Error:          errorText,
+		})
+	}
+}
+
+func postEventCallback(ctx context.Context, subscription store.EventSubscription, event store.Event, payload []byte) (int, string, error) {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, subscription.CallbackURL, bytes.NewReader(payload))
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ClickClack-Timestamp", timestamp)
+	req.Header.Set("X-ClickClack-Event-ID", event.ID)
+	req.Header.Set("X-ClickClack-Signature", signSlashCallback(subscription.SigningSecret, timestamp, payload))
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return resp.StatusCode, "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return resp.StatusCode, string(body), errors.New("event subscription callback failed")
+	}
+	return resp.StatusCode, string(body), nil
 }
 
 func postSlashCallback(ctx context.Context, command store.SlashCommand, payload []byte) (int, string, error) {

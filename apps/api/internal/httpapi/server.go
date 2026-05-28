@@ -106,6 +106,10 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/workspaces/{workspace_id}/slash-commands", s.listSlashCommands)
 		r.Post("/workspaces/{workspace_id}/slash-commands", s.createSlashCommand)
 		r.Post("/slash-commands/{command_id}/revoke", s.revokeSlashCommand)
+		r.Get("/workspaces/{workspace_id}/event-subscriptions", s.listEventSubscriptions)
+		r.Post("/workspaces/{workspace_id}/event-subscriptions", s.createEventSubscription)
+		r.Post("/event-subscriptions/{subscription_id}/revoke", s.revokeEventSubscription)
+		r.Get("/event-subscriptions/{subscription_id}/deliveries", s.listEventDeliveryAttempts)
 		r.Patch("/channels/{channel_id}", s.updateChannel)
 		r.Get("/channels/{channel_id}/messages", s.listMessages)
 		r.Post("/channels/{channel_id}/messages", s.createMessage)
@@ -518,7 +522,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	channel, event, err := s.store.CreateChannel(r.Context(), store.CreateChannelInput{WorkspaceID: chi.URLParam(r, "workspace_id"), Name: body.Name, Kind: body.Kind, UserID: act.user.ID})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResultStatus(w, http.StatusCreated, map[string]any{"channel": channel, "event": event}, err)
 }
@@ -569,7 +573,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeMessageCreateResult(w, message, event, err)
@@ -636,7 +640,7 @@ func (s *Server) createThreadReply(w http.ResponseWriter, r *http.Request) {
 	}
 	message, state, events, err := s.store.CreateThreadReply(r.Context(), store.CreateThreadReplyInput{RootMessageID: chi.URLParam(r, "message_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce})
 	if err == nil && len(events) > 0 {
-		s.hub.PublishMany(events)
+		s.publishEvents(r.Context(), events)
 		s.notifyMessageCreated(r.Context(), message)
 	}
 	writeThreadReplyCreateResult(w, message, state, events, err)
@@ -664,7 +668,7 @@ func (s *Server) addReaction(w http.ResponseWriter, r *http.Request) {
 	}
 	event, err := s.store.AddReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: body.Emoji})
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeEventMutationResult(w, http.StatusCreated, event, err)
 }
@@ -684,7 +688,7 @@ func (s *Server) removeReaction(w http.ResponseWriter, r *http.Request) {
 	}
 	event, err := s.store.RemoveReaction(r.Context(), store.CreateReactionInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Emoji: chi.URLParam(r, "emoji")})
 	if err == nil && event.ID != "" {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeEventMutationResult(w, http.StatusOK, event, err)
 }

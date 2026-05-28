@@ -34,7 +34,7 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	channel, event, err := s.store.UpdateChannel(r.Context(), store.UpdateChannelInput{ChannelID: chi.URLParam(r, "channel_id"), UserID: act.user.ID, Name: body.Name, Kind: body.Kind, Archived: body.Archived})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResult(w, map[string]any{"channel": channel, "event": event}, err)
 }
@@ -61,7 +61,7 @@ func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message, event, err := s.store.UpdateMessage(r.Context(), store.UpdateMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID, Body: body.Body})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResult(w, map[string]any{"message": message, "event": event}, err)
 }
@@ -81,7 +81,7 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message, event, err := s.store.DeleteMessage(r.Context(), store.DeleteMessageInput{MessageID: chi.URLParam(r, "message_id"), UserID: act.user.ID})
 	if err == nil {
-		s.hub.Publish(event)
+		s.publishEvent(r.Context(), event)
 	}
 	writeResult(w, map[string]any{"message": message, "event": event}, err)
 }
@@ -185,6 +185,6 @@ func (s *Server) publishEphemeral(w http.ResponseWriter, r *http.Request) {
 		Payload:          body.Payload,
 		RecipientUserIDs: recipientUserIDs,
 	}
-	s.hub.Publish(event)
+	s.publishEvent(r.Context(), event)
 	writeJSON(w, http.StatusAccepted, map[string]any{"event": event})
 }

@@ -273,6 +273,52 @@ type CreateSlashCommandInvocationInput struct {
 	PayloadJSON string
 }
 
+type EventSubscription struct {
+	ID                string   `json:"id"`
+	WorkspaceID       string   `json:"workspace_id"`
+	AppInstallationID string   `json:"app_installation_id,omitempty"`
+	EventTypes        []string `json:"event_types"`
+	CallbackURL       string   `json:"callback_url"`
+	SigningSecret     string   `json:"signing_secret,omitempty"`
+	CreatedBy         string   `json:"created_by,omitempty"`
+	CreatedAt         string   `json:"created_at"`
+	RevokedAt         *string  `json:"revoked_at,omitempty"`
+}
+
+type CreateEventSubscriptionInput struct {
+	WorkspaceID       string
+	AppInstallationID string
+	EventTypes        []string
+	CallbackURL       string
+	CreatedBy         string
+}
+
+type EventDeliveryAttempt struct {
+	ID             string `json:"id"`
+	SubscriptionID string `json:"subscription_id"`
+	EventID        string `json:"event_id"`
+	WorkspaceID    string `json:"workspace_id"`
+	EventType      string `json:"event_type"`
+	Attempt        int    `json:"attempt"`
+	RequestJSON    string `json:"request_json,omitempty"`
+	ResponseStatus int    `json:"response_status"`
+	ResponseBody   string `json:"response_body,omitempty"`
+	Error          string `json:"error,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	CompletedAt    string `json:"completed_at"`
+}
+
+type CreateEventDeliveryAttemptInput struct {
+	SubscriptionID string
+	EventID        string
+	WorkspaceID    string
+	EventType      string
+	RequestJSON    string
+	ResponseStatus int
+	ResponseBody   string
+	Error          string
+}
+
 type BotTokenAuth struct {
 	User        User
 	TokenID     string
@@ -532,6 +578,12 @@ type Store interface {
 	GetSlashCommandForChannel(ctx context.Context, channelID, command, requesterID string) (SlashCommand, error)
 	CreateSlashCommandInvocation(ctx context.Context, input CreateSlashCommandInvocationInput) (SlashCommandInvocation, error)
 	CompleteSlashCommandInvocation(ctx context.Context, invocationID string, status int, responseBody, invokeError string) (SlashCommandInvocation, error)
+	ListEventSubscriptions(ctx context.Context, workspaceID, requesterID string) ([]EventSubscription, error)
+	CreateEventSubscription(ctx context.Context, input CreateEventSubscriptionInput) (EventSubscription, error)
+	RevokeEventSubscription(ctx context.Context, subscriptionID, requesterID string) (EventSubscription, error)
+	ListEventSubscriptionsForEvent(ctx context.Context, event Event) ([]EventSubscription, error)
+	CreateEventDeliveryAttempt(ctx context.Context, input CreateEventDeliveryAttemptInput) (EventDeliveryAttempt, error)
+	ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string) ([]EventDeliveryAttempt, error)
 	UpsertIdentityUser(ctx context.Context, input UpsertIdentityUserInput) (User, error)
 	UpdateUserProfile(ctx context.Context, input UpdateUserProfileInput) (User, error)
 	UpdateUserProfileAndNotificationSettings(ctx context.Context, input UpdateUserProfileAndNotificationSettingsInput) (User, error)

@@ -919,6 +919,52 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if revokedCommand.SlashCommand.RevokedAt == nil {
 		t.Fatalf("expected revoked_at on slash command, got %#v", revokedCommand.SlashCommand)
 	}
+	var eventSigningSecret string
+	var eventPayload map[string]any
+	eventCallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		timestamp := r.Header.Get("X-ClickClack-Timestamp")
+		if r.Header.Get("X-ClickClack-Event-ID") == "" || timestamp == "" || r.Header.Get("X-ClickClack-Signature") != signSlashCallback(eventSigningSecret, timestamp, body) {
+			t.Fatalf("event callback signature mismatch")
+		}
+		if err := json.Unmarshal(body, &eventPayload); err != nil {
+			t.Fatal(err)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"ok": "true"})
+	}))
+	defer eventCallbackServer.Close()
+	eventSubscription := postJSONAsUser[struct {
+		EventSubscription store.EventSubscription `json:"event_subscription"`
+	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/event-subscriptions", map[string]any{
+		"app_installation_id": createdInstall.AppInstallation.ID,
+		"event_types":         []string{"message.created"},
+		"callback_url":        eventCallbackServer.URL,
+	})
+	eventSigningSecret = eventSubscription.EventSubscription.SigningSecret
+	if eventSigningSecret == "" {
+		t.Fatalf("expected one-time event signing secret: %#v", eventSubscription.EventSubscription)
+	}
+	postJSONAsUser[struct {
+		Message store.Message `json:"message"`
+	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "deliver me"})
+	if eventPayload == nil || eventPayload["event"].(map[string]any)["type"] != "message.created" {
+		t.Fatalf("expected message.created event payload, got %#v", eventPayload)
+	}
+	deliveries := getJSONAsUser[struct {
+		EventDeliveryAttempts []store.EventDeliveryAttempt `json:"event_delivery_attempts"`
+	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries")
+	if len(deliveries.EventDeliveryAttempts) == 0 || deliveries.EventDeliveryAttempts[0].ResponseStatus != http.StatusAccepted {
+		t.Fatalf("expected accepted event delivery attempt, got %#v", deliveries.EventDeliveryAttempts)
+	}
+	revokedSubscription := postJSONAsUser[struct {
+		EventSubscription store.EventSubscription `json:"event_subscription"`
+	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/revoke", map[string]any{})
+	if revokedSubscription.EventSubscription.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on event subscription, got %#v", revokedSubscription.EventSubscription)
+	}
 	revokedInstall := postJSONAsUser[struct {
 		AppInstallation store.AppInstallation `json:"app_installation"`
 	}](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})

@@ -292,6 +292,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{workspace_id}/event-subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEventSubscriptions"];
+        put?: never;
+        post: operations["createEventSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/event-subscriptions/{subscription_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeEventSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/event-subscriptions/{subscription_id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEventDeliveryAttempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/{channel_id}": {
         parameters: {
             query?: never;
@@ -744,6 +792,43 @@ export interface components {
             /** Format: uri */
             callback_url: string;
             bot_user_id: string;
+        };
+        EventSubscription: {
+            id: string;
+            workspace_id: string;
+            app_installation_id?: string;
+            event_types: string[];
+            /** Format: uri */
+            callback_url: string;
+            /** @description One-time callback signing secret. Present only immediately after creation. */
+            signing_secret?: string;
+            created_by?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            revoked_at?: string;
+        };
+        CreateEventSubscriptionRequest: {
+            app_installation_id?: string;
+            event_types: string[];
+            /** Format: uri */
+            callback_url: string;
+        };
+        EventDeliveryAttempt: {
+            id: string;
+            subscription_id: string;
+            event_id: string;
+            workspace_id: string;
+            event_type: string;
+            attempt: number;
+            request_json?: string;
+            response_status: number;
+            response_body?: string;
+            error?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string;
         };
         NotificationSettings: {
             pushover_enabled: boolean;
@@ -1527,6 +1612,90 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Revoked slash command */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listEventSubscriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active outgoing event subscriptions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createEventSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["workspace_id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventSubscriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created event subscription and one-time signing secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revokeEventSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked event subscription */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listEventDeliveryAttempts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event delivery attempts */
             200: {
                 headers: {
                     [name: string]: unknown;

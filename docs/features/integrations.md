@@ -105,6 +105,42 @@ The TypeScript SDK exposes this as `client.slashCommands.list(workspaceId)`,
 `client.slashCommands.create(workspaceId, input)`, and
 `client.slashCommands.revoke(id)`.
 
+## Outgoing event subscriptions
+
+Outgoing event subscriptions push durable event-log entries to app callbacks.
+They are intentionally built on the same event records used by realtime
+WebSocket replay.
+
+```http
+POST /api/workspaces/{workspace_id}/event-subscriptions
+Content-Type: application/json
+
+{
+  "app_installation_id": "app_...",
+  "event_types": ["message.created", "reaction.added"],
+  "callback_url": "https://example.com/clickclack/events"
+}
+```
+
+Behavior:
+
+- Requires a human session. Bot tokens cannot create, list, or revoke
+  subscriptions.
+- `event_types` accepts exact durable event types or `*`.
+- Creation returns a one-time `signing_secret`; list calls redact it.
+- Delivery posts `{"subscription_id":"sub_...","event": Event}` as JSON to the
+  callback URL.
+- Delivery uses the same signature headers as slash commands, plus
+  `X-ClickClack-Event-ID`.
+- Every delivery attempt is stored with response status, response body, error,
+  and attempt number.
+
+The TypeScript SDK exposes this as
+`client.eventSubscriptions.list(workspaceId)`,
+`client.eventSubscriptions.create(workspaceId, input)`,
+`client.eventSubscriptions.revoke(id)`, and
+`client.eventSubscriptions.deliveries(id)`.
+
 ## Compatibility slash command callback
 
 ```http
@@ -135,5 +171,5 @@ app callbacks.
 
 ## What is intentionally missing
 
-- Outgoing webhooks.
+- Retry scheduling for failed outgoing deliveries.
 - Mattermost client compatibility (REST, WebSocket protocol).

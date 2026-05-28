@@ -32,6 +32,7 @@ The server resolves callers in this order (see
 | Bots          | `/api/workspaces/{id}/bots`, `/api/bots/{id}/tokens`, `/api/bot-tokens/{id}/revoke` | [bots](../features/bots.md) |
 | App installs  | `/api/workspaces/{id}/app-installations`, `/api/app-installations/{id}/revoke` | [integrations](../features/integrations.md) |
 | Slash commands | `/api/workspaces/{id}/slash-commands`, `/api/slash-commands/{id}/revoke`, `/api/hooks/slash/{channel}` | [integrations](../features/integrations.md) |
+| Event subscriptions | `/api/workspaces/{id}/event-subscriptions`, `/api/event-subscriptions/{id}/{revoke,deliveries}` | [integrations](../features/integrations.md) |
 | Channels      | `/api/workspaces/{id}/channels`, `/api/channels/{id}` | [workspaces](../features/workspaces.md) |
 | Messages      | `/api/channels/{id}/messages`, `/api/messages/{id}` | [messages](../features/messages.md) |
 | Threads       | `/api/messages/{id}/thread`, `/api/messages/{id}/thread/replies` | [threads](../features/threads.md) |

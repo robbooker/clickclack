@@ -55,6 +55,33 @@ export type SlashCommand = {
 	revoked_at?: string;
 };
 
+export type EventSubscription = {
+	id: string;
+	workspace_id: string;
+	app_installation_id?: string;
+	event_types: string[];
+	callback_url: string;
+	signing_secret?: string;
+	created_by?: string;
+	created_at: string;
+	revoked_at?: string;
+};
+
+export type EventDeliveryAttempt = {
+	id: string;
+	subscription_id: string;
+	event_id: string;
+	workspace_id: string;
+	event_type: string;
+	attempt: number;
+	request_json?: string;
+	response_status: number;
+	response_body?: string;
+	error?: string;
+	created_at: string;
+	completed_at: string;
+};
+
 export type BotEventHandler = (
   event: RealtimeEvent,
   client: ClickClackClient,
@@ -378,6 +405,48 @@ export class ClickClackClient {
         },
       );
       return data.slash_command;
+    },
+  };
+
+  eventSubscriptions = {
+    list: async (workspaceId: string): Promise<EventSubscription[]> => {
+      const data = await this.request<{ event_subscriptions: EventSubscription[] }>(
+        `/api/workspaces/${workspaceId}/event-subscriptions`,
+      );
+      return data.event_subscriptions;
+    },
+    create: async (
+      workspaceId: string,
+      input: {
+        event_types: string[];
+        callback_url: string;
+        app_installation_id?: string;
+      },
+    ): Promise<EventSubscription> => {
+      const data = await this.request<{ event_subscription: EventSubscription }>(
+        `/api/workspaces/${workspaceId}/event-subscriptions`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      );
+      return data.event_subscription;
+    },
+    revoke: async (subscriptionId: string): Promise<EventSubscription> => {
+      const data = await this.request<{ event_subscription: EventSubscription }>(
+        `/api/event-subscriptions/${subscriptionId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return data.event_subscription;
+    },
+    deliveries: async (subscriptionId: string): Promise<EventDeliveryAttempt[]> => {
+      const data = await this.request<{ event_delivery_attempts: EventDeliveryAttempt[] }>(
+        `/api/event-subscriptions/${subscriptionId}/deliveries`,
+      );
+      return data.event_delivery_attempts;
     },
   };
 

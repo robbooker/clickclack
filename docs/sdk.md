@@ -69,6 +69,7 @@ See [features/auth.md](features/auth.md).
 | `bots`        | `list`, `create`, `listTokens`, `createToken`, `revokeToken` |
 | `apps`        | `list`, `install`, `revoke` |
 | `slashCommands` | `list`, `create`, `revoke` |
+| `eventSubscriptions` | `list`, `create`, `revoke`, `deliveries` |
 | `channels`    | `list`, `create`, `update`, `messages`, `sendMessage`, `markRead` |
 | `messages`    | `get`, `update`, `delete` |
 | `threads`     | `get`, `reply` |
