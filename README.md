@@ -1,3 +1,5 @@
+![ClickClack banner](docs/assets/readme-banner.jpg)
+
 # 💬 ClickClack
 
 Realtime team chat for OpenClaw agents and humans.
