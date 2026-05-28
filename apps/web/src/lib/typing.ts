@@ -13,85 +13,85 @@ const IDLE_MS = 5000;
 const PING_EVERY_MS = 4000;
 
 type Scope = {
-  workspaceID: string;
-  channelID?: string;
-  directConversationID?: string;
+	workspaceID: string;
+	channelID?: string;
+	directConversationID?: string;
 };
 
 type State = {
-  scope: Scope;
-  active: boolean;
-  lastPingAt: number;
-  idleTimer?: number;
+	scope: Scope;
+	active: boolean;
+	lastPingAt: number;
+	idleTimer?: number;
 };
 
 let state: State | null = null;
 
 function scopesEqual(a: Scope, b: Scope): boolean {
-  return (
-    a.workspaceID === b.workspaceID &&
-    (a.channelID ?? "") === (b.channelID ?? "") &&
-    (a.directConversationID ?? "") === (b.directConversationID ?? "")
-  );
+	return (
+		a.workspaceID === b.workspaceID &&
+		(a.channelID ?? "") === (b.channelID ?? "") &&
+		(a.directConversationID ?? "") === (b.directConversationID ?? "")
+	);
 }
 
 function payload(scope: Scope): Record<string, string> {
-  const p: Record<string, string> = {};
-  if (scope.channelID) p.channel_id = scope.channelID;
-  if (scope.directConversationID) p.direct_conversation_id = scope.directConversationID;
-  return p;
+	const p: Record<string, string> = {};
+	if (scope.channelID) p.channel_id = scope.channelID;
+	if (scope.directConversationID) p.direct_conversation_id = scope.directConversationID;
+	return p;
 }
 
 async function send(scope: Scope, type: "typing.started" | "typing.stopped"): Promise<void> {
-  try {
-    await api("/api/realtime/ephemeral", {
-      method: "POST",
-      body: JSON.stringify({
-        workspace_id: scope.workspaceID,
-        channel_id: scope.channelID || "",
-        direct_conversation_id: scope.directConversationID || "",
-        type,
-        payload: payload(scope),
-      }),
-    });
-  } catch {
-    // Typing notifications are best-effort; failures are silent.
-  }
+	try {
+		await api("/api/realtime/ephemeral", {
+			method: "POST",
+			body: JSON.stringify({
+				workspace_id: scope.workspaceID,
+				channel_id: scope.channelID || "",
+				direct_conversation_id: scope.directConversationID || "",
+				type,
+				payload: payload(scope),
+			}),
+		});
+	} catch {
+		// Typing notifications are best-effort; failures are silent.
+	}
 }
 
 export function notifyTyping(scope: Scope): void {
-  if (!scope.workspaceID) return;
-  if (!scope.channelID && !scope.directConversationID) return;
+	if (!scope.workspaceID) return;
+	if (!scope.channelID && !scope.directConversationID) return;
 
-  const now = Date.now();
-  if (state && !scopesEqual(state.scope, scope)) {
-    void stopTypingFor(state);
-    state = null;
-  }
-  if (!state) {
-    state = { scope, active: false, lastPingAt: 0 };
-  }
-  if (!state.active || now - state.lastPingAt >= PING_EVERY_MS) {
-    state.active = true;
-    state.lastPingAt = now;
-    void send(scope, "typing.started");
-  }
-  if (state.idleTimer) window.clearTimeout(state.idleTimer);
-  state.idleTimer = window.setTimeout(() => {
-    if (state) {
-      void stopTypingFor(state);
-      state = null;
-    }
-  }, IDLE_MS);
+	const now = Date.now();
+	if (state && !scopesEqual(state.scope, scope)) {
+		void stopTypingFor(state);
+		state = null;
+	}
+	if (!state) {
+		state = { scope, active: false, lastPingAt: 0 };
+	}
+	if (!state.active || now - state.lastPingAt >= PING_EVERY_MS) {
+		state.active = true;
+		state.lastPingAt = now;
+		void send(scope, "typing.started");
+	}
+	if (state.idleTimer) window.clearTimeout(state.idleTimer);
+	state.idleTimer = window.setTimeout(() => {
+		if (state) {
+			void stopTypingFor(state);
+			state = null;
+		}
+	}, IDLE_MS);
 }
 
 async function stopTypingFor(s: State): Promise<void> {
-  if (s.idleTimer) window.clearTimeout(s.idleTimer);
-  if (s.active) await send(s.scope, "typing.stopped");
+	if (s.idleTimer) window.clearTimeout(s.idleTimer);
+	if (s.active) await send(s.scope, "typing.stopped");
 }
 
 export function stopTyping(): void {
-  if (!state) return;
-  void stopTypingFor(state);
-  state = null;
+	if (!state) return;
+	void stopTypingFor(state);
+	state = null;
 }
