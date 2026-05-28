@@ -105,6 +105,16 @@ The TypeScript SDK exposes this as `client.slashCommands.list(workspaceId)`,
 `client.slashCommands.create(workspaceId, input)`, and
 `client.slashCommands.revoke(id)`.
 
+In the web app, channel composers discover registered commands inline: type
+`/` at the start of a draft to open the slash-command menu, keep typing to
+filter by command name, then use the arrow keys plus `Enter` or `Tab` to insert
+the selected command. The menu overlays the timeline instead of resizing the
+message list.
+
+The same composer menu supports `@` mentions for workspace people and bots.
+Mention suggestions work in channel, DM, and thread composers; selection uses
+the same mouse, arrow-key, `Enter`, and `Tab` controls as slash commands.
+
 ## Outgoing event subscriptions
 
 Outgoing event subscriptions push durable event-log entries to app callbacks.

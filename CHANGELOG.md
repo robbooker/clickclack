@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Revived the platform app APIs for bot lifecycle, app installation, slash
+  command registration/invocation, event subscriptions, connected accounts,
+  audit events, and message topics; the web composer now previews registered
+  slash commands on `/` and workspace mentions on `@` without shifting the
+  message timeline.
 - Rejected negative byte sizes when finalizing reserved uploads so quota accounting cannot be credited by malformed store calls.
 - Kept the infra SQLite migration mirror in sync with the embedded guest moderation migration.
 - Required DM bot scopes on generic message, thread, reaction, upload, and typing routes when the target resource belongs to a direct conversation.
