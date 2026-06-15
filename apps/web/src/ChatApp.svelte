@@ -40,6 +40,7 @@
 
   const LIVE_EDGE_TOLERANCE_PX = 96;
   const LAST_CHANNEL_STORAGE_PREFIX = "clickclack:last-channel:v1:";
+  const BROWSER_NOTIFICATIONS_STORAGE_PREFIX = "clickclack:browser-notifications-enabled:v1:";
   const MOBILE_NAV_MEDIA_QUERY = "(max-width: 820px)";
 
   export let routeWorkspaceID = "";
@@ -79,6 +80,9 @@
   let profileAvatarURL = "";
   let profilePushoverEnabled = false;
   let profilePushoverUserKey = "";
+  let browserNotificationsSupported = false;
+  let browserNotificationsEnabled = false;
+  let browserNotificationPermission: NotificationPermission | "unsupported" = "default";
   let profileStatus = "";
   let profileStatusError = false;
   let status = "loading";
@@ -170,6 +174,7 @@
     : [];
 
   onMount(() => {
+    syncBrowserNotificationState();
     void boot();
     const mobileNavMedia = window.matchMedia(MOBILE_NAV_MEDIA_QUERY);
     const handleMobileNavBreakpoint = () => {
@@ -192,6 +197,7 @@
     try {
       const me = await api<{ user: User }>("/api/me");
       user = me.user;
+      syncBrowserNotificationState();
       await loadWorkspaces();
       if (workspaces.length === 0) {
         status = "create a workspace";
@@ -211,6 +217,7 @@
 
   function openProfileSettings() {
     if (!user) return;
+    syncBrowserNotificationState();
     profileDisplayName = user.display_name;
     profileHandle = user.handle ? `@${user.handle}` : "";
     profileAvatarURL = user.avatar_url;
@@ -219,6 +226,82 @@
     profileStatus = "";
     profileStatusError = false;
     showProfileSettings = true;
+  }
+
+  function syncBrowserNotificationState() {
+    browserNotificationsSupported = typeof Notification !== "undefined";
+    browserNotificationPermission = browserNotificationsSupported ? Notification.permission : "unsupported";
+    const storedEnabled = storedBrowserNotificationsEnabled();
+    browserNotificationsEnabled = browserNotificationPermission === "granted" && storedEnabled;
+    if (storedEnabled && browserNotificationPermission !== "granted") {
+      storeBrowserNotificationsEnabled(false);
+    }
+  }
+
+  function browserNotificationsStorageKey(): string {
+    return user?.id ? `${BROWSER_NOTIFICATIONS_STORAGE_PREFIX}${user.id}` : "";
+  }
+
+  function storedBrowserNotificationsEnabled(): boolean {
+    const key = browserNotificationsStorageKey();
+    if (!key) return false;
+    try {
+      return window.localStorage.getItem(key) === "enabled";
+    } catch {
+      return false;
+    }
+  }
+
+  function storeBrowserNotificationsEnabled(enabled: boolean): boolean {
+    const key = browserNotificationsStorageKey();
+    if (!key) return false;
+    try {
+      if (enabled) {
+        window.localStorage.setItem(key, "enabled");
+      } else {
+        window.localStorage.removeItem(key);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function setBrowserNotificationsEnabled(enabled: boolean) {
+    profileStatus = "";
+    profileStatusError = false;
+    if (!enabled) {
+      storeBrowserNotificationsEnabled(false);
+      browserNotificationsEnabled = false;
+      profileStatus = "Browser notifications disabled";
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      browserNotificationsSupported = false;
+      browserNotificationPermission = "unsupported";
+      browserNotificationsEnabled = false;
+      profileStatus = "Browser notifications are not supported";
+      profileStatusError = true;
+      return;
+    }
+    const permission =
+      Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    browserNotificationsSupported = true;
+    browserNotificationPermission = permission;
+    if (permission === "granted") {
+      browserNotificationsEnabled = storeBrowserNotificationsEnabled(true);
+      profileStatus = browserNotificationsEnabled
+        ? "Browser notifications enabled"
+        : "Browser notification preference could not be saved";
+      profileStatusError = !browserNotificationsEnabled;
+      return;
+    }
+    storeBrowserNotificationsEnabled(false);
+    browserNotificationsEnabled = false;
+    profileStatus = permission === "denied"
+      ? "Browser notifications are blocked by this browser"
+      : "Browser notifications were not enabled";
+    profileStatusError = true;
   }
 
   async function saveProfile() {
@@ -1209,6 +1292,52 @@
     };
   }
 
+  function maybeShowBrowserNotification(event: RealtimeEvent, affectsActiveView: boolean) {
+    if (event.type !== "message.created") return;
+    if (!browserNotificationsEnabled) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (document.visibilityState === "visible" && affectsActiveView) return;
+    const payload = event.payload as Record<string, unknown>;
+    const authorID = typeof payload.author_id === "string" ? payload.author_id : "";
+    if (authorID && authorID === user?.id) return;
+    const { channelID, dmID } = messageEventScope(event);
+    const channel = channels.find((candidate) => candidate.id === channelID);
+    const author = lookupUser(authorID);
+    const authorName = author?.display_name || "ClickClack";
+    const place = channel ? `#${channel.name}` : "Direct message";
+    const rawBody = typeof payload.body === "string" ? payload.body : "New message";
+    const messageID = typeof payload.message_id === "string" ? payload.message_id : `${channelID || dmID}:${event.seq || Date.now()}`;
+    try {
+      const notification = new Notification(`${authorName} in ${place}`, {
+        body: notificationBody(rawBody),
+        tag: `clickclack:${messageID}`,
+        icon: "/favicon.svg",
+      });
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+        if (channelID) {
+          void selectChannel(channelID);
+        } else if (dmID) {
+          void selectDirectConversation(dmID);
+        }
+      };
+    } catch {
+      // Browsers can still reject notifications despite granted permission.
+    }
+  }
+
+  function notificationBody(body: string): string {
+    const stripped = body
+      .replace(/!\[[^\]]*]\([^)]+\)/g, "[image]")
+      .replace(/\[[^\]]+]\(([^)]+)\)/g, "$1")
+      .replace(/[`*_>#|]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!stripped) return "New message";
+    return stripped.length > 180 ? `${stripped.slice(0, 177)}...` : stripped;
+  }
+
   function messageEventAlreadyAccounted(event: RealtimeEvent): boolean {
     if (event.type !== "message.created") return false;
     const seq = eventMessageSeq(event);
@@ -1828,6 +1957,7 @@
     if (messageEventAlreadyAccounted(event)) return;
     const affectsActiveView =
       event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID;
+    maybeShowBrowserNotification(event, affectsActiveView);
     if (event.type === "message.created" && !affectsActiveView) {
       handleUnreadBump(event);
     }
@@ -2465,6 +2595,9 @@
     avatarURL={profileAvatarURL}
     pushoverEnabled={profilePushoverEnabled}
     pushoverUserKey={profilePushoverUserKey}
+    {browserNotificationsSupported}
+    {browserNotificationsEnabled}
+    {browserNotificationPermission}
     status={profileStatus}
     statusError={profileStatusError}
     onDisplayName={(value) => (profileDisplayName = value)}
@@ -2472,6 +2605,7 @@
     onAvatarURL={(value) => (profileAvatarURL = value)}
     onPushoverEnabled={(value) => (profilePushoverEnabled = value)}
     onPushoverUserKey={(value) => (profilePushoverUserKey = value)}
+    onBrowserNotificationsEnabled={(value) => void setBrowserNotificationsEnabled(value)}
     onClose={closeModal}
     onSave={() => void saveProfile()}
   />
