@@ -228,6 +228,12 @@ func TestChatAPIVerticalSlice(t *testing.T) {
 	if len(dm.Conversation.Members) != 2 {
 		t.Fatalf("expected two dm members, got %d", len(dm.Conversation.Members))
 	}
+	reusedDM := postJSON[struct {
+		Conversation store.DirectConversation `json:"conversation"`
+	}](t, server.URL+"/api/dms", map[string]any{"workspace_id": workspace.ID, "member_ids": []string{second.ID}})
+	if reusedDM.Conversation.ID != dm.Conversation.ID {
+		t.Fatalf("expected repeated two-member DM create to reuse %s, got %s", dm.Conversation.ID, reusedDM.Conversation.ID)
+	}
 	dmMessage := postJSON[struct {
 		Message store.Message `json:"message"`
 	}](t, server.URL+"/api/dms/"+dm.Conversation.ID+"/messages", map[string]string{"body": "private click"})

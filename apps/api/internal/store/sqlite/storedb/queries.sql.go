@@ -375,6 +375,53 @@ func (q *Queries) DirectRouteID(ctx context.Context, arg DirectRouteIDParams) (s
 	return route_id, err
 }
 
+const findOneToOneDirectConversation = `-- name: FindOneToOneDirectConversation :one
+SELECT dc.id, COALESCE(dc.route_id, '') AS route_id, dc.workspace_id, dc.created_at
+FROM direct_conversations dc
+WHERE dc.workspace_id = ?1
+  AND EXISTS (
+    SELECT 1 FROM direct_conversation_members first_member
+    WHERE first_member.conversation_id = dc.id
+      AND first_member.user_id = ?2
+  )
+  AND EXISTS (
+    SELECT 1 FROM direct_conversation_members second_member
+    WHERE second_member.conversation_id = dc.id
+      AND second_member.user_id = ?3
+  )
+  AND (
+    SELECT COUNT(*) FROM direct_conversation_members member_count
+    WHERE member_count.conversation_id = dc.id
+  ) = 2
+ORDER BY dc.created_at, dc.id
+LIMIT 1
+`
+
+type FindOneToOneDirectConversationParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	FirstUserID  string `json:"first_user_id"`
+	SecondUserID string `json:"second_user_id"`
+}
+
+type FindOneToOneDirectConversationRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) FindOneToOneDirectConversation(ctx context.Context, arg FindOneToOneDirectConversationParams) (FindOneToOneDirectConversationRow, error) {
+	row := q.db.QueryRowContext(ctx, findOneToOneDirectConversation, arg.WorkspaceID, arg.FirstUserID, arg.SecondUserID)
+	var i FindOneToOneDirectConversationRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const firstUser = `-- name: FirstUser :one
 SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at
 FROM users
@@ -708,6 +755,37 @@ func (q *Queries) GetDirectConversation(ctx context.Context, arg GetDirectConver
 		&i.LastSeq,
 		&i.LastReadSeq,
 		&i.UnreadCount,
+	)
+	return i, err
+}
+
+const getDirectConversationByMemberSetKey = `-- name: GetDirectConversationByMemberSetKey :one
+SELECT id, COALESCE(route_id, '') AS route_id, workspace_id, created_at
+FROM direct_conversations
+WHERE workspace_id = ?1
+  AND member_set_key = ?2
+`
+
+type GetDirectConversationByMemberSetKeyParams struct {
+	WorkspaceID  string         `json:"workspace_id"`
+	MemberSetKey sql.NullString `json:"member_set_key"`
+}
+
+type GetDirectConversationByMemberSetKeyRow struct {
+	ID          string `json:"id"`
+	RouteID     string `json:"route_id"`
+	WorkspaceID string `json:"workspace_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (q *Queries) GetDirectConversationByMemberSetKey(ctx context.Context, arg GetDirectConversationByMemberSetKeyParams) (GetDirectConversationByMemberSetKeyRow, error) {
+	row := q.db.QueryRowContext(ctx, getDirectConversationByMemberSetKey, arg.WorkspaceID, arg.MemberSetKey)
+	var i GetDirectConversationByMemberSetKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.RouteID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1255,26 +1333,32 @@ func (q *Queries) InsertDefaultWorkspaceMember(ctx context.Context, arg InsertDe
 	return err
 }
 
-const insertDirectConversation = `-- name: InsertDirectConversation :exec
-INSERT INTO direct_conversations (id, route_id, workspace_id, created_at)
-VALUES (?1, ?2, ?3, ?4)
+const insertDirectConversation = `-- name: InsertDirectConversation :execrows
+INSERT INTO direct_conversations (id, route_id, workspace_id, created_at, member_set_key)
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT DO NOTHING
 `
 
 type InsertDirectConversationParams struct {
-	ID          string         `json:"id"`
-	RouteID     sql.NullString `json:"route_id"`
-	WorkspaceID string         `json:"workspace_id"`
-	CreatedAt   string         `json:"created_at"`
+	ID           string         `json:"id"`
+	RouteID      sql.NullString `json:"route_id"`
+	WorkspaceID  string         `json:"workspace_id"`
+	CreatedAt    string         `json:"created_at"`
+	MemberSetKey sql.NullString `json:"member_set_key"`
 }
 
-func (q *Queries) InsertDirectConversation(ctx context.Context, arg InsertDirectConversationParams) error {
-	_, err := q.db.ExecContext(ctx, insertDirectConversation,
+func (q *Queries) InsertDirectConversation(ctx context.Context, arg InsertDirectConversationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertDirectConversation,
 		arg.ID,
 		arg.RouteID,
 		arg.WorkspaceID,
 		arg.CreatedAt,
+		arg.MemberSetKey,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const insertDirectConversationMember = `-- name: InsertDirectConversationMember :exec
