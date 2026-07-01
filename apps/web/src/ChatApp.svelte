@@ -121,12 +121,19 @@
   let agentProgressSweeper: number | undefined;
   let appliedRouteKey = "";
   let routeApplySerial = 0;
+  let hiddenDirectUndo: HiddenDirectUndo | null = null;
+  let hiddenDirectUndoTimer: ReturnType<typeof setTimeout> | undefined;
 
   type MessageWindow = Omit<MessagePage, "messages"> & {
     messages: Message[];
   };
 
   type HistoryEdgeState = "idle" | "loading" | "settling";
+  type HiddenDirectUndo = {
+    conversation: DirectConversation;
+    restoreRoute: boolean;
+    title: string;
+  };
   type UnreadMarker = {
     boundarySeq: number;
     since: string;
@@ -191,6 +198,7 @@
     stopTyping();
     if (typingSweeper) window.clearInterval(typingSweeper);
     if (agentProgressSweeper) window.clearInterval(agentProgressSweeper);
+    if (hiddenDirectUndoTimer) clearTimeout(hiddenDirectUndoTimer);
   });
 
   async function boot() {
@@ -571,7 +579,13 @@
       return serial === routeApplySerial && channels.some((channel) => channel.id === route.target_id);
     }
     if (route.target_type === "direct") {
-      if (!directConversations.some((conversation) => conversation.id === route.target_id)) await loadDirectConversations();
+      if (!directConversations.some((conversation) => conversation.id === route.target_id)) {
+        await loadDirectConversations();
+        if (!directConversations.some((conversation) => conversation.id === route.target_id)) {
+          const data = await api<{ conversation: DirectConversation }>(`/api/dms/${route.target_id}`);
+          upsertDirectConversation(data.conversation);
+        }
+      }
       return serial === routeApplySerial && directConversations.some((conversation) => conversation.id === route.target_id);
     }
     if (route.parent_type === "channel" && route.parent_id) {
@@ -579,7 +593,13 @@
       return serial === routeApplySerial && channels.some((channel) => channel.id === route.parent_id);
     }
     if (route.parent_type === "direct" && route.parent_id) {
-      if (!directConversations.some((conversation) => conversation.id === route.parent_id)) await loadDirectConversations();
+      if (!directConversations.some((conversation) => conversation.id === route.parent_id)) {
+        await loadDirectConversations();
+        if (!directConversations.some((conversation) => conversation.id === route.parent_id)) {
+          const data = await api<{ conversation: DirectConversation }>(`/api/dms/${route.parent_id}`);
+          upsertDirectConversation(data.conversation);
+        }
+      }
       return serial === routeApplySerial && directConversations.some((conversation) => conversation.id === route.parent_id);
     }
     return true;
@@ -1354,6 +1374,14 @@
     return false;
   }
 
+  async function loadUnknownDirectConversationFromEvent(event: RealtimeEvent): Promise<boolean> {
+    const payload = event.payload as Record<string, unknown>;
+    const dmID = typeof payload.direct_conversation_id === "string" ? payload.direct_conversation_id : "";
+    if (!dmID || directConversations.some((conversation) => conversation.id === dmID)) return false;
+    await loadDirectConversations();
+    return directConversations.some((conversation) => conversation.id === dmID);
+  }
+
   function unreadStateForKey(key: string): { unread_count?: number; last_read_seq?: number; last_seq?: number } {
     return channels.find((c) => c.id === key) || directConversations.find((c) => c.id === key) || {};
   }
@@ -1846,6 +1874,12 @@
     directConversations = data.conversations;
   }
 
+  function upsertDirectConversation(conversation: DirectConversation) {
+    directConversations = directConversations.some((item) => item.id === conversation.id)
+      ? directConversations.map((item) => (item.id === conversation.id ? conversation : item))
+      : [...directConversations, conversation];
+  }
+
   async function createDirectConversation(memberID = directMemberID) {
     const trimmed = memberID.trim();
     if (!selectedWorkspaceID || !trimmed) return;
@@ -1855,7 +1889,7 @@
     });
     directMemberID = "";
     showCreateDirect = false;
-    directConversations = [...directConversations, data.conversation];
+    upsertDirectConversation(data.conversation);
     mobileNavOpen = false;
     await navigateToApp(selectedWorkspaceID, data.conversation.id);
   }
@@ -1896,9 +1930,64 @@
       method: "POST",
       body: JSON.stringify({ workspace_id: selectedWorkspaceID, member_ids: [trimmed] })
     });
-    directConversations = [...directConversations, data.conversation];
+    upsertDirectConversation(data.conversation);
     mobileNavOpen = false;
     await navigateToApp(selectedWorkspaceID, data.conversation.id);
+  }
+
+  function clearHiddenDirectUndo() {
+    if (hiddenDirectUndoTimer) clearTimeout(hiddenDirectUndoTimer);
+    hiddenDirectUndoTimer = undefined;
+    hiddenDirectUndo = null;
+  }
+
+  function scheduleHiddenDirectUndo(conversation: DirectConversation, restoreRoute: boolean) {
+    clearHiddenDirectUndo();
+    hiddenDirectUndo = {
+      conversation,
+      restoreRoute,
+      title: dmTitle(conversation, user?.id),
+    };
+    hiddenDirectUndoTimer = setTimeout(() => {
+      hiddenDirectUndo = null;
+      hiddenDirectUndoTimer = undefined;
+    }, 8000);
+  }
+
+  async function undoHideDirectConversation() {
+    const undo = hiddenDirectUndo;
+    if (!undo) return;
+    clearHiddenDirectUndo();
+    try {
+      const data = await api<{ conversation: DirectConversation }>(`/api/dms/${undo.conversation.id}/open`, {
+        method: "POST"
+      });
+      upsertDirectConversation(data.conversation);
+      if (undo.restoreRoute) {
+        await navigateToApp(undo.conversation.workspace_id, data.conversation.id);
+      }
+      status = "direct message restored";
+    } catch (error) {
+      status = error instanceof Error ? error.message : "Could not restore direct message";
+    }
+  }
+
+  async function hideDirectConversation(conversationID: string) {
+    if (!conversationID) return;
+    const conversation = directConversations.find((item) => item.id === conversationID);
+    const restoreRoute = selectedDirectID === conversationID;
+    await api(`/api/dms/${conversationID}`, { method: "DELETE" });
+    directConversations = directConversations.filter((conversation) => conversation.id !== conversationID);
+    if (conversation) scheduleHiddenDirectUndo(conversation, restoreRoute);
+    if (restoreRoute) {
+      clearRoutePanelState();
+      const fallbackID = channels[0]?.id || "";
+      selectedDirectID = "";
+      selectedChannelID = fallbackID;
+      if (fallbackID) rememberLastChannel(selectedWorkspaceID, fallbackID);
+      await navigateToApp(selectedWorkspaceID, fallbackID);
+      await loadMessages();
+    }
   }
 
   function connectRealtimeSocket() {
@@ -1959,7 +2048,8 @@
       event.channel_id === selectedChannelID || event.payload.direct_conversation_id === selectedDirectID;
     maybeShowBrowserNotification(event, affectsActiveView);
     if (event.type === "message.created" && !affectsActiveView) {
-      handleUnreadBump(event);
+      const loadedConversation = await loadUnknownDirectConversationFromEvent(event);
+      if (!loadedConversation) handleUnreadBump(event);
     }
     if (
       affectsActiveView &&
@@ -2436,6 +2526,9 @@
     onCreateChannel={() => (showCreateChannel = true)}
     onSelectDirect={(conversationID) => void selectDirectConversation(conversationID)}
     onCreateDirect={() => (showCreateDirect = true)}
+    onHideDirect={(conversationID) => void hideDirectConversation(conversationID)}
+    hiddenDirectTitle={hiddenDirectUndo?.title}
+    onUndoHideDirect={() => void undoHideDirectConversation()}
     onOpenProfile={openUserProfile}
     onOpenSettings={openProfileSettings}
   />

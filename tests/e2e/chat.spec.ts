@@ -290,6 +290,7 @@ test("browser notification storage failures do not block app startup", async ({ 
 test("mobile navigation behaves like a drawer", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/app");
+  await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 
   const composer = page.locator('textarea[aria-label="Message body"]');
   const toggle = page.getByRole("button", { name: "Toggle navigation" });
@@ -553,6 +554,80 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await page.getByLabel("Message body").fill("private playwright");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".markdown").filter({ hasText: "private playwright" })).toBeVisible();
+});
+
+test("closes direct messages without deleting history", async ({ page }) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  const workspaces = (await workspacesResponse.json()) as {
+    workspaces: { id: string; route_id: string }[];
+  };
+  const workspace = workspaces.workspaces[0];
+  const name = `Close User ${Date.now()}`;
+  const otherUserId = clickclack([
+    "admin",
+    "user",
+    "create",
+    "--data",
+    "./data/e2e",
+    "--workspace",
+    workspace.id,
+    "--name",
+    name,
+    "--email",
+    `${name.toLowerCase().replaceAll(" ", ".")}@example.com`,
+  ]);
+  const dmResponse = await page.request.post("/api/dms", {
+    data: { workspace_id: workspace.id, member_ids: [otherUserId] },
+  });
+  expect(dmResponse.ok()).toBe(true);
+  const { conversation } = (await dmResponse.json()) as {
+    conversation: { id: string; route_id: string };
+  };
+
+  await page.goto("/app");
+  const dmSection = page.locator(".nav-section", { hasText: "Direct messages" });
+  const dmLink = dmSection.getByRole("link", { name: new RegExp(name) });
+  const closeDirectMessage = async () => {
+    await dmSection
+      .getByRole("button", { name: `Direct message actions for ${name}` })
+      .click({ force: true });
+    await dmSection.getByRole("menuitem", { name: "Close direct message" }).click();
+  };
+  await expect(dmLink).toBeVisible();
+  await closeDirectMessage();
+  await expect(dmLink).toBeHidden();
+  await expect(dmSection.getByText(`Closed ${name}`)).toBeVisible();
+  await dmSection.getByRole("button", { name: "Undo" }).click();
+  await expect(dmLink).toBeVisible();
+
+  await closeDirectMessage();
+  await expect(dmLink).toBeHidden();
+  const hiddenGet = await page.request.get(`/api/dms/${conversation.id}`);
+  expect(hiddenGet.ok()).toBe(true);
+  await page.goto(`/app/${workspace.route_id}/${conversation.route_id}`);
+  await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
+
+  await closeDirectMessage();
+  await expect(dmLink).toBeHidden();
+  const reopened = await page.request.post("/api/dms", {
+    data: { workspace_id: workspace.id, member_ids: [otherUserId] },
+  });
+  expect(reopened.ok()).toBe(true);
+  const reopenedBody = (await reopened.json()) as { conversation: { id: string } };
+  expect(reopenedBody.conversation.id).toBe(conversation.id);
+  await page.reload();
+  await expect(dmLink).toBeVisible();
+
+  await closeDirectMessage();
+  await expect(dmLink).toBeHidden();
+  const messageResponse = await page.request.post(`/api/dms/${conversation.id}/messages`, {
+    headers: { "X-ClickClack-User": otherUserId },
+    data: { body: "resurface this dm" },
+  });
+  expect(messageResponse.ok()).toBe(true);
+  await expect(dmLink).toBeVisible();
+  await dmLink.click();
+  await expect(page.locator(".markdown").filter({ hasText: "resurface this dm" })).toBeVisible();
 });
 
 test("unread bar jumps to the new-message divider across repeated unread cycles", async ({
@@ -820,31 +895,36 @@ test("browser notifications announce incoming messages outside the active conver
 
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          (
-            window as unknown as {
-              __clickclackNotifications: { title: string; options?: NotificationOptions }[];
-            }
-          ).__clickclackNotifications,
+      page.evaluate(() =>
+        (
+          window as unknown as {
+            __clickclackNotifications: { title: string; options?: NotificationOptions }[];
+          }
+        ).__clickclackNotifications.find((notification) =>
+          notification.title.includes("ClickClack in #notify-"),
+        ),
       ),
     )
-    .toEqual([
+    .toEqual(
       expect.objectContaining({
-        title: expect.stringContaining("ClickClack in #notify-"),
         options: expect.objectContaining({
           body: "New message",
           icon: "/favicon.svg",
         }),
       }),
-    ]);
+    );
 
   await page.evaluate(() => {
     const notification = (
       window as unknown as {
-        __clickclackNotifications: { onclick?: (() => void) | null }[];
+        __clickclackNotifications: { title: string; onclick?: (() => void) | null }[];
       }
-    ).__clickclackNotifications[0];
+    ).__clickclackNotifications.find((candidate) =>
+      candidate.title.includes("ClickClack in #notify-"),
+    );
+    if (!notification) {
+      throw new Error("Expected a channel notification");
+    }
     notification.onclick?.();
   });
 
