@@ -1093,6 +1093,14 @@ export interface components {
       /** Format: int64 */
       unread_count?: number;
     };
+    ThreadState: {
+      root_message_id: string;
+      /** Format: int64 */
+      reply_count: number;
+      /** Format: date-time */
+      last_reply_at?: string;
+      last_reply_author_ids: string[];
+    };
     Message: {
       id: string;
       /** @description Immutable public route ID for thread roots. Omitted when the message has no route. */
@@ -1121,6 +1129,7 @@ export interface components {
       quoted_body_snapshot?: string;
       quoted_author_id?: string;
       quoted_author?: components["schemas"]["User"];
+      thread_state?: components["schemas"]["ThreadState"];
       nonce?: string;
     };
     RouteTarget: {

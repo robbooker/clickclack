@@ -530,12 +530,23 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
   await replayGif.click();
   await expect(replayGif).toBeVisible({ timeout: 7_000 });
 
-  await page.getByRole("button", { name: "Open thread" }).first().click();
-  await expect(page.getByText("Thread", { exact: true })).toBeVisible();
+  const threadedRow = page
+    .locator(".message-row")
+    .filter({ has: page.locator(".markdown").filter({ hasText: "hello playwright" }) });
+  await threadedRow.getByRole("button", { name: "Open thread" }).click();
+  await expect(page.getByLabel("Thread pane")).toBeVisible();
 
   await page.getByLabel("Reply body").fill("thread _reply_");
   await page.locator(".reply-composer").getByRole("button", { name: "Reply" }).click();
   await expect(page.locator(".reply .markdown").filter({ hasText: "thread reply" })).toBeVisible();
+  await expect(threadedRow.locator(".thread-hint")).toContainText("1 reply");
+
+  const threadPane = page.getByLabel("Thread pane");
+  await threadPane.getByRole("button", { name: "Close thread" }).click();
+  await expect(threadPane.getByRole("button", { name: "Close thread" })).toBeHidden();
+  await expect(threadPane.getByText("No thread open")).toBeVisible();
+  await threadedRow.locator(".markdown").click();
+  await expect(page.getByLabel("Thread pane")).toBeVisible();
 
   await page.reload();
   await page.getByRole("link", { name: `# ${channel.name}` }).click();
