@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Published automated macOS, Windows, and Linux desktop installers with verified SHA-256 manifests alongside every tagged GitHub Release.
 - Integrated the desktop sidebar toggle and message search into native macOS, Windows, and Linux title bars while preserving the browser app header.
 - Added secure ClickClack desktop apps for macOS, Windows, and Linux with native notifications, unread badges, tray lifecycle, quick compose, deep links, downloads, spellcheck, and self-hosted server selection.
 - Opened desktop GitHub sign-in in the system browser, then returned securely through a short-lived, verifier-bound `clickclack://` callback so existing browser sessions, passkeys, and two-factor authentication work without exposing tokens in URLs.

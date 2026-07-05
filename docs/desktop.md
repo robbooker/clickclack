@@ -104,9 +104,11 @@ pnpm --filter @clickclack/desktop run dist:linux
 ```
 
 Pull requests run a three-platform desktop workflow and attach unsigned preview
-installers for seven days. Production distribution still needs the normal
-platform signing/notarization credentials; preview artifacts are for review and
-testing only.
+installers for seven days. Version tags run the release workflow on native
+macOS, Windows, and Linux runners, verify per-platform SHA-256 manifests, and
+attach the installers before publishing the matching draft GitHub Release.
+These builds are currently unsigned, so operating-system trust prompts are
+expected until platform signing and notarization credentials are configured.
 
 ## Icon system
 

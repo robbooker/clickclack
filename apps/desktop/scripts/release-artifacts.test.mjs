@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import {
+  expectedDesktopArtifactNames,
+  normalizeReleaseVersion,
+  writeDesktopChecksums,
+} from "./release-artifacts.mjs";
+
+test("normalizes semantic release tags", () => {
+  assert.equal(normalizeReleaseVersion("v1.2.3"), "1.2.3");
+  assert.equal(normalizeReleaseVersion("1.2.3-beta.1"), "1.2.3-beta.1");
+  assert.throws(() => normalizeReleaseVersion("v1.2"), /semantic version/);
+  assert.throws(() => normalizeReleaseVersion("v01.2.3"), /semantic version/);
+});
+
+test("describes every expected native installer", () => {
+  assert.deepEqual(expectedDesktopArtifactNames("mac", "v1.2.3"), [
+    "ClickClack-1.2.3-mac-arm64.dmg",
+    "ClickClack-1.2.3-mac-arm64.zip",
+    "ClickClack-1.2.3-mac-x64.dmg",
+    "ClickClack-1.2.3-mac-x64.zip",
+  ]);
+  assert.deepEqual(expectedDesktopArtifactNames("win", "1.2.3"), [
+    "ClickClack-1.2.3-win-x64.exe",
+    "ClickClack-1.2.3-win-x64.zip",
+  ]);
+  assert.deepEqual(expectedDesktopArtifactNames("linux", "1.2.3"), [
+    "ClickClack-1.2.3-linux-amd64.deb",
+    "ClickClack-1.2.3-linux-x86_64.AppImage",
+  ]);
+});
+
+test("writes a sorted SHA-256 manifest and rejects missing installers", (context) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "clickclack-desktop-release-"));
+  context.after(() => rmSync(directory, { force: true, recursive: true }));
+  const names = expectedDesktopArtifactNames("win", "1.2.3");
+  for (const name of names) writeFileSync(path.join(directory, name), name);
+
+  const output = writeDesktopChecksums(directory, "win", "1.2.3");
+  const expected = [...names]
+    .sort()
+    .map((name) => `${createHash("sha256").update(name).digest("hex")}  ${name}`)
+    .join("\n");
+  assert.equal(readFileSync(output, "utf8"), `${expected}\n`);
+
+  assert.throws(() => writeDesktopChecksums(directory, "mac", "1.2.3"), /Desktop release artifact/);
+});

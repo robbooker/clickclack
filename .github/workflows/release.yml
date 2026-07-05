@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -24,6 +24,8 @@ jobs:
     name: GoReleaser
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Check out
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
@@ -66,3 +68,126 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  desktop:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Desktop
+            os: macos-latest
+            platform: mac
+            builder_args: --mac dmg zip --x64 --arm64
+            files: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.zip
+          - name: Windows Desktop
+            os: windows-latest
+            platform: win
+            builder_args: --win nsis zip --x64
+            files: |
+              apps/desktop/release/*.exe
+              apps/desktop/release/*.zip
+          - name: Linux Desktop
+            os: ubuntu-latest
+            platform: linux
+            builder_args: --linux AppImage deb --x64
+            files: |
+              apps/desktop/release/*.AppImage
+              apps/desktop/release/*.deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag_name || github.ref }}
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must be semantic version vMAJOR.MINOR.PATCH: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9 # v6.0.9
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test desktop contract
+        run: pnpm test:desktop
+
+      - name: Typecheck desktop
+        run: pnpm --filter @clickclack/desktop typecheck
+
+      - name: Build desktop app
+        run: pnpm --filter @clickclack/desktop build
+
+      - name: Package desktop installers
+        run: pnpm --filter @clickclack/desktop exec electron-builder ${{ matrix.builder_args }} --config.extraMetadata.version=${{ steps.release.outputs.version }} --publish never
+
+      - name: Write desktop checksums
+        run: node apps/desktop/scripts/release-artifacts.mjs ${{ matrix.platform }} ${{ steps.release.outputs.version }} apps/desktop/release
+
+      - name: Upload desktop release candidates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ClickClack-desktop-${{ matrix.platform }}
+          path: |
+            ${{ matrix.files }}
+            apps/desktop/release/ClickClack-*-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-desktop:
+    name: Publish desktop apps
+    needs:
+      - release
+      - desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop release candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ClickClack-desktop-*
+          path: desktop-release
+          merge-multiple: true
+
+      - name: Verify desktop checksums
+        working-directory: desktop-release
+        run: sha256sum --check ClickClack-*-SHA256SUMS.txt
+
+      - name: Attach desktop apps to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" desktop-release/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Publish verified GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag_name || github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --repo "$GITHUB_REPOSITORY"

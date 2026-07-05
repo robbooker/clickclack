@@ -66,6 +66,12 @@ changelog:
       - "^Merge pull request"
       - "^Merge branch"
 
+release:
+  draft: true
+  use_existing_draft: true
+  replace_existing_artifacts: true
+  mode: replace
+
 nfpms:
   - id: linux-packages
     ids:

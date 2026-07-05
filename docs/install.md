@@ -57,6 +57,12 @@ docker run --rm -v clickclack-data:/app/data clickclack \
 GitHub releases publish `clickclack` archives for Linux, macOS, Windows, and
 FreeBSD on `amd64` and `arm64`, plus Linux `.deb` and `.rpm` packages.
 
+The same release also includes ClickClack desktop apps: macOS `.dmg` and `.zip`
+files for Intel and Apple silicon, a Windows x64 installer and `.zip`, and Linux
+x64 `.AppImage` and `.deb` files. Match the installer name to your operating
+system and architecture. Platform-specific `ClickClack-*-SHA256SUMS.txt` files
+cover every desktop download.
+
 ```sh
 # macOS/Linux tarball shape
 tar -xzf clickclack_<version>_<os>_<arch>.tar.gz

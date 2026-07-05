@@ -5,6 +5,7 @@ import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outfile = path.join(root, ".test", "contract.test.cjs");
+const releaseArtifactsTest = path.join(root, "scripts", "release-artifacts.test.mjs");
 
 await build({
   absWorkingDir: root,
@@ -17,5 +18,7 @@ await build({
   target: "node22",
 });
 
-const result = spawnSync(process.execPath, ["--test", outfile], { stdio: "inherit" });
+const result = spawnSync(process.execPath, ["--test", outfile, releaseArtifactsTest], {
+  stdio: "inherit",
+});
 process.exit(result.status ?? 1);
