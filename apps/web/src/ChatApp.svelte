@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
+  import { desktop } from "./lib/desktop";
   import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
   import { markdownImageViewerURL } from "./lib/actions/markdownGifs";
@@ -105,6 +106,7 @@
   let userAlign: "left" | "right" = "left";
   let status = "loading";
   let authRequired = false;
+  let desktopAuthStatus = "";
   let connected = false;
   let socket: RealtimeConnection | null = null;
   let messageList: MessageListHandle | null = null;
@@ -177,6 +179,14 @@
       ? channels.find((channel) => channel.id === selectedChannelID) || {}
       : {};
   $: activeUnreadCount = unreadCountForKey(activeConversationKey, activeUnreadState);
+  $: desktopUnreadCount = status === "ready"
+    ? channels.reduce((total, channel) => total + (channel.unread_count || 0), 0) +
+      directConversations.reduce((total, conversation) => total + (conversation.unread_count || 0), 0)
+    : 0;
+  $: desktop?.setUnreadCount(desktopUnreadCount);
+  $: if (desktop && appliedRouteKey && typeof window !== "undefined") {
+    desktop.setActiveRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  }
   $: activeUnreadBoundarySeq = activeUnreadCount > 0 ? activeUnreadState.last_read_seq || 0 : 0;
   $: activeUnreadBoundaryLoaded = activeUnreadCount > 0
     ? unreadBoundaryLoadedForKey(activeConversationKey, activeUnreadBoundarySeq, messageWindows)
@@ -225,9 +235,36 @@
     const handleMobileNavBreakpoint = () => {
       mobileNavOpen = false;
     };
+    const stopDesktopNavigate = desktop?.onNavigate((route) => {
+      void goto(route, { keepFocus: true, noScroll: true });
+    });
+    const stopDesktopQuickCompose = desktop?.onQuickCompose(() => focusActiveComposer());
     mobileNavMedia.addEventListener("change", handleMobileNavBreakpoint);
-    return () => mobileNavMedia.removeEventListener("change", handleMobileNavBreakpoint);
+    return () => {
+      mobileNavMedia.removeEventListener("change", handleMobileNavBreakpoint);
+      stopDesktopNavigate?.();
+      stopDesktopQuickCompose?.();
+    };
   });
+
+  function focusActiveComposer() {
+    void tick().then(() => {
+      const input = activeComposerContext === "thread" ? replyInput : messageInput;
+      input?.focus();
+    });
+  }
+
+  async function signInWithGitHub(event: MouseEvent) {
+    if (!desktop) return;
+    event.preventDefault();
+    desktopAuthStatus = "Opening GitHub in your browser…";
+    try {
+      await desktop.signInWithGitHub();
+      desktopAuthStatus = "Finish signing in in your browser. ClickClack will complete here automatically.";
+    } catch {
+      desktopAuthStatus = "Could not open your browser. Try again.";
+    }
+  }
 
   function loadActivityPrefs() {
     try {
@@ -329,6 +366,12 @@
   }
 
   function syncBrowserNotificationState() {
+    if (desktop) {
+      browserNotificationsSupported = true;
+      browserNotificationPermission = "granted";
+      browserNotificationsEnabled = storedBrowserNotificationsEnabled();
+      return;
+    }
     browserNotificationsSupported = typeof Notification !== "undefined";
     browserNotificationPermission = browserNotificationsSupported ? Notification.permission : "unsupported";
     const storedEnabled = storedBrowserNotificationsEnabled();
@@ -373,7 +416,17 @@
     if (!enabled) {
       storeBrowserNotificationsEnabled(false);
       browserNotificationsEnabled = false;
-      profileStatus = "Browser notifications disabled";
+      profileStatus = desktop ? "Desktop notifications disabled" : "Browser notifications disabled";
+      return;
+    }
+    if (desktop) {
+      browserNotificationsSupported = true;
+      browserNotificationPermission = "granted";
+      browserNotificationsEnabled = storeBrowserNotificationsEnabled(true);
+      profileStatus = browserNotificationsEnabled
+        ? "Desktop notifications enabled"
+        : "Desktop notification preference could not be saved";
+      profileStatusError = !browserNotificationsEnabled;
       return;
     }
     if (typeof Notification === "undefined") {
@@ -451,6 +504,15 @@
     const workspacePath = `/app/${encodeURIComponent(workspaceRouteID)}`;
     const targetRouteID = routeTargetIDFor(targetID);
     return targetRouteID ? `${workspacePath}/${encodeURIComponent(targetRouteID)}` : workspacePath;
+  }
+
+  function notificationHref(targetID: string): string {
+    const targetRouteID = channels.find((channel) => channel.id === targetID)?.route_id ||
+      directConversations.find((conversation) => conversation.id === targetID)?.route_id;
+    if (targetRouteID) return appHref(selectedWorkspaceID, targetRouteID);
+    if (!selectedWorkspaceID || !targetID) return "/app";
+    // Unknown realtime targets still form a valid legacy pair; the route API canonicalizes it.
+    return `/app/${encodeURIComponent(selectedWorkspaceID)}/${encodeURIComponent(targetID)}`;
   }
 
   function routeWorkspaceIDFor(workspaceID = selectedWorkspaceID): string {
@@ -1410,7 +1472,6 @@
     const kind = typeof payload.kind === "string" ? payload.kind : "";
     if (kind === "agent_commentary" || kind === "agent_tool") return;
     if (!browserNotificationsEnabled) return;
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     if (document.visibilityState === "visible" && affectsActiveView) return;
     const authorID = typeof payload.author_id === "string" ? payload.author_id : "";
     if (authorID && authorID === user?.id) return;
@@ -1421,6 +1482,16 @@
     const place = channel ? `#${channel.name}` : "Direct message";
     const rawBody = typeof payload.body === "string" ? payload.body : "New message";
     const messageID = typeof payload.message_id === "string" ? payload.message_id : `${channelID || dmID}:${event.seq || Date.now()}`;
+    if (desktop) {
+      void desktop.notify({
+        body: notificationBody(rawBody),
+        route: notificationHref(channelID || dmID),
+        tag: `clickclack:${messageID}`,
+        title: `${authorName} in ${place}`,
+      });
+      return;
+    }
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     try {
       const notification = new Notification(`${authorName} in ${place}`, {
         body: notificationBody(rawBody),
@@ -2586,13 +2657,13 @@
         <h1>Welcome.</h1>
         <p>Sign in with GitHub to join the guest room.</p>
       </div>
-      <a class="github-login" href="/api/auth/github/start">
+      <a class="github-login" href="/api/auth/github/start" onclick={signInWithGitHub}>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.69-3.87-1.37-3.87-1.37-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.94 10.94 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.13v3.16c0 .31.21.67.8.56 4.56-1.52 7.85-5.83 7.85-10.91C23.5 5.65 18.35.5 12 .5z"/>
         </svg>
         Continue with GitHub
       </a>
-      <p class="auth-foot">Any GitHub account can join.</p>
+      <p class="auth-foot">{desktopAuthStatus || "Any GitHub account can join."}</p>
     </section>
   </main>
 {:else}
@@ -2835,6 +2906,7 @@
     onHideCommentary={setHideCommentary}
     onHideToolCalls={setHideToolCalls}
     onUserAlign={setUserAlign}
+    notificationLabel={desktop ? "Desktop notifications" : "Browser notifications"}
     onBrowserNotificationsEnabled={(value) => void setBrowserNotificationsEnabled(value)}
     onClose={closeModal}
     onSave={() => void saveProfile()}
