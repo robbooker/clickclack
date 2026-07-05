@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.1.0 - 2026-07-06
 
 - Published automated macOS, Windows, and Linux desktop installers with verified SHA-256 manifests alongside every tagged GitHub Release.
