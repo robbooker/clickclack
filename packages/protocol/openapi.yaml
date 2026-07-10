@@ -711,6 +711,11 @@ paths:
           in: query
           schema:
             type: integer
+        - name: include_tail
+          in: query
+          description: Include the latest durable cursor visible at request start.
+          schema:
+            type: boolean
       responses:
         "200":
           description: Durable events after cursor
