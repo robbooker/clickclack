@@ -2564,6 +2564,8 @@ export interface operations {
         workspace_id: string;
         after_cursor?: string;
         limit?: number;
+        /** @description Include the latest durable cursor visible at request start. */
+        include_tail?: boolean;
       };
       header?: never;
       path?: never;
