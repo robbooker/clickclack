@@ -1781,6 +1781,84 @@ func (q *Queries) InsertWorkspaceMember(ctx context.Context, arg InsertWorkspace
 	return err
 }
 
+const latestEventCursor = `-- name: LatestEventCursor :one
+SELECT e.cursor
+FROM events e
+JOIN workspace_members viewer ON viewer.workspace_id = e.workspace_id AND viewer.user_id = $1
+LEFT JOIN channels event_channel ON event_channel.id = e.channel_id AND event_channel.workspace_id = e.workspace_id
+WHERE e.workspace_id = $2
+  AND (
+    e.is_private = 0
+    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = $1)
+  )
+  AND (
+    e.type NOT IN ('channel.read', 'dm.read')
+    OR COALESCE(e.payload_json::jsonb ->> 'user_id', '') = $1
+  )
+  AND (
+    e.channel_id IS NULL
+    OR viewer.role <> 'guest'
+    OR event_channel.name = 'guest'
+  )
+  AND (
+    COALESCE(
+      e.payload_json::jsonb ->> 'direct_conversation_id',
+      (
+        SELECT m.direct_conversation_id
+        FROM messages m
+        WHERE m.workspace_id = e.workspace_id
+          AND m.id IN (
+            COALESCE(e.payload_json::jsonb ->> 'message_id', ''),
+            COALESCE(e.payload_json::jsonb ->> 'root_message_id', '')
+          )
+          AND m.direct_conversation_id IS NOT NULL
+          AND m.direct_conversation_id <> ''
+        LIMIT 1
+      ),
+      ''
+    ) = ''
+    OR (
+      viewer.role <> 'guest'
+      AND EXISTS (
+        SELECT 1
+        FROM direct_conversation_members dcm
+        JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+        WHERE dc.workspace_id = e.workspace_id
+          AND dcm.conversation_id = COALESCE(
+            e.payload_json::jsonb ->> 'direct_conversation_id',
+            (
+              SELECT m.direct_conversation_id
+              FROM messages m
+              WHERE m.workspace_id = e.workspace_id
+                AND m.id IN (
+                  COALESCE(e.payload_json::jsonb ->> 'message_id', ''),
+                  COALESCE(e.payload_json::jsonb ->> 'root_message_id', '')
+                )
+                AND m.direct_conversation_id IS NOT NULL
+                AND m.direct_conversation_id <> ''
+              LIMIT 1
+            )
+          )
+          AND dcm.user_id = $1
+      )
+    )
+  )
+ORDER BY e.cursor DESC
+LIMIT 1
+`
+
+type LatestEventCursorParams struct {
+	UserID      string `json:"user_id"`
+	WorkspaceID string `json:"workspace_id"`
+}
+
+func (q *Queries) LatestEventCursor(ctx context.Context, arg LatestEventCursorParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, latestEventCursor, arg.UserID, arg.WorkspaceID)
+	var cursor string
+	err := row.Scan(&cursor)
+	return cursor, err
+}
+
 const listChannels = `-- name: ListChannels :many
 SELECT c.id, COALESCE(c.route_id, '') AS route_id, c.workspace_id, c.name, c.kind, c.created_at, c.archived_at,
        CAST(COALESCE((SELECT MAX(channel_seq) FROM messages WHERE channel_id = c.id AND parent_message_id IS NULL), 0) AS BIGINT) AS last_seq,
@@ -1981,6 +2059,10 @@ WHERE e.workspace_id = $2
   AND (
     e.is_private = 0
     OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = $1)
+  )
+  AND (
+    e.type NOT IN ('channel.read', 'dm.read')
+    OR COALESCE(e.payload_json::jsonb ->> 'user_id', '') = $1
   )
   AND (
     e.channel_id IS NULL
