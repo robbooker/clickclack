@@ -27,7 +27,7 @@ to drop events.
 
 ```http
 GET  /api/realtime/ws?workspace_id=&after_cursor=
-GET  /api/realtime/events?workspace_id=&after_cursor=&limit=
+GET  /api/realtime/events?workspace_id=&after_cursor=&limit=&include_tail=
 POST /api/realtime/ephemeral
 ```
 
@@ -37,7 +37,10 @@ POST /api/realtime/ephemeral
 - `GET /events` is the same backfill in pull form. Use it after a long offline
   period instead of relying on the connect-time backfill. User-private durable
   events, such as read receipts, are filtered the same way as the WebSocket
-  stream.
+  stream. Pass `include_tail=true` when a fresh client needs to skip retained
+  history: the response adds `tail_cursor`, captured before the page query, and
+  the client can open `/ws` from that cursor without racing events created
+  during startup. Servers that predate this option omit the field.
 - `POST /ephemeral` publishes a non-durable typing, presence, or agent progress
   event into the hub. Channel events are scoped by `channel_id`; DM events must
   send `direct_conversation_id` and are delivered only to that conversation's
