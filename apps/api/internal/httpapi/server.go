@@ -829,11 +829,21 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	result := map[string]any{}
+	if r.URL.Query().Get("include_tail") == "true" {
+		tailCursor, err := s.store.LatestEventCursor(r.Context(), workspaceID, act.user.ID)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		result["tail_cursor"] = tailCursor
+	}
 	events, err := s.store.ListEventsAfter(r.Context(), workspaceID, act.user.ID, r.URL.Query().Get("after_cursor"), queryInt(r, "limit", 200))
 	if err == nil {
 		events = filterEventsForUser(events, act.user.ID)
+		result["events"] = events
 	}
-	writeResult(w, map[string]any{"events": events}, err)
+	writeResult(w, result, err)
 }
 
 func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
