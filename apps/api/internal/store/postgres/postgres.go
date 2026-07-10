@@ -812,6 +812,20 @@ func (s *Store) ListEventsAfter(ctx context.Context, workspaceID, userID, cursor
 	return out, nil
 }
 
+func (s *Store) LatestEventCursor(ctx context.Context, workspaceID, userID string) (string, error) {
+	if err := s.requireMembership(ctx, workspaceID, userID); err != nil {
+		return "", err
+	}
+	cursor, err := s.q.LatestEventCursor(ctx, storedb.LatestEventCursorParams{
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return cursor, err
+}
+
 func directConversationIDFromEvent(event store.Event) string {
 	payload, ok := event.Payload.(map[string]any)
 	if !ok {

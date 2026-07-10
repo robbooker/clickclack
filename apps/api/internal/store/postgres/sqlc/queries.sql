@@ -700,6 +700,10 @@ WHERE e.workspace_id = sqlc.arg(workspace_id)
     OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = sqlc.arg(user_id))
   )
   AND (
+    e.type NOT IN ('channel.read', 'dm.read')
+    OR COALESCE(e.payload_json::jsonb ->> 'user_id', '') = sqlc.arg(user_id)
+  )
+  AND (
     e.channel_id IS NULL
     OR viewer.role <> 'guest'
     OR event_channel.name = 'guest'
@@ -749,6 +753,71 @@ WHERE e.workspace_id = sqlc.arg(workspace_id)
   )
 ORDER BY e.cursor
 LIMIT sqlc.arg(limit_count);
+
+-- name: LatestEventCursor :one
+SELECT e.cursor
+FROM events e
+JOIN workspace_members viewer ON viewer.workspace_id = e.workspace_id AND viewer.user_id = sqlc.arg(user_id)
+LEFT JOIN channels event_channel ON event_channel.id = e.channel_id AND event_channel.workspace_id = e.workspace_id
+WHERE e.workspace_id = sqlc.arg(workspace_id)
+  AND (
+    e.is_private = 0
+    OR EXISTS (SELECT 1 FROM event_recipients er WHERE er.event_id = e.id AND er.user_id = sqlc.arg(user_id))
+  )
+  AND (
+    e.type NOT IN ('channel.read', 'dm.read')
+    OR COALESCE(e.payload_json::jsonb ->> 'user_id', '') = sqlc.arg(user_id)
+  )
+  AND (
+    e.channel_id IS NULL
+    OR viewer.role <> 'guest'
+    OR event_channel.name = 'guest'
+  )
+  AND (
+    COALESCE(
+      e.payload_json::jsonb ->> 'direct_conversation_id',
+      (
+        SELECT m.direct_conversation_id
+        FROM messages m
+        WHERE m.workspace_id = e.workspace_id
+          AND m.id IN (
+            COALESCE(e.payload_json::jsonb ->> 'message_id', ''),
+            COALESCE(e.payload_json::jsonb ->> 'root_message_id', '')
+          )
+          AND m.direct_conversation_id IS NOT NULL
+          AND m.direct_conversation_id <> ''
+        LIMIT 1
+      ),
+      ''
+    ) = ''
+    OR (
+      viewer.role <> 'guest'
+      AND EXISTS (
+        SELECT 1
+        FROM direct_conversation_members dcm
+        JOIN direct_conversations dc ON dc.id = dcm.conversation_id
+        WHERE dc.workspace_id = e.workspace_id
+          AND dcm.conversation_id = COALESCE(
+            e.payload_json::jsonb ->> 'direct_conversation_id',
+            (
+              SELECT m.direct_conversation_id
+              FROM messages m
+              WHERE m.workspace_id = e.workspace_id
+                AND m.id IN (
+                  COALESCE(e.payload_json::jsonb ->> 'message_id', ''),
+                  COALESCE(e.payload_json::jsonb ->> 'root_message_id', '')
+                )
+                AND m.direct_conversation_id IS NOT NULL
+                AND m.direct_conversation_id <> ''
+              LIMIT 1
+            )
+          )
+          AND dcm.user_id = sqlc.arg(user_id)
+      )
+    )
+  )
+ORDER BY e.cursor DESC
+LIMIT 1;
 
 -- name: InsertEvent :exec
 INSERT INTO events (id, cursor, workspace_id, channel_id, type, seq, payload_json, created_at, is_private)
