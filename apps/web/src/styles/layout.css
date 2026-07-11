@@ -8,8 +8,17 @@
   padding: calc(32px + var(--safe-area-top)) calc(32px + var(--safe-area-right))
     calc(32px + var(--safe-area-bottom)) calc(32px + var(--safe-area-left));
   background:
-    radial-gradient(700px 500px at 30% 20%, rgba(111, 126, 255, 0.18), transparent 60%),
-    radial-gradient(700px 500px at 80% 90%, rgba(255, 110, 196, 0.12), transparent 60%), var(--bg);
+    radial-gradient(
+      700px 500px at 30% 20%,
+      color-mix(in srgb, var(--brand-a) 14%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      700px 500px at 80% 90%,
+      color-mix(in srgb, var(--brand-b) 10%, transparent),
+      transparent 60%
+    ),
+    var(--bg);
 }
 
 .auth-panel {
@@ -36,11 +45,11 @@
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #b46cff);
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
   color: white;
   font-weight: 800;
   letter-spacing: -0.02em;
-  box-shadow: 0 10px 24px -8px rgba(111, 126, 255, 0.7);
+  box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--brand-b) 65%, transparent);
 }
 
 .auth-brand .brand-text strong {
@@ -358,8 +367,10 @@
   text-overflow: ellipsis;
 }
 
+/* The leading # / @ glyph carries the accent so the title echoes the active
+   nav item instead of reading as greyed-out text. */
 .topbar-title h1.with-glyph::first-letter {
-  color: var(--muted);
+  color: var(--accent);
   margin-right: 1px;
 }
 
@@ -427,7 +438,7 @@
 
 .search-clear:hover {
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
 }
 
 .search-submit {
@@ -445,7 +456,7 @@
 
 .search-submit:hover {
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
 }
 
 .topbar-actions {

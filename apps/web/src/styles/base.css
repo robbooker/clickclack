@@ -16,6 +16,7 @@
   --panel: #fffaf2;
   --panel-2: #efe7dc;
   --panel-3: #e4dbcf;
+  --surface: var(--panel-2);
   --hover: rgba(16, 32, 39, 0.05);
   --hover-strong: rgba(16, 32, 39, 0.08);
   --line: rgba(16, 32, 39, 0.1);
@@ -25,8 +26,15 @@
   --muted: #6f675f;
   --muted-2: #958b80;
   --accent: #dd5d45;
+  --accent-hover: #c74a33;
+  --accent-contrast: #ffffff;
   --accent-2: #006d77;
   --accent-soft: rgba(221, 93, 69, 0.16);
+  /* Brand identity gradient (home tile, auth mark, empty states): ember coral
+     into raspberry. Both stops stay in the warm family so identity marks never
+     drift off-palette; the dark override re-tunes them for contrast. */
+  --brand-a: #e2603e;
+  --brand-b: #c8425a;
   /* User (self) message bubble: accent-tinted alternate shading, held at a
      similar low opacity to the agent delivery/activity washes so the two read
      as a matched pair rather than competing fills. Defined once here and
@@ -50,6 +58,8 @@
   --success: #168b51;
   --warn: #f5b050;
   --danger: #c84343;
+  --scrollbar: rgba(16, 32, 39, 0.18);
+  --scrollbar-hover: rgba(16, 32, 39, 0.3);
   --shadow: 0 24px 60px -24px rgba(16, 32, 39, 0.32);
   --radius-sm: 6px;
   --radius: 8px;
@@ -65,22 +75,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --rail: #0d0e12;
-    --bg: #131419;
-    --panel: #1a1b22;
-    --panel-2: #20222b;
-    --panel-3: #272a35;
-    --hover: rgba(255, 255, 255, 0.04);
-    --hover-strong: rgba(255, 255, 255, 0.07);
-    --line: rgba(255, 255, 255, 0.07);
-    --line-strong: rgba(255, 255, 255, 0.12);
-    --text: #e7e9ee;
-    --text-strong: #ffffff;
-    --muted: #8a8f9c;
-    --muted-2: #5d626d;
-    --accent: #6f7eff;
-    --accent-2: #5666ee;
-    --accent-soft: rgba(111, 126, 255, 0.18);
+    /* Espresso dark: the same warm paper identity after sundown. Charcoal with
+       a brown undertone instead of a cool slate, so light and dark read as one
+       product; the ember accent brightens a step for contrast on coal. */
+    --rail: #16110d;
+    --bg: #1a1511;
+    --panel: #211a15;
+    --panel-2: #29211a;
+    --panel-3: #322820;
+    --surface: var(--panel-2);
+    --hover: rgba(255, 244, 235, 0.045);
+    --hover-strong: rgba(255, 244, 235, 0.08);
+    --line: rgba(255, 236, 224, 0.08);
+    --line-strong: rgba(255, 236, 224, 0.14);
+    --text: #ece4da;
+    --text-strong: #fbf6f0;
+    --muted: #a4917f;
+    --muted-2: #6f6152;
+    --accent: #f0714c;
+    --accent-hover: #ff8560;
+    --accent-contrast: #241009;
+    --accent-2: #45b8ac;
+    --accent-soft: rgba(240, 113, 76, 0.17);
+    --brand-a: #f0714c;
+    --brand-b: #d84a63;
     /* Yellow preamble on dark theme; the delivered answer stays blue. */
     --activity-accent: #e8b23e;
     --activity-accent-soft: rgba(232, 178, 62, 0.10);
@@ -90,11 +108,13 @@
        spec is "light blue, distinct but not striking" on both themes. */
     --tool-call-bg: rgba(96, 150, 255, 0.12);
     --tool-call-bg-hover: rgba(96, 150, 255, 0.18);
-    --accent-glow: 0 0 0 1px rgba(111, 126, 255, 0.4), 0 8px 30px -12px rgba(111, 126, 255, 0.6);
+    --accent-glow: 0 0 0 1px rgba(240, 113, 76, 0.38), 0 8px 30px -12px rgba(240, 113, 76, 0.55);
     --success: #2ecc71;
     --warn: #f5b050;
-    --danger: #ff6b6b;
-    --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6);
+    --danger: #ff6b5e;
+    --scrollbar: rgba(255, 236, 224, 0.1);
+    --scrollbar-hover: rgba(255, 236, 224, 0.2);
+    --shadow: 0 24px 60px -20px rgba(8, 4, 2, 0.65);
   }
 }
 
@@ -110,9 +130,20 @@ body {
 }
 
 body {
+  /* Faint ember + teal atmosphere in the page corners, derived from the theme
+     accents so both schemes stay in the same warm family. */
   background:
-    radial-gradient(1000px 600px at 0% 0%, rgba(111, 126, 255, 0.08), transparent 60%),
-    radial-gradient(900px 700px at 100% 100%, rgba(255, 130, 200, 0.05), transparent 60%), var(--bg);
+    radial-gradient(
+      1000px 600px at 0% 0%,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 700px at 100% 100%,
+      color-mix(in srgb, var(--accent-2) 6%, transparent),
+      transparent 60%
+    ),
+    var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -149,14 +180,16 @@ textarea {
   height: 10px;
 }
 
+/* Theme-tied thumb: the old white-alpha thumb was effectively invisible on the
+   light paper theme. */
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--scrollbar);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--scrollbar-hover);
   background-clip: content-box;
 }

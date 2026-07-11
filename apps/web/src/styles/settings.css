@@ -21,15 +21,8 @@
   background: rgba(8, 10, 14, 0.42);
   display: grid;
   place-items: center;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI Variable",
-    "Segoe UI",
-    Helvetica,
-    "Apple Color Emoji",
-    Arial,
-    sans-serif;
+  /* Inherits the app's Geist stack; settings previously reverted to the system
+     font and read as a different product. */
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
@@ -619,13 +612,13 @@
 
 .settings-modal__content .settings-button--primary {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--accent-contrast);
   border-color: var(--accent);
 }
 
 .settings-modal__content .settings-button--primary:hover {
-  background: var(--accent-2);
-  border-color: var(--accent-2);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 /* Toggle switch */
@@ -1068,7 +1061,7 @@
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -1092,15 +1085,15 @@
 }
 
 .ws-strip__pill--owner {
-  background: rgba(34, 197, 94, 0.16);
-  color: #22a35a;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 32%, transparent);
 }
 
 .ws-strip__pill--moderator {
-  background: rgba(59, 130, 246, 0.16);
-  color: #2563eb;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--delivery-accent) 15%, transparent);
+  color: var(--delivery-accent);
+  border: 1px solid color-mix(in srgb, var(--delivery-accent) 32%, transparent);
 }
 
 .ws-strip__pill--member,
@@ -1169,22 +1162,22 @@
 }
 
 .ws-btn--danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.08);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
   border-color: var(--danger);
 }
 
 .ws-btn--primary {
-  background: rgb(35, 131, 226);
-  border-color: rgb(35, 131, 226);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
 .ws-btn--primary:hover:not(:disabled) {
-  background: rgb(28, 113, 196);
-  border-color: rgb(28, 113, 196);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .ws-btn--primary svg {
@@ -1330,15 +1323,15 @@
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  background: rgba(35, 131, 226, 0.16);
-  color: rgb(35, 131, 226);
+  background: var(--accent-soft);
+  color: var(--accent);
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .ws-members__avatar--bot {
-  background: rgba(255, 163, 68, 0.16);
-  color: rgb(217, 119, 6);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: color-mix(in srgb, var(--warn) 72%, var(--text));
 }
 
 .ws-members__avatar img {
@@ -1400,23 +1393,23 @@
 }
 
 .ws-members__pill--owner {
-  background: rgba(34, 197, 94, 0.16);
-  color: rgb(22, 163, 74);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
 }
 
 .ws-members__pill--moderator {
-  background: rgba(35, 131, 226, 0.18);
-  color: rgb(35, 131, 226);
+  background: color-mix(in srgb, var(--delivery-accent) 16%, transparent);
+  color: var(--delivery-accent);
 }
 
 .ws-members__pill--bot {
-  background: rgba(168, 85, 247, 0.18);
-  color: rgb(147, 51, 234);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .ws-members__pill--guest {
-  background: rgba(245, 158, 11, 0.18);
-  color: rgb(202, 138, 4);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: color-mix(in srgb, var(--warn) 72%, var(--text));
 }
 
 .ws-members__actions {
@@ -1640,13 +1633,13 @@
 }
 
 .ws-bots__owner-pill--service {
-  background: rgba(35, 131, 226, 0.18);
-  color: rgb(35, 131, 226);
+  background: color-mix(in srgb, var(--delivery-accent) 16%, transparent);
+  color: var(--delivery-accent);
 }
 
 .ws-bots__owner-pill--user {
-  background: rgba(255, 163, 68, 0.18);
-  color: rgb(217, 119, 6);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: color-mix(in srgb, var(--warn) 72%, var(--text));
 }
 
 .ws-bots__chevron {
@@ -1875,14 +1868,14 @@
 }
 
 .ws-bots__choice.is-active {
-  border-color: rgb(35, 131, 226);
-  background: rgba(35, 131, 226, 0.06);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .ws-bots__choice input {
   grid-row: 1 / span 2;
   align-self: center;
-  accent-color: rgb(35, 131, 226);
+  accent-color: var(--accent);
 }
 
 .ws-bots__choice-title {
@@ -1899,9 +1892,9 @@
 .ws-bots__form-error {
   margin: 0;
   padding: 10px 12px;
-  background: rgba(239, 68, 68, 0.08);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
   color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.32);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -1938,7 +1931,7 @@
   padding: 18px 20px;
   margin: 8px 0 16px;
   background: var(--surface);
-  border: 1px solid rgb(35, 131, 226);
+  border: 1px solid var(--accent);
   border-radius: 8px;
 }
 

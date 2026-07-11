@@ -202,7 +202,7 @@
 .primary-action {
   border: 0;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
 }
 
 .ghost-action:hover {
@@ -210,7 +210,7 @@
 }
 
 .primary-action:hover {
-  filter: brightness(1.04);
+  background: var(--accent-hover);
 }
 
 /* ---------- IMAGE VIEWER ---------- */
@@ -476,7 +476,7 @@
 
 @keyframes quote-flash {
   0% {
-    background: rgba(99, 102, 241, 0.22);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
   100% {
     background: transparent;
@@ -500,7 +500,7 @@
 }
 
 .quote-block:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .quote-block:disabled {
@@ -511,7 +511,7 @@
 .quote-block .quote-bar {
   width: 3px;
   align-self: stretch;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   border-radius: 2px;
   flex: 0 0 3px;
 }
@@ -526,12 +526,12 @@
 .quote-block .quote-author {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 .quote-block .quote-snippet {
   font-size: 0.85rem;
-  color: var(--text-muted, #6b7280);
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -615,7 +615,7 @@
   margin-left: auto;
   background: transparent;
   border: 0;
-  color: var(--text-muted, #6b7280);
+  color: var(--muted);
   cursor: pointer;
   font-size: 0.95rem;
   padding: 0 0.3rem;
@@ -630,7 +630,7 @@
 }
 
 .reply-quote-btn:hover {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
 }
 
 .tooltip {
@@ -647,8 +647,8 @@
   transform: translate(-50%, 4px) scale(0.96);
   padding: 0.42rem 0.62rem;
   border-radius: 9px;
-  background: #3a3a44;
-  color: #f4f4f7;
+  background: #33291f;
+  color: #f6f1ea;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   font-size: 0.78rem;
   font-weight: 700;
@@ -671,7 +671,7 @@
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  background: #3a3a44;
+  background: #33291f;
   transform: translate(-50%, 4px) rotate(45deg) scale(0.9);
   opacity: 0;
   pointer-events: none;

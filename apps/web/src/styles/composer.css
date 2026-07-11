@@ -356,15 +356,17 @@
   border: 0;
   border-radius: 10px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   transition:
     background 120ms ease,
     transform 80ms ease,
     opacity 120ms ease;
 }
 
+/* Hover deepens the ember instead of flipping to the secondary teal, so the
+   primary action keeps one hue through its states. */
 .send:hover:not(:disabled) {
-  background: var(--accent-2);
+  background: var(--accent-hover);
   transform: translateY(-1px);
 }
 
