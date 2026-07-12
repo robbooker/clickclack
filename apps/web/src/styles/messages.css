@@ -429,7 +429,7 @@
   height: 64px;
   border-radius: 18px;
   background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
-  color: white;
+  color: var(--brand-contrast);
   display: grid;
   place-items: center;
   font-size: 26px;

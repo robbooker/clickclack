@@ -33,8 +33,9 @@
   /* Brand identity gradient (home tile, auth mark, empty states): ember coral
      into raspberry. Both stops stay in the warm family so identity marks never
      drift off-palette; the dark override re-tunes them for contrast. */
-  --brand-a: #e2603e;
+  --brand-a: #c64b32;
   --brand-b: #c8425a;
+  --brand-contrast: #ffffff;
   /* User (self) message bubble: accent-tinted alternate shading, held at a
      similar low opacity to the agent delivery/activity washes so the two read
      as a matched pair rather than competing fills. Defined once here and
@@ -99,6 +100,7 @@
     --accent-soft: rgba(240, 113, 76, 0.17);
     --brand-a: #f0714c;
     --brand-b: #d84a63;
+    --brand-contrast: #11100e;
     /* Yellow preamble on dark theme; the delivered answer stays blue. */
     --activity-accent: #e8b23e;
     --activity-accent-soft: rgba(232, 178, 62, 0.10);

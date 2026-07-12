@@ -42,13 +42,13 @@
 
 .guild-rail .guild.home {
   background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
-  color: white;
+  color: var(--brand-contrast);
   font-weight: 800;
 }
 
 .guild-rail .guild.home:hover {
   border-radius: 12px;
-  filter: brightness(1.1);
+  transform: translateY(-1px);
 }
 
 .guild-rail .guild.add {
