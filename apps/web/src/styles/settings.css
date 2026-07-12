@@ -18,7 +18,8 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(8, 10, 14, 0.42);
+  /* light-dark() (not a media query) so the forced color mode applies. */
+  background: light-dark(rgba(8, 10, 14, 0.42), rgba(0, 0, 0, 0.55));
   display: grid;
   place-items: center;
   /* Inherits the app's Geist stack; settings previously reverted to the system
@@ -28,12 +29,6 @@
   color: var(--text);
   animation: settings-modal-fade 0.15s ease-out;
   -webkit-font-smoothing: antialiased;
-}
-
-@media (prefers-color-scheme: dark) {
-  .settings-modal-scrim {
-    background: rgba(0, 0, 0, 0.55);
-  }
 }
 
 @keyframes settings-modal-fade {
@@ -736,17 +731,12 @@
   display: grid;
   place-items: center;
   padding: 28px 80px 28px 28px;
-  background: rgba(15, 15, 15, 0.22);
+  /* light-dark() (not a media query) so the forced color mode applies. */
+  background: light-dark(rgba(15, 15, 15, 0.22), rgba(0, 0, 0, 0.35));
   color: var(--text);
   z-index: 50;
   font-size: 14px;
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  .ws-settings {
-    background: rgba(0, 0, 0, 0.35);
-  }
 }
 
 .ws-settings__panel {
@@ -2214,4 +2204,174 @@
   gap: 6px;
   font-size: 12.5px;
   color: var(--muted);
+}
+
+/* =========================================================
+   Appearance section: color mode keys + board swatches.
+   ========================================================= */
+
+.appearance-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 460px;
+}
+
+/* Mode pickers are keycaps, like every other control on the board. */
+.appearance-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--key-edge);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.08s ease,
+    transform 0.08s ease;
+}
+
+.appearance-mode:hover {
+  background: var(--panel-3);
+}
+
+.appearance-mode:active {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
+}
+
+.appearance-mode.is-active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  color: var(--accent);
+}
+
+.appearance-mode__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.appearance-mode__icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 640px;
+}
+
+/* Each swatch carries its own data-board attribute, so the tokens inside the
+   preview resolve to that board's palette (in the active color mode) even
+   while a different board is applied on the root. */
+.board-swatch {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  box-shadow: var(--key-edge);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.08s ease,
+    transform 0.08s ease;
+}
+
+.board-swatch:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+}
+
+.board-swatch:active {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
+}
+
+.board-swatch.is-active {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line-strong));
+  box-shadow:
+    var(--key-edge),
+    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Miniature board: rail strip, an accent key, and a panel bubble. */
+.board-swatch__preview {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.board-swatch__rail {
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+}
+
+.board-swatch__body {
+  position: relative;
+}
+
+.board-swatch__key {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--accent);
+  box-shadow: 0 1.5px 0 color-mix(in srgb, var(--text-strong) 25%, transparent);
+}
+
+.board-swatch__bubble {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 40px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.board-swatch__meta {
+  display: grid;
+  gap: 2px;
+}
+
+.board-swatch__meta strong {
+  color: var(--text-strong);
+  font-size: 13.5px;
+  font-family: var(--font-display);
+  font-weight: 650;
+}
+
+.board-swatch__meta span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .appearance-modes,
+  .board-grid {
+    grid-template-columns: 1fr;
+  }
 }

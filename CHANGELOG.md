@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Appearance settings with a light/dark/system color mode and four full-app board themes (Signal, the heritage Ember, Moss, Iris) — each tuned for both modes via a light-dark() token refactor, applied instantly with live swatch previews, persisted per device, and flash-free on load.
 - Redesigned the product site around the "Switchboard" keycap identity: cool porcelain/night-board themes over a dot-grid plate, electric cyan accent with indigo bot/thread tones, keycap buttons and step markers with press states, Bricolage Grotesque display type, and mono kickers/labels.
 - Redesigned the web app around a "Switchboard" keycap identity: cool porcelain/night-board themes replace the warm paper look, an electric cyan signal accent with indigo delivery and amber working-log tones, tactile keycap controls with hard press states, Bricolage Grotesque display type, and mono machine metadata (timestamps, section labels, day dividers, bot chips).
 - Added personal channel ordering with desktop drag-and-drop, keyboard and touch move-menu controls, per-user/workspace browser persistence, same-profile tab synchronization, and preserved active/unread priority rows while sections are collapsed. Thanks @jjjhenriksen.

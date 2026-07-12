@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { onDestroy, onMount, tick } from "svelte";
   import { APIError, api } from "./lib/api";
+  import { initAppearance } from "./lib/appearance";
   import { desktop } from "./lib/desktop";
   import { probeMediaDimensions } from "./lib/media";
   import { gifLibrary } from "./lib/gifs";
@@ -238,6 +239,7 @@
     : [];
 
   onMount(() => {
+    initAppearance();
     loadActivityPrefs();
     activityClockSweeper = window.setInterval(() => {
       activityClock = Date.now();

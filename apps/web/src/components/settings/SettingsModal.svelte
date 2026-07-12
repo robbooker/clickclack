@@ -5,6 +5,7 @@
   import ProfileSettingsForm from "../profile/ProfileSettingsForm.svelte";
   import NotificationSettingsForm from "../profile/NotificationSettingsForm.svelte";
   import MyBotsSection from "./MyBotsSection.svelte";
+  import AppearanceSection from "./AppearanceSection.svelte";
   import { api, APIError } from "../../lib/api";
   import {
     ACCOUNT_SETTINGS_SECTIONS,
@@ -140,6 +141,17 @@
                     size={18}
                   />
                   <span class="settings-modal__rail-label">{user.display_name || section.label}</span>
+                {:else if section.id === "appearance"}
+                  <span class="settings-modal__rail-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 3a9 9 0 0 0 0 18c1.1 0 2-.9 2-2v-1c0-.6.4-1 1-1h2c2.2 0 4-1.8 4-4 0-5-4-10-9-10Z" />
+                      <circle cx="7.5" cy="11.5" r="0.5" />
+                      <circle cx="10.5" cy="7.5" r="0.5" />
+                      <circle cx="15" cy="7.5" r="0.5" />
+                    </svg>
+                  </span>
+                  <span class="settings-modal__rail-label">{section.label}</span>
                 {:else if section.id === "notifications"}
                   <span class="settings-modal__rail-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -220,6 +232,8 @@
           {onUserAlign}
           {onBrowserNotificationsChanged}
         />
+      {:else if activeSection === "appearance"}
+        <AppearanceSection />
       {:else if activeSection === "notifications"}
         <header class="settings-page__header">
           <p class="settings-page__eyebrow">Account</p>

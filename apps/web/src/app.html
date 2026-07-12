@@ -6,6 +6,21 @@
     <meta name="clickclack-desktop-titlebar" content="1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>ClickClack</title>
+    <script>
+      // Apply the stored appearance prefs before first paint so a forced
+      // color mode or non-default board never flashes. Keys and attribute
+      // names mirror src/lib/appearance.ts, which owns them afterwards.
+      try {
+        var ccMode = localStorage.getItem("clickclack:color-mode:v1");
+        if (ccMode === "light" || ccMode === "dark") {
+          document.documentElement.setAttribute("data-color-mode", ccMode);
+        }
+        var ccBoard = localStorage.getItem("clickclack:board-theme:v1");
+        if (ccBoard === "ember" || ccBoard === "moss" || ccBoard === "iris") {
+          document.documentElement.setAttribute("data-board", ccBoard);
+        }
+      } catch (e) {}
+    </script>
     %sveltekit.head%
   </head>
   <body>

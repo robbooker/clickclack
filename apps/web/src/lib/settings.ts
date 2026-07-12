@@ -7,7 +7,7 @@
 // 2. Workspace settings (members, bots, integrations, etc.) live at the
 //    real route /app/{workspaceID}/settings and have their own shell.
 
-export type AccountSettingsSectionId = "profile" | "notifications" | "bots";
+export type AccountSettingsSectionId = "profile" | "appearance" | "notifications" | "bots";
 
 export type AccountSettingsSection = {
   id: AccountSettingsSectionId;
@@ -17,6 +17,7 @@ export type AccountSettingsSection = {
 // Account modal sections (rendered in order in the rail).
 export const ACCOUNT_SETTINGS_SECTIONS: AccountSettingsSection[] = [
   { id: "profile", label: "Profile" },
+  { id: "appearance", label: "Appearance" },
   { id: "notifications", label: "Notifications" },
   { id: "bots", label: "My bots" },
 ];
