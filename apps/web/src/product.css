@@ -1,24 +1,44 @@
+@import "@fontsource-variable/bricolage-grotesque";
+
+/* "Switchboard" identity, matching the app: porcelain keycap surfaces over a
+   cool board, navy ink, electric cyan signal accent, and controls that behave
+   like keys (hard edge, pressed flat on click). */
 .product-site {
-  --ps-bg: #faf6ef;
-  --ps-bg-raised: #fffdf8;
-  --ps-ink: #1d1b18;
-  --ps-ink-strong: #0f0e0c;
-  --ps-muted: #6d6459;
-  --ps-line: rgba(29, 27, 24, 0.1);
-  --ps-line-strong: rgba(29, 27, 24, 0.16);
-  --ps-accent: #dd5d45;
-  --ps-accent-ink: #b84632;
-  --ps-accent-contrast: #fff6ef;
-  --ps-accent-soft: rgba(221, 93, 69, 0.12);
-  --ps-teal: #006d77;
-  --ps-term-bg: #101917;
-  --ps-term-ink: #cde8dc;
-  --ps-shadow: 0 24px 70px -30px rgba(29, 27, 24, 0.4);
-  --ps-radius-lg: 16px;
+  --ps-bg: #edeff2;
+  --ps-bg-raised: #f8f9fb;
+  --ps-ink: #232a35;
+  --ps-ink-strong: #10151d;
+  --ps-muted: #5d6878;
+  --ps-line: rgba(16, 21, 29, 0.1);
+  --ps-line-strong: rgba(16, 21, 29, 0.17);
+  --ps-accent: #0080c4;
+  --ps-accent-ink: #006aa6;
+  --ps-accent-contrast: #ffffff;
+  --ps-accent-soft: rgba(0, 128, 196, 0.12);
+  /* Secondary hue: the app's agent-delivery indigo (bots, thread hints). */
+  --ps-teal: #5558d9;
+  --ps-term-bg: #0d1220;
+  --ps-term-ink: #cfe0f7;
+  --ps-shadow: 0 24px 70px -30px rgba(16, 21, 29, 0.4);
+  --ps-key-edge: 0 1px 0 var(--ps-line-strong), 0 2px 0 rgba(16, 21, 29, 0.1);
+  --ps-key-edge-pressed: 0 1px 0 var(--ps-line-strong);
+  --ps-display: "Bricolage Grotesque Variable", "Geist Variable", ui-sans-serif, system-ui,
+    sans-serif;
+  --ps-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --ps-radius-lg: 14px;
   --ps-gutter: clamp(20px, 5vw, 64px);
 
   min-height: 100vh;
-  background: var(--ps-bg);
+  /* Dot-grid mounting plate under a faint cyan signal glow. */
+  background:
+    radial-gradient(
+      900px 540px at 50% -80px,
+      color-mix(in srgb, var(--ps-accent) 7%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(color-mix(in srgb, var(--ps-ink) 6%, transparent) 1px, transparent 1.5px) 0 0 /
+    18px 18px,
+    var(--ps-bg);
   color: var(--ps-ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -31,7 +51,7 @@
 .product-site code,
 .product-site pre,
 .product-site time {
-  font-family: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--ps-mono);
   /* Geist Mono's ligatures merge " --" into a joined glyph,
      which makes CLI flags read as "serve--data". */
   font-variant-ligatures: none;
@@ -42,6 +62,7 @@
 .product-site h3 {
   margin: 0;
   color: var(--ps-ink-strong);
+  font-family: var(--ps-display);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
@@ -78,18 +99,21 @@
   gap: 10px;
   font-weight: 650;
   font-size: 17px;
+  font-family: var(--ps-display);
   color: var(--ps-ink-strong);
 }
 
+/* The brand mark is a keycap. */
 .product-site .brand-mark {
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
   border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--ps-accent) 70%, var(--ps-ink-strong));
   background: var(--ps-accent);
   color: var(--ps-accent-contrast);
-  box-shadow: 0 6px 18px -8px rgba(221, 93, 69, 0.8);
+  box-shadow: var(--ps-key-edge);
 }
 
 .product-site .brand-mark svg {
@@ -112,15 +136,17 @@
 
 /* ---------- buttons ---------- */
 
+/* Buttons are keycaps: hard edge, raised on hover, pressed flat on click. */
 .product-site .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 42px;
-  border-radius: 9px;
+  border-radius: 8px;
   padding: 0 18px;
   font-size: 15px;
   font-weight: 600;
+  box-shadow: var(--ps-key-edge);
   transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
 
@@ -128,10 +154,15 @@
   transform: translateY(-1px);
 }
 
+.product-site .btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--ps-key-edge-pressed);
+}
+
 .product-site .btn-primary {
+  border: 1px solid color-mix(in srgb, var(--ps-accent) 70%, var(--ps-ink-strong));
   background: var(--ps-accent);
   color: var(--ps-accent-contrast);
-  box-shadow: 0 10px 24px -12px rgba(221, 93, 69, 0.9);
 }
 
 .product-site .btn-primary:hover {
@@ -208,12 +239,14 @@
 .product-site .hero-install {
   display: inline-block;
   margin-top: 18px;
-  border: 1px solid var(--ps-line);
+  border: 1px solid var(--ps-line-strong);
   border-radius: 8px;
   background: var(--ps-bg-raised);
   padding: 9px 16px;
   color: var(--ps-muted);
   font-size: 13.5px;
+  /* kbd-style keycap chip. */
+  box-shadow: 0 1px 0 var(--ps-line-strong);
 }
 
 .product-site .hero-install span {
@@ -288,9 +321,10 @@
 .product-site .side-label {
   margin: 10px 8px 4px;
   color: var(--ps-muted);
-  font-size: 11px;
+  font-family: var(--ps-mono);
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -319,7 +353,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3ba55d;
+  background: #14876a;
 }
 
 .product-site .ps-presence.bot {
@@ -417,9 +451,9 @@
   font-weight: 700;
 }
 
-.product-site .a-mira { background: #7c5cd6; }
+.product-site .a-mira { background: #2653e8; }
 .product-site .a-bot { background: var(--ps-teal); }
-.product-site .a-peter { background: #d6845c; }
+.product-site .a-peter { background: #c07e0a; }
 
 .product-site .ps-composer {
   margin: 14px 16px 16px;
@@ -451,12 +485,14 @@
 
 /* ---------- sections ---------- */
 
+/* Kickers read as silkscreened plate legends: mono, uppercase, tracked. */
 .product-site .section-kicker {
   margin: 0 0 12px;
   color: var(--ps-accent-ink);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--ps-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -502,7 +538,7 @@
 
 .product-site .feature-grid article:hover {
   border-color: color-mix(in srgb, var(--ps-accent) 42%, var(--ps-line-strong));
-  box-shadow: 0 16px 40px -28px rgba(29, 27, 24, 0.5);
+  box-shadow: 0 16px 40px -28px rgba(16, 21, 29, 0.5);
 }
 
 .product-site .feature-icon {
@@ -597,7 +633,7 @@
 }
 
 .product-site .terminal .tl-title {
-  color: rgba(205, 232, 220, 0.55);
+  color: rgba(207, 224, 247, 0.55);
 }
 
 .product-site .terminal pre {
@@ -610,12 +646,12 @@
 }
 
 .product-site .t-prompt {
-  color: #8ee6bc;
+  color: #6ad3ff;
   font-weight: 600;
 }
 
 .product-site .t-out {
-  color: rgba(205, 232, 220, 0.6);
+  color: rgba(207, 224, 247, 0.6);
 }
 
 /* ---------- quickstart ---------- */
@@ -647,17 +683,21 @@
   padding: 20px;
 }
 
+/* Step numbers are little keycaps. */
 .product-site .step-no {
   display: grid;
   flex-shrink: 0;
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--ps-accent) 70%, var(--ps-ink-strong));
   background: var(--ps-accent);
   color: var(--ps-accent-contrast);
-  font-size: 14px;
+  font-family: var(--ps-mono);
+  font-size: 13px;
   font-weight: 700;
+  box-shadow: var(--ps-key-edge);
 }
 
 .product-site .quickstart-steps h3 {
@@ -764,21 +804,25 @@
 /* ---------- dark scheme ---------- */
 
 @media (prefers-color-scheme: dark) {
+  /* Night board: the same identity anodized navy-black; the cyan signal
+     brightens a step for contrast on the dark plate. */
   .product-site {
-    --ps-bg: #101216;
-    --ps-bg-raised: #16191f;
-    --ps-ink: #d7dae2;
-    --ps-ink-strong: #f4f5f8;
-    --ps-muted: #8b909d;
-    --ps-line: rgba(244, 245, 248, 0.09);
-    --ps-line-strong: rgba(244, 245, 248, 0.16);
-    --ps-accent: #f0705a;
-    --ps-accent-ink: #ff9c85;
-    --ps-accent-contrast: #1a0f0c;
-    --ps-accent-soft: rgba(240, 112, 90, 0.14);
-    --ps-teal: #4cc4c4;
-    --ps-term-bg: #0b0f0e;
-    --ps-shadow: 0 24px 70px -30px rgba(0, 0, 0, 0.8);
+    --ps-bg: #0e1219;
+    --ps-bg-raised: #141926;
+    --ps-ink: #dbe2ec;
+    --ps-ink-strong: #f4f7fb;
+    --ps-muted: #8a95a8;
+    --ps-line: rgba(190, 210, 255, 0.09);
+    --ps-line-strong: rgba(190, 210, 255, 0.16);
+    --ps-accent: #41c6ff;
+    --ps-accent-ink: #6ad3ff;
+    --ps-accent-contrast: #061420;
+    --ps-accent-soft: rgba(65, 198, 255, 0.14);
+    --ps-teal: #8b8df2;
+    --ps-term-bg: #0a0e18;
+    --ps-shadow: 0 24px 70px -30px rgba(2, 5, 10, 0.8);
+    --ps-key-edge: 0 1px 0 var(--ps-line-strong), 0 2px 0 rgba(0, 0, 0, 0.45);
+    --ps-key-edge-pressed: 0 1px 0 var(--ps-line-strong);
   }
 
   .product-site .feature-grid article:hover {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Redesigned the product site around the "Switchboard" keycap identity: cool porcelain/night-board themes over a dot-grid plate, electric cyan accent with indigo bot/thread tones, keycap buttons and step markers with press states, Bricolage Grotesque display type, and mono kickers/labels.
 - Redesigned the web app around a "Switchboard" keycap identity: cool porcelain/night-board themes replace the warm paper look, an electric cyan signal accent with indigo delivery and amber working-log tones, tactile keycap controls with hard press states, Bricolage Grotesque display type, and mono machine metadata (timestamps, section labels, day dividers, bot chips).
 - Added personal channel ordering with desktop drag-and-drop, keyboard and touch move-menu controls, per-user/workspace browser persistence, same-profile tab synchronization, and preserved active/unread priority rows while sections are collapsed. Thanks @jjjhenriksen.
 - Added independently collapsible Channels, Direct messages, and People sidebar sections that retain active and unread rows while collapsed, with accessible controls and per-workspace browser persistence. Thanks @jjjhenriksen.
