@@ -712,16 +712,16 @@
    not full-bleed. Scoped to NOT .before-final-message so the boxed pair keeps
    its own top-of-card styling. */
 .message-row.is-preamble:not(.before-final-message) .message-content {
-  padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 26%, var(--line-strong));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 20%, transparent);
   border-radius: var(--radius-lg);
   background: var(--activity-accent-soft);
-  box-shadow: 0 2px 0 color-mix(in srgb, var(--activity-accent) 22%, transparent);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--activity-accent) 14%, transparent);
 }
 
 .message-row.is-preamble-collapsed .message-content {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 /* Boxed preamble<->answer cohesion: when an agent preamble is immediately
@@ -751,8 +751,8 @@
 
 /* Preamble = the amber working-log header (top of the card). */
 .message-row.is-preamble.before-final-message .message-content {
-  padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 26%, var(--line-strong));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 20%, transparent);
   background: var(--activity-accent-soft);
 }
 
@@ -769,13 +769,13 @@
    delivery, with the amber preamble as its secondary header. Flat top meets
    the seam; rounded bottom closes the card. */
 .message-row.after-preamble .message-content {
-  padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--delivery-accent) 26%, var(--line-strong));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--delivery-accent) 20%, transparent);
   border-top: 0;
   border-bottom-left-radius: var(--radius-lg);
   border-bottom-right-radius: var(--radius-lg);
   background: var(--delivery-accent-soft);
-  box-shadow: 0 2px 0 color-mix(in srgb, var(--delivery-accent) 24%, transparent);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--delivery-accent) 14%, transparent);
 }
 
 /* Collapsed preamble inside the boxed pair: keep the compact one-line height
@@ -798,11 +798,11 @@
 .message-group.is-self .message-content {
   width: fit-content;
   max-width: min(100%, 680px);
-  padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-strong));
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: var(--radius-lg);
   background: var(--user-bubble-soft);
-  box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 /* Right-adjusted self messages: mirror the whole group so the avatar sits in
