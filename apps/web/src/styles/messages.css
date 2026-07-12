@@ -668,16 +668,6 @@
   background: var(--accent-soft);
 }
 
-.message-row.selected::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent);
-}
-
 .message-row.can-open-thread {
   cursor: pointer;
 }
@@ -696,10 +686,14 @@
 /* Coalesced agent preamble block: one block per agent turn, interleaving
    commentary prose with individually collapsed tool-call rows in arrival
    order. The block opens while the turn is live and collapses to a single
-   line once the final answer lands. Theme-tied to --activity-accent (blue on
-   light, amber on dark); the wash is deliberately faint so the block reads as
+   line once the final answer lands. Theme-tied to --activity-accent (amber on
+   both themes); the wash is deliberately faint so the block reads as
    secondary to the final answer, which renders as a clearly separate ordinary
-   message below it. */
+   message below it.
+
+   Bubble language: tinted keycaps. Each bubble is a full hairline border in
+   its accent mix plus a hard tinted under-edge (the keycap shadow) — no
+   gutter rails; the wash + under-edge carry the semantics. */
 .message-row.is-preamble {
   /* Streaming/growing phase: the row itself stays transparent; the yellow wash
      lives on the inline content bubble below so it reads like a message,
@@ -719,10 +713,10 @@
    its own top-of-card styling. */
 .message-row.is-preamble:not(.before-final-message) .message-content {
   padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 20%, var(--line-strong));
-  border-left: 3px solid var(--activity-accent);
-  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 26%, var(--line-strong));
+  border-radius: var(--radius-lg);
   background: var(--activity-accent-soft);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--activity-accent) 22%, transparent);
 }
 
 .message-row.is-preamble-collapsed .message-content {
@@ -750,42 +744,38 @@
 }
 
 /* The gutter accent bar belongs to the standalone preamble; the boxed pair
-   carries its accent on the card's left border instead, so suppress it. */
+   carries its accent on the card's wash and border instead, so suppress it. */
 .message-row.is-preamble.before-final-message::before {
   display: none;
 }
 
-/* Preamble = the slate working-log header (top of the card). */
+/* Preamble = the amber working-log header (top of the card). */
 .message-row.is-preamble.before-final-message .message-content {
   padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 20%, var(--line-strong));
-  border-left: 3px solid var(--activity-accent);
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 26%, var(--line-strong));
   background: var(--activity-accent-soft);
 }
 
 /* Preamble = top of the card: round the top, drop the bottom edge so the seam
    is flat and the answer below continues the same box. */
 .message-row.is-preamble.before-final-message .message-content {
-  border-top-left-radius: 11px;
-  border-top-right-radius: 11px;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
   border-bottom: 0;
 }
 
-/* Answer = bottom of the card: flat top to meet the seam, rounded bottom. A
-   marginally lighter wash reads the answer as primary and the preamble as its
-   secondary header, giving a soft tonal seam without a hard divider line. */
-/* Answer = the delivered blue message (bottom of the card). This is the hero:
-   a clearly blue wash + blue left rail so it reads as the primary delivery and
-   the slate preamble above it reads as its secondary header. Flat top meets the
-   seam; rounded bottom closes the card. */
+/* Answer = the delivered indigo message (bottom of the card). This is the
+   hero: the indigo wash + the card's keycap under-edge read it as the primary
+   delivery, with the amber preamble as its secondary header. Flat top meets
+   the seam; rounded bottom closes the card. */
 .message-row.after-preamble .message-content {
   padding: 7px 11px;
   border: 1px solid color-mix(in srgb, var(--delivery-accent) 26%, var(--line-strong));
-  border-left: 3px solid var(--delivery-accent);
   border-top: 0;
-  border-bottom-left-radius: 11px;
-  border-bottom-right-radius: 11px;
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
   background: var(--delivery-accent-soft);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--delivery-accent) 24%, transparent);
 }
 
 /* Collapsed preamble inside the boxed pair: keep the compact one-line height
@@ -799,19 +789,20 @@
 }
 
 /* User (self) message bubble. Mirrors the agent delivery bubble's weight
-   (same padding, radius, 3px left rail) but in the accent tint instead of the
-   delivery blue, so an exchange reads as two matched but distinct bubbles. The
-   bubble hugs its content (fit-content) up to a readable max so the left/right
-   alignment toggle is visually meaningful. Scoped to ordinary self rows; the
-   agent preamble/delivery treatments are never self and stay untouched. */
+   (same padding, radius, keycap under-edge) but in the cyan accent tint
+   instead of the delivery indigo, so an exchange reads as two matched but
+   distinct keys. The bubble hugs its content (fit-content) up to a readable
+   max so the left/right alignment toggle is visually meaningful. Scoped to
+   ordinary self rows; the agent preamble/delivery treatments are never self
+   and stay untouched. */
 .message-group.is-self .message-content {
   width: fit-content;
   max-width: min(100%, 680px);
   padding: 7px 11px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line-strong));
-  border-left: 3px solid var(--accent);
-  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-strong));
+  border-radius: var(--radius-lg);
   background: var(--user-bubble-soft);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 /* Right-adjusted self messages: mirror the whole group so the avatar sits in

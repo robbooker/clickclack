@@ -573,8 +573,8 @@
 .nav-item.active {
   background: var(--accent-soft);
   color: var(--text-strong);
-  /* Signal bar on the active row, inset so the row silhouette stays flat. */
-  box-shadow: inset 3px 0 0 var(--accent);
+  /* The active row is a pressed key: hairline accent border, no gutter bar. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .nav-item.has-unread {

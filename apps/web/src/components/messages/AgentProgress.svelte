@@ -79,7 +79,10 @@
   .agent-progress {
     margin: 0 16px 2px;
     padding: 6px 10px;
-    border-left: 2px solid var(--agent-progress-accent, #c9a227);
+    /* Soft amber working wash instead of a gutter rail; matches the preamble
+       bubble language. */
+    border-radius: var(--radius, 6px);
+    background: var(--activity-accent-soft, rgba(201, 162, 39, 0.09));
     display: flex;
     flex-direction: column;
     gap: 2px;
