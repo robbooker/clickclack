@@ -22,6 +22,65 @@
   outline: 0;
 }
 
+/* Shared dialog card (create channel, start DM, account profile). These
+   dialogs previously had no surface of their own and floated bare on the
+   scrim; they now sit on a proper keycap card. */
+.profile-modal {
+  width: min(480px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--key-edge), var(--shadow);
+  overflow: hidden;
+  animation: settings-modal-fade 0.15s ease-out;
+}
+
+.profile-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 4px;
+}
+
+.profile-modal > header p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.profile-modal > header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.profile-modal > header > button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.profile-modal > header > button:hover {
+  background: var(--panel-3);
+  color: var(--text-strong);
+}
+
 .create-modal {
   width: min(420px, 100%);
 }
@@ -178,6 +237,7 @@
   font-size: 12px;
 }
 
+/* Modal actions are keycaps: hard edge, pressed flat on click. */
 .profile-actions .ghost-action,
 .profile-actions .primary-action {
   box-sizing: border-box;
@@ -187,20 +247,25 @@
   flex: 0 0 auto;
   min-height: 44px;
   padding: 0 14px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+  box-shadow: var(--key-edge);
+  transition:
+    background 120ms ease,
+    box-shadow 80ms ease,
+    transform 80ms ease;
 }
 
 .ghost-action {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--panel);
   color: var(--text);
 }
 
 .primary-action {
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--text-strong));
   background: var(--accent);
   color: var(--accent-contrast);
 }
@@ -211,6 +276,12 @@
 
 .primary-action:hover {
   background: var(--accent-hover);
+}
+
+.profile-actions .ghost-action:active,
+.profile-actions .primary-action:active {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 /* ---------- IMAGE VIEWER ---------- */

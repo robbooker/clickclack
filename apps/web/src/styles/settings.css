@@ -98,9 +98,10 @@
 
 .settings-modal__rail-heading {
   padding: 6px 8px 4px;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.09em;
   color: var(--muted);
   font-weight: 600;
   margin: 0;
@@ -207,9 +208,10 @@
 }
 
 .settings-modal__content .settings-page__eyebrow {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.09em;
   color: var(--muted);
   margin: 0 0 6px;
   font-weight: 600;
@@ -222,6 +224,7 @@
   letter-spacing: -0.01em;
   color: var(--text-strong);
   line-height: 1.2;
+  font-family: var(--font-display);
 }
 
 .settings-modal__content .settings-page__lead {
@@ -574,6 +577,7 @@
   max-width: 320px;
 }
 
+/* Settings buttons are keycaps: hard edge, pressed flat on click. */
 .settings-modal__content .settings-button {
   display: inline-flex;
   align-items: center;
@@ -583,21 +587,29 @@
   height: 34px;
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
   font: inherit;
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: var(--key-edge);
   transition:
     background 0.1s ease,
-    border-color 0.1s ease;
+    border-color 0.1s ease,
+    box-shadow 0.08s ease,
+    transform 0.08s ease;
 }
 
 .settings-modal__content .settings-button:hover {
   background: var(--panel-3);
   border-color: var(--line-strong);
+}
+
+.settings-modal__content .settings-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 .settings-modal__content .settings-button:focus-visible {
@@ -613,7 +625,7 @@
 .settings-modal__content .settings-button--primary {
   background: var(--accent);
   color: var(--accent-contrast);
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--text-strong));
 }
 
 .settings-modal__content .settings-button--primary:hover {
@@ -960,6 +972,7 @@
   letter-spacing: -0.01em;
   color: var(--text-strong);
   line-height: 1.2;
+  font-family: var(--font-display);
 }
 
 .ws-settings .ws-page__lead {
@@ -1205,17 +1218,25 @@
   height: 34px;
   padding: 0 14px;
   background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
   color: var(--text-strong);
   font: inherit;
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: var(--key-edge);
   transition:
     background 0.12s ease,
     color 0.12s ease,
-    border-color 0.12s ease;
+    border-color 0.12s ease,
+    box-shadow 0.08s ease,
+    transform 0.08s ease;
+}
+
+.ws-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 .ws-btn:hover:not(:disabled) {
@@ -1240,7 +1261,7 @@
 
 .ws-btn--primary {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--text-strong));
   color: var(--accent-contrast);
   display: inline-flex;
   align-items: center;

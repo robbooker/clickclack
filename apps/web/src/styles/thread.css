@@ -43,10 +43,11 @@
 
 .thread > header p {
   color: var(--muted);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-weight: 600;
 }
 
 .thread > header strong {
@@ -100,11 +101,12 @@
 }
 
 .thread-divider span {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-weight: 600;
 }
 
 .reply-list {
