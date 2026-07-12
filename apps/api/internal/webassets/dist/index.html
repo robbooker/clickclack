@@ -6,19 +6,34 @@
     <meta name="clickclack-desktop-titlebar" content="1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>ClickClack</title>
+    <script>
+      // Apply the stored appearance prefs before first paint so a forced
+      // color mode or non-default board never flashes. Keys and attribute
+      // names mirror src/lib/appearance.ts, which owns them afterwards.
+      try {
+        var ccMode = localStorage.getItem("clickclack:color-mode:v1");
+        if (ccMode === "light" || ccMode === "dark") {
+          document.documentElement.setAttribute("data-color-mode", ccMode);
+        }
+        var ccBoard = localStorage.getItem("clickclack:board-theme:v1");
+        if (ccBoard === "ember" || ccBoard === "moss" || ccBoard === "iris") {
+          document.documentElement.setAttribute("data-board", ccBoard);
+        }
+      } catch (e) {}
+    </script>
     <link href="./_app/immutable/entry/start.2f8svVwH.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/BiKJNDVR.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/DXS_Y5Rz.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/DK3Fl9T5.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/BuFlayix.js" rel="modulepreload">
-		<link href="./_app/immutable/entry/app.jvGjVbDD.js" rel="modulepreload">
+		<link href="./_app/immutable/entry/app.C6g7Rfbp.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/DYl5dUZ5.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="./_app/immutable/nodes/0.TjBPEwop.js" rel="modulepreload">
-		<link href="./_app/immutable/nodes/3.Cs9DH88f.js" rel="modulepreload">
+		<link href="./_app/immutable/nodes/0.C684VyTs.js" rel="modulepreload">
+		<link href="./_app/immutable/nodes/3.B9NGdN8T.js" rel="modulepreload">
 		<link href="./_app/immutable/chunks/DXYf4c9c.js" rel="modulepreload">
 
-		<link href="./_app/immutable/assets/0.BV6j-dCy.css" rel="stylesheet">
+		<link href="./_app/immutable/assets/0.CaUMdbs_.css" rel="stylesheet">
 		<link href="./_app/immutable/assets/ProductSite.4q0lYJor.css" rel="stylesheet">
   </head>
   <body>
@@ -33,7 +48,7 @@
 
 					Promise.all([
 						import("./_app/immutable/entry/start.2f8svVwH.js"),
-						import("./_app/immutable/entry/app.jvGjVbDD.js")
+						import("./_app/immutable/entry/app.C6g7Rfbp.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
