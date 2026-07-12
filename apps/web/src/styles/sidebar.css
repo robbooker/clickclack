@@ -6,49 +6,71 @@
   align-items: center;
   gap: 8px;
   padding: 14px 0;
-  background: var(--rail);
+  /* Mounting-plate texture: a faint dot grid over the rail, like the drilled
+     plate the keycaps sit on. Dots ride on --text so both themes tune it. */
+  background:
+    radial-gradient(color-mix(in srgb, var(--text) 7%, transparent) 1px, transparent 1.5px)
+    0 0 / 14px 14px,
+    var(--rail);
   border-right: 1px solid var(--line);
   overflow-y: auto;
   position: relative;
 }
 
+/* Workspace tiles as keycaps: proud of the plate on a hard edge, raised a
+   step on hover, pressed flat on click. */
 .guild-rail .guild {
   width: 48px;
   height: 48px;
-  border-radius: 16px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--text);
   text-decoration: none;
-  border: 0;
+  border: 1px solid var(--line-strong);
   font-weight: 700;
   font-size: 14px;
   letter-spacing: -0.02em;
   position: relative;
   transition:
-    border-radius 140ms ease,
+    border-color 120ms ease,
     background 120ms ease,
-    transform 120ms ease;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    transform 120ms ease,
+    box-shadow 120ms ease;
+  box-shadow: var(--key-edge);
 }
 
 .guild-rail .guild:hover {
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  box-shadow: 0 8px 24px -10px color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  color: var(--accent);
+  box-shadow: var(--key-edge), 0 6px 16px -8px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.guild-rail .guild:active {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 .guild-rail .guild.home {
   background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  border-color: color-mix(in srgb, var(--brand-b) 55%, var(--line-strong));
   color: var(--brand-contrast);
   font-weight: 800;
+  font-family: var(--font-display);
 }
 
 .guild-rail .guild.home:hover {
-  border-radius: 12px;
+  color: var(--brand-contrast);
   transform: translateY(-1px);
+}
+
+/* Placed after (and as specific as) the home hover rule so the pressed
+   position wins while the pointer is still over the key. */
+.guild-rail .guild.home:active {
+  transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 .guild-rail .guild__image {
@@ -117,8 +139,8 @@
 }
 
 .guild-wrap.active .guild {
-  border-radius: 14px;
   background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--text-strong));
   color: var(--accent-contrast);
 }
 
@@ -242,6 +264,8 @@
   color: var(--text-strong);
   letter-spacing: -0.01em;
   font-size: 15px;
+  font-family: var(--font-display);
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -296,6 +320,8 @@
   margin-top: 4px;
 }
 
+/* Section labels read as silkscreened plate legends: mono, uppercase, wide
+   tracking. */
 .section-toggle {
   display: flex;
   align-items: center;
@@ -308,9 +334,10 @@
   background: transparent;
   color: var(--muted);
   text-transform: uppercase;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   padding: 4px;
   text-align: left;
 }
@@ -546,6 +573,8 @@
 .nav-item.active {
   background: var(--accent-soft);
   color: var(--text-strong);
+  /* Signal bar on the active row, inset so the row silhouette stays flat. */
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .nav-item.has-unread {

@@ -647,8 +647,8 @@
   transform: translate(-50%, 4px) scale(0.96);
   padding: 0.42rem 0.62rem;
   border-radius: 9px;
-  background: #33291f;
-  color: #f6f1ea;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   font-size: 0.78rem;
   font-weight: 700;
@@ -671,7 +671,7 @@
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  background: #33291f;
+  background: var(--tooltip-bg);
   transform: translate(-50%, 4px) rotate(45deg) scale(0.9);
   opacity: 0;
   pointer-events: none;

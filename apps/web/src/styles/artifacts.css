@@ -196,7 +196,7 @@
   padding: 20px;
   background: color-mix(in srgb, var(--bg) 90%, #090b10);
   color: var(--text);
-  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.65;
   tab-size: 2;
@@ -230,7 +230,7 @@
 .artifact-viewer__document h2 { margin-top: 1.75em; font-size: 21px; }
 .artifact-viewer__document h3 { margin-top: 1.5em; font-size: 17px; }
 .artifact-viewer__document pre { overflow: auto; padding: 14px; border-radius: var(--radius); background: var(--panel-2); }
-.artifact-viewer__document code { font-family: "Geist Mono Variable", ui-monospace, monospace; }
+.artifact-viewer__document code { font-family: var(--font-mono); }
 .artifact-viewer__document table { width: 100%; border-collapse: collapse; }
 .artifact-viewer__document th,
 .artifact-viewer__document td { padding: 8px 10px; border: 1px solid var(--line-strong); text-align: left; }

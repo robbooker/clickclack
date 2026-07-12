@@ -82,7 +82,7 @@
 .history-loader__avatar {
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .history-loader__body {
@@ -424,23 +424,27 @@
   padding: 48px 24px;
 }
 
+/* The empty-state mark is a giant keycap: hard edge, brand gradient top. */
 .empty-icon {
   width: 64px;
   height: 64px;
-  border-radius: 18px;
+  border-radius: 16px;
   background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  border: 1px solid color-mix(in srgb, var(--brand-b) 55%, var(--line-strong));
   color: var(--brand-contrast);
   display: grid;
   place-items: center;
   font-size: 26px;
   font-weight: 800;
-  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--brand-b) 60%, transparent);
+  box-shadow: var(--key-edge), 0 18px 40px -16px color-mix(in srgb, var(--brand-b) 60%, transparent);
 }
 
 .empty strong {
   color: var(--text-strong);
-  font-size: 18px;
+  font-size: 19px;
   letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .empty span {
@@ -470,11 +474,12 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 12px;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
 }
 
 .new-messages-divider {
@@ -534,7 +539,7 @@
 .avatar {
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   color: white;
@@ -618,9 +623,12 @@
   text-underline-offset: 2px;
 }
 
+/* Timestamps as machine metadata: mono, tabular. */
 .group-body > header time {
   color: var(--muted);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .group-body > header span {
@@ -634,12 +642,14 @@
   height: 18px;
   padding: 0 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 999px;
+  border-radius: 4px;
   color: var(--accent);
-  font-size: 10px;
-  font-weight: 800;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
   line-height: 1;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .message-row {
@@ -676,7 +686,8 @@
   position: absolute;
   left: 8px;
   top: 4px;
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
   color: var(--muted-2);
   opacity: 0;
   font-variant-numeric: tabular-nums;
@@ -974,7 +985,7 @@
 /* The step-chain head, rendered as plain text (not markdown: chains contain
    *, /, | that would break emphasis parsing). */
 .preamble-tool-full-head {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   color: color-mix(in srgb, var(--tool-accent) 45%, var(--muted));
@@ -1022,7 +1033,7 @@
   font-size: 11px;
   font-weight: 500;
   color: color-mix(in srgb, var(--tool-accent) 55%, var(--muted));
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .tool-line-detail {
@@ -1034,7 +1045,7 @@
   font-size: 11px;
   font-weight: 400;
   color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   opacity: 0.85;
 }
 

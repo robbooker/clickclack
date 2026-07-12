@@ -8,6 +8,8 @@
   padding: calc(32px + var(--safe-area-top)) calc(32px + var(--safe-area-right))
     calc(32px + var(--safe-area-bottom)) calc(32px + var(--safe-area-left));
   background:
+    radial-gradient(color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1.5px) 0 0 /
+    18px 18px,
     radial-gradient(
       700px 500px at 30% 20%,
       color-mix(in srgb, var(--brand-a) 14%, transparent),
@@ -29,7 +31,8 @@
   border-radius: var(--radius-xl);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0))
     var(--panel);
-  box-shadow: var(--shadow);
+  /* The auth card is the app's first keycap: hard bottom edge, then depth. */
+  box-shadow: var(--key-edge), var(--shadow);
   padding: 36px;
 }
 
@@ -75,6 +78,8 @@
   font-size: 28px;
   letter-spacing: -0.02em;
   color: var(--text-strong);
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
 .auth-copy p {
@@ -376,9 +381,10 @@
 .topbar-title h1 {
   margin: 0;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--text-strong);
+  font-family: var(--font-display);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -465,9 +471,10 @@
   border-radius: 5px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -482,31 +489,35 @@
   gap: 6px;
 }
 
+/* Topbar actions as keycaps: hard edge, pressed flat on click. */
 .topbar-actions button {
   width: 32px;
   height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
   background: var(--panel);
   color: var(--muted);
+  box-shadow: var(--key-edge);
   transition:
     background 120ms ease,
     color 120ms ease,
     border-color 120ms ease,
+    box-shadow 120ms ease,
     transform 80ms ease;
 }
 
 .topbar-actions button:hover,
 .topbar-actions button.active {
   background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
   color: var(--accent);
 }
 
 .topbar-actions button:active {
   transform: translateY(1px);
+  box-shadow: var(--key-edge-pressed);
 }
 
 @keyframes pulse {
