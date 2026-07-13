@@ -23,7 +23,7 @@ http {
 
   map $http_upgrade $connection_upgrade {
     default upgrade;
-    '' close;
+    '' '';
   }
 
   # These are enforced per directly connected client IP. If another proxy or
