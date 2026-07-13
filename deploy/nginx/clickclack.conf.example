@@ -1,0 +1,95 @@
+worker_processes auto;
+
+events {
+  worker_connections 16384;
+}
+
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  server_tokens off;
+
+  # Use $uri rather than $request_uri so OAuth codes, state, and desktop
+  # challenges never enter the access log.
+  log_format clickclack '$remote_addr [$time_local] '
+                        '"$request_method $uri $server_protocol" '
+                        '$status $body_bytes_sent "$http_user_agent"';
+  access_log /var/log/nginx/access.log clickclack;
+  error_log /var/log/nginx/error.log warn;
+
+  map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+  }
+
+  # These are enforced per directly connected client IP. If another proxy or
+  # CDN is in front, configure ngx_http_realip_module with only that proxy's
+  # published address ranges before enabling these limits.
+  limit_req_zone $binary_remote_addr zone=clickclack_oauth_start:64m rate=1r/s;
+  limit_req_zone $binary_remote_addr zone=clickclack_oauth_consume:64m rate=5r/s;
+
+  upstream clickclack_api {
+    server 127.0.0.1:8080;
+    keepalive 64;
+  }
+
+  server {
+    listen 80;
+    server_name chat.example.com;
+    return 308 https://chat.example.com$request_uri;
+  }
+
+  server {
+    listen 443 ssl;
+    server_name chat.example.com;
+
+    ssl_certificate /etc/nginx/tls/clickclack.crt;
+    ssl_certificate_key /etc/nginx/tls/clickclack.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    limit_req_status 429;
+    # Rejections remain visible as query-free 429 access-log entries without
+    # duplicating the full request line, including query parameters, to error.log.
+    limit_req_log_level info;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 300s;
+
+    location = /api/auth/github/start {
+      # nginx error entries include the full request line. Keep OAuth query
+      # parameters out of that sink and monitor status through access.log.
+      error_log /dev/null crit;
+      limit_req zone=clickclack_oauth_start burst=8 nodelay;
+      proxy_pass http://clickclack_api;
+    }
+
+    location = /api/auth/github/desktop/start {
+      error_log /dev/null crit;
+      limit_req zone=clickclack_oauth_start burst=8 nodelay;
+      proxy_pass http://clickclack_api;
+    }
+
+    location = /api/auth/github/desktop/consume {
+      error_log /dev/null crit;
+      limit_req zone=clickclack_oauth_consume burst=20 nodelay;
+      proxy_pass http://clickclack_api;
+    }
+
+    location = /api/auth/github/callback {
+      error_log /dev/null crit;
+      proxy_pass http://clickclack_api;
+    }
+
+    location / {
+      proxy_pass http://clickclack_api;
+    }
+  }
+}
