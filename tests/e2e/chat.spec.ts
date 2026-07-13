@@ -801,7 +801,8 @@ test("desktop shell moves sidebar and search controls into the title bar", async
   const titlebarSearch = titlebar.getByLabel("Search messages");
   await expect(titlebar).toBeVisible();
   await expect(page.getByTitle("ClickClack home")).toHaveAttribute("href", "/app");
-  await expect(page.locator(".topbar .search")).toHaveCount(0);
+  await expect(page.locator(".timeline .topbar")).toHaveCount(0);
+  await expect(titlebar.getByRole("heading", { name: "#general" })).toBeVisible();
   await expect(page.locator(".sidebar .sidebar-collapse")).toHaveCount(0);
   expect(
     await titlebarSearch.evaluate((input) => {
@@ -844,6 +845,9 @@ test("desktop shell moves sidebar and search controls into the title bar", async
   await page.getByRole("button", { name: "Close profile" }).click();
 
   await page.setViewportSize({ width: 760, height: 700 });
+  // The conversation title has no in-card fallback on desktop, so it must
+  // survive narrow windows (truncated, not hidden).
+  await expect(titlebar.getByRole("heading", { name: "#general" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Toggle navigation" })).toHaveCount(0);
   const titlebarNavigation = titlebar.getByRole("button", { name: "Open navigation" });
   await expect(titlebarNavigation).toBeVisible();
@@ -851,6 +855,34 @@ test("desktop shell moves sidebar and search controls into the title bar", async
   await expect(shell).toHaveClass(/nav-open/);
   await titlebar.getByRole("button", { name: "Close navigation" }).click();
   await expect(shell).not.toHaveClass(/nav-open/);
+
+  // Long workspace and channel labels must truncate before the centered
+  // search field instead of running underneath it.
+  await page.setViewportSize({ width: 1280, height: 860 });
+  const overlapSuffix = randomUUID().replaceAll("-", "").slice(0, 12);
+  const overlapWorkspaceResponse = await page.request.post("/api/workspaces", {
+    data: { name: `Titlebar overlap probe workspace ${overlapSuffix}` },
+  });
+  expect(overlapWorkspaceResponse.ok()).toBe(true);
+  const { workspace: overlapWorkspace } = (await overlapWorkspaceResponse.json()) as {
+    workspace: { id: string; route_id: string };
+  };
+  const longChannel = `titlebar-overlap-${overlapSuffix}-with-a-deliberately-long-name`;
+  const longChannelResponse = await page.request.post(
+    `/api/workspaces/${overlapWorkspace.id}/channels`,
+    { data: { name: longChannel, kind: "public" } },
+  );
+  expect(longChannelResponse.ok()).toBe(true);
+  await page.goto(`/app/${overlapWorkspace.route_id}`);
+  await page.locator("#sidebar-channels-list").getByText(longChannel).click();
+  await expect(titlebar.getByRole("heading", { name: `#${longChannel}` })).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const leading = document.querySelector(".desktop-titlebar-leading")?.getBoundingClientRect();
+      const search = document.querySelector(".desktop-titlebar-search")?.getBoundingClientRect();
+      return leading && search ? search.left - leading.right : -Infinity;
+    }),
+  ).toBeGreaterThanOrEqual(0);
 });
 
 test("desktop title bar preserves Windows caption-control space", async ({ page }) => {

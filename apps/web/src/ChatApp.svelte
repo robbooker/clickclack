@@ -2777,6 +2777,11 @@
 >
   {#if integratedTitleBar && desktop}
     <DesktopTitlebar
+      channelTitle={selectedDirect
+        ? `@${dmTitle(selectedDirect, user?.id)}`
+        : selectedChannel
+          ? `#${selectedChannel.name}`
+          : undefined}
       {connected}
       platform={desktop.platform}
       {searchQuery}
@@ -2855,21 +2860,26 @@
   />
 
   <main class="timeline" inert={mobileNavOpen}>
-    <Topbar
-      {selectedDirect}
-      {selectedChannel}
-      workspaceName={selectedWorkspace?.name}
-      currentUserID={user?.id}
-      {searchQuery}
-      showSearch={!integratedTitleBar}
-      {sidePanelOpen}
-      threadOpen={selectedThread !== null}
-      onSearchQuery={(value) => (searchQuery = value)}
-      onSearch={() => void searchMessages()}
-      onResetSearch={resetSearch}
-      onToggleThread={toggleSidePanelFromTopbar}
-      onPinnedItems={() => (status = "no pinned items")}
-    />
+    <!-- The integrated title bar owns the conversation title, so desktop drops
+         this header row entirely. Its thread toggle only closes an open pane
+         (the pane has its own close button) and pinned items is a stub, so
+         neither moves up. -->
+    {#if !integratedTitleBar}
+      <Topbar
+        {selectedDirect}
+        {selectedChannel}
+        workspaceName={selectedWorkspace?.name}
+        currentUserID={user?.id}
+        {searchQuery}
+        {sidePanelOpen}
+        threadOpen={selectedThread !== null}
+        onSearchQuery={(value) => (searchQuery = value)}
+        onSearch={() => void searchMessages()}
+        onResetSearch={resetSearch}
+        onToggleThread={toggleSidePanelFromTopbar}
+        onPinnedItems={() => (status = "no pinned items")}
+      />
+    {/if}
 
     <SearchResults
       results={searchResults}

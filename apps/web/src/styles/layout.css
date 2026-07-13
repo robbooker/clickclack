@@ -282,6 +282,13 @@
   align-items: center;
   gap: 9px;
   min-width: 0;
+  /* Stop short of the centered search: this group starts 78px in (darwin
+     traffic-light inset) while the 50% here resolves against the safe-area
+     content box, and the search (width clamp(220px, 100vw - 700px, 520px))
+     reaches window-center - 260px at its widest. 50% - 300px leaves ≥8px of
+     clearance in every regime; labels truncate instead of running under it. */
+  max-width: max(150px, calc(50% - 300px));
+  overflow: hidden;
   -webkit-app-region: no-drag;
 }
 
@@ -306,6 +313,8 @@
 }
 
 .desktop-titlebar-workspace {
+  flex: 0 1 auto;
+  min-width: 36px;
   max-width: 190px;
   overflow: hidden;
   padding: 5px 9px;
@@ -319,10 +328,36 @@
   white-space: nowrap;
 }
 
+.desktop-titlebar-channel {
+  flex: 0 1 auto;
+  margin: 0;
+  min-width: 30px;
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-titlebar-channel.with-glyph::first-letter {
+  color: var(--accent);
+  margin-right: 1px;
+}
+
+.desktop-titlebar-divider {
+  flex: 0 0 auto;
+}
+
 .desktop-titlebar-status {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
@@ -346,8 +381,7 @@
 .desktop-titlebar-search.search {
   position: absolute;
   left: 50%;
-  width: min(520px, calc(100vw - 430px));
-  min-width: 280px;
+  width: clamp(220px, calc(100vw - 700px), 520px);
   height: 32px;
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--panel-2) 84%, transparent);
@@ -360,12 +394,6 @@
   border-color: color-mix(in srgb, var(--accent) 66%, var(--line));
   background: var(--panel-2);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
-}
-
-@media (max-width: 940px) {
-  .desktop-titlebar-search.search {
-    width: min(430px, calc(100vw - 300px));
-  }
 }
 
 /* ---------- TIMELINE ---------- */

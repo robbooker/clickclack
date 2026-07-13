@@ -32,10 +32,11 @@ adds operating-system behavior around the existing web app and API.
 - **Integrated window chrome.** ClickClack extends into the native title bar:
   macOS traffic lights and Windows/Linux caption controls share one compact row
   with the sidebar toggle, the workspace name (click it for workspace
-  settings), and centered message search, all on one continuous chrome surface
-  with the rail and sidebar — the conversation floats on it as a rounded card.
-  Desktop settings live in the app menu (Cmd/Ctrl+,) and the tray menu, and a
-  "Connecting…" note appears beside the workspace name only while the realtime
+  settings), the current channel or DM title, and centered message search, all
+  on one continuous chrome surface with the rail and sidebar — the conversation
+  floats on it as a rounded card with no header row of its own. Desktop
+  settings live in the app menu (Cmd/Ctrl+,) and the tray menu, and a
+  "Connecting…" note appears beside the channel title only while the realtime
   link is down. The browser app keeps these controls in the normal app header. The
   desktop app checks for this renderer capability before hiding the standard
   frame, so older self-hosted servers retain usable native window chrome. While
