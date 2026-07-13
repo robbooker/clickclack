@@ -49,6 +49,10 @@ http {
 
     add_header Strict-Transport-Security "max-age=31536000" always;
 
+    # Match ClickClack's total multipart request limit instead of nginx's
+    # 1 MiB default. The application still performs the authoritative check.
+    client_max_body_size 64m;
+
     limit_req_status 429;
     # Rejections remain visible as query-free 429 access-log entries without
     # duplicating the full request line, including query parameters, to error.log.
