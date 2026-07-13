@@ -148,7 +148,10 @@ Desktop transactions expire after ten minutes; completed grants expire after
 five. Grants are persisted so the callback and redemption can hit different
 replicas or a restarted process. The verifier binding prevents another local
 application from redeeming a custom-protocol callback it intercepts. Grant
-codes are stored only as hashes and are single-use.
+codes are stored only as hashes and are single-use. Protocol-1 callbacks carry
+a 32-character lowercase hexadecimal grant; protocol-2 callbacks carry a
+43-character unpadded base64url grant. The consume endpoint accepts exactly
+those two formats during the compatibility window.
 
 Protocol-1 desktop clients remain compatible with deployments using the default
 cookie names and receive the legacy `clickclack://auth/callback` handoff.
@@ -164,7 +167,10 @@ GitHub with `<public-url>/api/auth/github/callback`.
 OAuth starts are public endpoints. The database enforces global and per-browser
 pending-row bounds, but internet-facing deployments must also rate-limit
 `/api/auth/github/start` and `/api/auth/github/desktop/start` at the trusted
-edge. Do not derive security limits from untrusted forwarded IP headers.
+edge, and separately rate-limit `/api/auth/github/desktop/consume`. Do not
+derive security limits from untrusted forwarded IP headers. The production
+nginx baseline, CDN rule shapes, staged rollout, capacity math, and logging
+requirements are in [deployment.md](../deployment.md#github-oauth).
 
 When metrics are enabled, `clickclack_github_oauth_events_total` exposes only a
 fixed event category, including starts, state rejection, provider failure,
