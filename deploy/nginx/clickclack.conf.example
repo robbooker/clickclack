@@ -1,3 +1,7 @@
+# Optional self-hosted Nginx example.
+# This file is not ClickClack's hosted production configuration and does not
+# describe or configure the hosted Cloudflare edge.
+
 worker_processes auto;
 
 events {
