@@ -1611,7 +1611,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description OAuth state generation or persistence failed */
+      /** @description OAuth browser binding, state, PKCE generation, or persistence failed */
       500: {
         headers: {
           [name: string]: unknown;
@@ -1654,7 +1654,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Invalid desktop code challenge or unsupported protocol */
+      /** @description Invalid desktop code challenge, unsupported protocol, or ambiguous OAuth browser-binding cookies */
       400: {
         headers: {
           [name: string]: unknown;
@@ -1675,7 +1675,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description OAuth state generation or persistence failed */
+      /** @description OAuth browser binding, state, PKCE generation, or persistence failed */
       500: {
         headers: {
           [name: string]: unknown;
@@ -1718,7 +1718,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Invalid, expired, or previously consumed desktop grant */
+      /** @description Malformed request or invalid, expired, or previously consumed desktop grant */
       400: {
         headers: {
           [name: string]: unknown;
@@ -1788,7 +1788,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Identity, workspace, session, or desktop grant persistence failed */
+      /** @description Identity, workspace, session, or desktop grant generation or persistence failed */
       500: {
         headers: {
           [name: string]: unknown;
