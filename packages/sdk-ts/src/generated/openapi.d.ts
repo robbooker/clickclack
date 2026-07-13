@@ -1604,7 +1604,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Trusted edge rate limit exceeded */
+      /** @description Deployment edge rate limit exceeded, when configured */
       429: {
         headers: {
           [name: string]: unknown;
@@ -1668,7 +1668,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Trusted edge rate limit exceeded */
+      /** @description Deployment edge rate limit exceeded, when configured */
       429: {
         headers: {
           [name: string]: unknown;
@@ -1739,7 +1739,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Trusted edge rate limit exceeded */
+      /** @description Deployment edge rate limit exceeded, when configured */
       429: {
         headers: {
           [name: string]: unknown;
