@@ -2716,18 +2716,15 @@
   class:sidebar-collapsed={sidebarCollapsed}
   class:thread-open={sidePanelOpen}
   class:artifact-open={selectedArtifact !== null}
+  data-connected={connected}
 >
   {#if integratedTitleBar && desktop}
     <DesktopTitlebar
-      {connected}
       platform={desktop.platform}
       {searchQuery}
       {sidebarCollapsed}
       {mobileNavOpen}
       mobileNavigation={mobileNavViewport}
-      {status}
-      workspaceName={selectedWorkspace?.name}
-      onOpenSettings={() => desktop.openSettings()}
       onResetSearch={resetSearch}
       onSearch={() => void searchMessages()}
       onSearchQuery={(value) => (searchQuery = value)}
@@ -2772,7 +2769,6 @@
     workspaceID={selectedWorkspaceID}
     workspaceName={selectedWorkspace?.name}
     workspaceIconURL={selectedWorkspace?.icon_url}
-    {status}
     {connected}
     {sidebarCollapsed}
     showCollapse={!integratedTitleBar}

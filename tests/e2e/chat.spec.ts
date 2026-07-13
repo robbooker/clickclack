@@ -392,13 +392,14 @@ test("channels can be reordered accessibly and persist locally", async ({ page, 
 
 test("app subdomain root opens the chat app", async ({ page }) => {
   await page.goto("http://app.localhost:18082/");
-  await expect(page.getByText("Connected")).toBeVisible();
+  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 });
 
 test("shows realtime connection state in the shell", async ({ page }) => {
   await page.goto("/app");
-  await expect(page.getByText("Connected")).toBeVisible();
+  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
+  await expect(page.locator(".workspace-name .presence")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /Account settings for Local Captain/ }),
   ).toContainText("Active");
@@ -597,7 +598,7 @@ test("browser notifications require explicit profile opt-in", async ({ page }) =
   });
 
   await page.goto("/app");
-  await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
+  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
   await page
     .getByRole("button", { name: /Account settings for Local Captain/ })
     .click({ button: "right" });
@@ -692,7 +693,7 @@ test("mobile navigation behaves like a drawer", async ({ page }) => {
 test("desktop sidebar collapse preference still toggles", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 844 });
   await page.goto("/app");
-  await expect(page.getByText("Connected")).toBeVisible();
+  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
 
   const shell = page.locator(".shell");
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
@@ -795,7 +796,7 @@ test("desktop title bar preserves Windows caption-control space", async ({ page 
 
   const titlebar = page.locator(".desktop-titlebar");
   await expect(titlebar).toBeVisible();
-  await expect(titlebar.getByRole("button", { name: "Open settings" })).not.toBeVisible();
+  await expect(titlebar.getByRole("button", { name: "Open settings" })).toHaveCount(0);
   expect(
     await titlebar.getByLabel("Search messages").evaluate((input) => {
       const box = input.closest("form")?.getBoundingClientRect();
@@ -1386,7 +1387,7 @@ test("browser notifications announce incoming messages outside the active conver
 
   await page.goto("/app");
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
-  await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
+  await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
   const remoteResponse = await page.request.post(`/api/channels/${channel.channel.id}/messages`, {
     headers: { "X-ClickClack-User": senderID },
     data: { body: "ping from another channel" },

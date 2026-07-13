@@ -1,14 +1,10 @@
 <script lang="ts">
   type Props = {
-    connected: boolean;
     mobileNavigation: boolean;
     mobileNavOpen: boolean;
     platform: string;
     searchQuery: string;
     sidebarCollapsed: boolean;
-    status: string;
-    workspaceName?: string;
-    onOpenSettings: () => void;
     onResetSearch: () => void;
     onSearch: () => void;
     onSearchQuery: (value: string) => void;
@@ -16,15 +12,11 @@
   };
 
   let {
-    connected,
     mobileNavigation,
     mobileNavOpen,
     platform,
     searchQuery,
     sidebarCollapsed,
-    status,
-    workspaceName,
-    onOpenSettings,
     onResetSearch,
     onSearch,
     onSearchQuery,
@@ -73,9 +65,6 @@
           />
         </svg>
       </button>
-      <span class="desktop-titlebar-workspace" title={workspaceName || "ClickClack"}>
-        {workspaceName || "ClickClack"}
-      </span>
     </div>
 
     <form
@@ -100,24 +89,5 @@
       {/if}
       <button type="submit" class="search-submit">Search</button>
     </form>
-
-    <div class="desktop-titlebar-actions">
-      <span class="desktop-titlebar-presence" title={connected ? "Connected" : status}>
-        <i class:online={connected} aria-hidden="true"></i>
-        <span>{connected ? "Connected" : status}</span>
-      </span>
-      <button type="button" aria-label="Open settings" title="Open settings" onclick={onOpenSettings}>
-        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-          <path
-            d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8 3.5-.1-1.1 2-1.5-2-3.4-2.4 1a8.4 8.4 0 0 0-1.9-1.1L15.3 3h-4l-.4 2.9A8.4 8.4 0 0 0 9 7L6.6 6 4.6 9.4l2 1.5a8.4 8.4 0 0 0 0 2.2l-2 1.5 2 3.4L9 17a8.4 8.4 0 0 0 1.9 1.1l.4 2.9h4l.4-2.9a8.4 8.4 0 0 0 1.9-1.1l2.4 1 2-3.4-2-1.5.1-1.1Z"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-          />
-        </svg>
-      </button>
-    </div>
   </div>
 </header>

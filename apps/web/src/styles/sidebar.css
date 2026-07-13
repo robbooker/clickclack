@@ -212,23 +212,34 @@
   flex-shrink: 0;
 }
 
-.workspace-settings {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
+.workspace-menu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  margin-left: -8px;
+  padding: 5px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--muted);
+  color: inherit;
+  text-align: left;
   cursor: pointer;
-  transition:
-    color 120ms ease,
-    background 120ms ease;
+  transition: background 120ms ease;
 }
 
-.workspace-settings:hover {
+.workspace-menu:hover {
   background: var(--panel-2);
+}
+
+.workspace-menu-caret {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: color 120ms ease;
+}
+
+.workspace-menu:hover .workspace-menu-caret {
   color: var(--text-strong);
 }
 
@@ -261,11 +272,18 @@
 }
 
 .workspace-name strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   color: var(--text-strong);
   letter-spacing: -0.01em;
   font-size: 15px;
   font-family: var(--font-display);
   font-weight: 650;
+}
+
+.workspace-name-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -285,15 +303,23 @@
   height: 7px;
   border-radius: 50%;
   background: var(--muted-2);
+  animation: presence-pulse 1.6s ease-in-out infinite;
 }
 
-.workspace-name .presence.online {
-  color: var(--success);
+@keyframes presence-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
-.workspace-name .presence.online::before {
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
+@media (prefers-reduced-motion: reduce) {
+  .workspace-name .presence::before {
+    animation: none;
+  }
 }
 
 .sidebar-scroll {
