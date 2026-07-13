@@ -1,5 +1,6 @@
 <script lang="ts">
   type Props = {
+    channelTitle?: string;
     connected: boolean;
     mobileNavigation: boolean;
     mobileNavOpen: boolean;
@@ -15,6 +16,7 @@
   };
 
   let {
+    channelTitle,
     connected,
     mobileNavigation,
     mobileNavOpen,
@@ -80,8 +82,9 @@
       >
         {workspaceName || "ClickClack"}
       </button>
-      {#if !connected}
-        <span class="desktop-titlebar-status" role="status">Connecting…</span>
+      {#if channelTitle}
+        <span class="topbar-divider desktop-titlebar-divider" aria-hidden="true"></span>
+        <h1 class="desktop-titlebar-channel with-glyph" title={channelTitle}>{channelTitle}</h1>
       {/if}
     </div>
 
@@ -107,5 +110,9 @@
       {/if}
       <button type="submit" class="search-submit">Search</button>
     </form>
+
+    {#if !connected}
+      <span class="desktop-titlebar-status" role="status">Connecting…</span>
+    {/if}
   </div>
 </header>
