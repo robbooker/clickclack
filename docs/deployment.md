@@ -244,14 +244,11 @@ domains for stronger isolation.
 
 OAuth state and desktop grants are stored in the configured database, so
 callbacks can land on a different replica and survive process restarts.
-If a deployment configures edge rate limiting, cover these exact method and
-path pairs:
+If a deployment configures edge rate limiting, cover:
 
-```text
-GET  /api/auth/github/start
-GET  /api/auth/github/desktop/start
-POST /api/auth/github/desktop/consume
-```
+- `GET /api/auth/github/start`
+- `GET /api/auth/github/desktop/start`
+- `POST /api/auth/github/desktop/consume`
 
 Use a client identity that is trustworthy for the complete deployment path and
 leave enough headroom for legitimate users behind shared networks. The Go
@@ -259,49 +256,21 @@ server does not implement IP-based OAuth limiting because it cannot assume that
 the directly connected address or a forwarded header identifies the original
 client in every deployment.
 
-The database also rejects new work at 8,192 pending OAuth transactions, eight
-pending starts per browser binding, and 4,096 pending desktop grants. With the
-current ten-minute transaction TTL and five-minute grant TTL, a distributed
-attacker that never completes a flow can exhaust either global pool at about
-13.6 creations per second. That figure is a capacity alarm threshold, not a
-recommended global edge limit: successful callbacks and redemptions remove
-rows early. Deployments expecting more than 8,192 simultaneous starts or 4,096
-unredeemed desktop callbacks must raise and load-test those database limits
-before launch. They are compiled constants today and must stay identical in
-the SQLite and Postgres stores.
-
-Monitor live pool occupancy directly until a bounded metric is available:
-
-```sql
--- Postgres
-SELECT
-  (SELECT count(*) FROM oauth_transactions
-   WHERE expires_at_unix > (extract(epoch FROM now()))::bigint) AS oauth_transactions,
-  (SELECT count(*) FROM desktop_oauth_grants
-   WHERE expires_at_unix > (extract(epoch FROM now()))::bigint) AS desktop_oauth_grants;
-
--- SQLite
-SELECT
-  (SELECT count(*) FROM oauth_transactions
-   WHERE expires_at_unix > unixepoch()) AS oauth_transactions,
-  (SELECT count(*) FROM desktop_oauth_grants
-   WHERE expires_at_unix > unixepoch()) AS desktop_oauth_grants;
-```
+The database rejects new work at 8,192 pending OAuth transactions, eight
+pending starts per browser binding, and 4,096 pending desktop grants. These are
+capacity safeguards, not recommended edge rate limits. Monitor pending capacity
+and do not raise the limits without load testing.
 
 When edge limiting is configured, alert on sustained `429` responses. Always
 alert on sustained `503` or
 `clickclack_github_oauth_events_total{event="capacity_rejected"}` activity, and
-on pending-row utilization before it reaches the hard limit.
+on pending capacity before it reaches the hard limit.
 
-Configure every proxy and edge log sink to omit query strings on all GitHub
-OAuth routes, including `/api/auth/github/callback`: callbacks contain
-short-lived authorization codes, while desktop starts contain verifier
-challenges. The optional Nginx example suppresses per-location error logging
-for these routes because Nginx error entries can include the full request line;
-it relies on query-free status access logs plus ClickClack's
-correlation-aware server logs. Never log `Authorization`, `Cookie`, or
-`Set-Cookie` headers. ClickClack's own request logger records route patterns
-without query strings.
+Configure proxy and edge logs to omit query strings on every GitHub OAuth
+route, including `/api/auth/github/callback`. Query strings can contain
+short-lived authorization codes or desktop verifier challenges. Never log
+`Authorization`, `Cookie`, or `Set-Cookie` headers. ClickClack's request logger
+records route patterns without query strings.
 
 ## Migrations
 
