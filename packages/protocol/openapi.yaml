@@ -100,8 +100,16 @@ paths:
       responses:
         "302":
           description: Redirect to GitHub OAuth authorization
+        "400":
+          description: Ambiguous OAuth browser-binding cookies
+        "429":
+          description: Trusted edge rate limit exceeded
+        "500":
+          description: OAuth state generation or persistence failed
         "501":
           description: GitHub OAuth not configured
+        "503":
+          description: OAuth transaction capacity exhausted or canonical callback origin unavailable
   /api/auth/github/desktop/start:
     get:
       operationId: startDesktopGitHubOAuth
@@ -128,8 +136,14 @@ paths:
           description: Invalid desktop code challenge or unsupported protocol
         "426":
           description: Desktop app upgrade required before a namespaced server can begin authentication
+        "429":
+          description: Trusted edge rate limit exceeded
+        "500":
+          description: OAuth state generation or persistence failed
         "501":
           description: GitHub OAuth not configured
+        "503":
+          description: OAuth transaction capacity exhausted or canonical callback origin unavailable
   /api/auth/github/desktop/consume:
     post:
       operationId: consumeDesktopGitHubOAuth
@@ -146,6 +160,12 @@ paths:
           description: Invalid, expired, or previously consumed desktop grant
         "403":
           description: Cross-site redemption rejected
+        "415":
+          description: Request content type is not application/json
+        "429":
+          description: Trusted edge rate limit exceeded
+        "500":
+          description: Desktop grant consumption or session persistence failed
   /api/auth/github/callback:
     get:
       operationId: finishGitHubOAuth
@@ -160,11 +180,17 @@ paths:
             type: string
       responses:
         "302":
-          description: Session created and redirected to the web app or desktop callback
+          description: Browser session created and redirected to the web app, or one-time desktop grant created and redirected to the desktop callback
         "400":
           description: Invalid OAuth callback
         "403":
           description: GitHub account is not allowed
+        "500":
+          description: Identity, workspace, session, or desktop grant persistence failed
+        "502":
+          description: GitHub provider request failed
+        "503":
+          description: Desktop grant capacity exhausted or canonical callback origin unavailable
   /api/me:
     get:
       operationId: getMe

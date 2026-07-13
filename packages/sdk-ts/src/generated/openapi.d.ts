@@ -1596,8 +1596,36 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Ambiguous OAuth browser-binding cookies */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Trusted edge rate limit exceeded */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description OAuth state generation or persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description GitHub OAuth not configured */
       501: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description OAuth transaction capacity exhausted or canonical callback origin unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1639,8 +1667,29 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Trusted edge rate limit exceeded */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description OAuth state generation or persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description GitHub OAuth not configured */
       501: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description OAuth transaction capacity exhausted or canonical callback origin unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1682,6 +1731,27 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Request content type is not application/json */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Trusted edge rate limit exceeded */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Desktop grant consumption or session persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   finishGitHubOAuth: {
@@ -1696,7 +1766,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Session created and redirected to the web app or desktop callback */
+      /** @description Browser session created and redirected to the web app, or one-time desktop grant created and redirected to the desktop callback */
       302: {
         headers: {
           [name: string]: unknown;
@@ -1712,6 +1782,27 @@ export interface operations {
       };
       /** @description GitHub account is not allowed */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Identity, workspace, session, or desktop grant persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description GitHub provider request failed */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Desktop grant capacity exhausted or canonical callback origin unavailable */
+      503: {
         headers: {
           [name: string]: unknown;
         };
