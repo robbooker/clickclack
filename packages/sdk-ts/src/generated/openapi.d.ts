@@ -1732,6 +1732,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description JSON request body exceeds the application limit */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Request content type is not application/json */
       415: {
         headers: {
