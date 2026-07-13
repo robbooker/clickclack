@@ -946,6 +946,7 @@ export interface components {
       token: string;
     };
     ConsumeDesktopGitHubOAuthRequest: {
+      /** @description Opaque one-time grant from a legacy protocol-1 or current protocol-2 desktop callback */
       code: string;
       code_verifier: string;
     };
