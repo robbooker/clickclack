@@ -154,27 +154,51 @@ R2 stores upload bytes; Postgres stores upload metadata and message attachment
 links. Requests still go through `/api/uploads/{id}` so workspace/member
 authorization stays server-side.
 
-## Reverse proxy
+## Hosted deployment
 
-Required for TLS and request size limits. The WebSocket endpoint enforces the
-request host by default and also allows `CLICKCLACK_PUBLIC_URL` as an origin
-when configured.
+The official hosted ClickClack deployment is operated separately from the
+self-hosting examples in this document. Hosted edge configuration is outside
+this repository change; the OAuth and OpenAPI changes described here do not
+modify or prove it. Hosted edge controls, rollout, and verification must be
+handled in the infrastructure that owns hosted traffic.
+
+An OpenAPI `429` response documents a response that a deployment edge may
+return when configured. It is not evidence that the hosted deployment currently
+enforces an edge rate limit.
+
+## Self-hosting reverse proxy
+
+An internet-facing self-hosted deployment needs a trusted reverse proxy or
+equivalent edge for TLS and request-size enforcement. The WebSocket endpoint
+enforces the request host by default and also allows `CLICKCLACK_PUBLIC_URL` as
+an origin when configured.
 
 Terminate TLS only at infrastructure you trust, redirect HTTP to HTTPS, and
 send HSTS from the public HTTPS origin after confirming every subdomain covered
-by the policy is HTTPS-ready. Rate-limit the public GitHub OAuth start endpoints
-at this edge. ClickClack intentionally does not trust arbitrary
-`X-Forwarded-For` values for security decisions.
+by the policy is HTTPS-ready. ClickClack intentionally does not trust arbitrary
+`X-Forwarded-For` values for security decisions. Do not add a naive
+application-level IP limiter or derive a security limit from forwarded headers
+without a proven trusted-client identity contract for every proxy path.
 
-The checked example at
+### Optional self-hosted Nginx example
+
 [`deploy/nginx/clickclack.conf.example`](../deploy/nginx/clickclack.conf.example)
-includes TLS, WebSocket proxying, query-free access logs, trusted forwarding
-headers, and enforced OAuth rate limits. Replace its hostname and certificate
-paths, confirm the upstream address, run `nginx -t`, and reload only after the
-syntax check succeeds. If a CDN or load balancer connects to nginx, configure
-nginx's real-IP module with only that provider's published address ranges;
-never accept an arbitrary client-supplied forwarding header as the rate-limit
-key.
+is an optional starting point for a directly operated, self-hosted Nginx
+deployment. It is not ClickClack's hosted production configuration and does not
+describe or configure the hosted edge.
+
+The example includes TLS, WebSocket proxying, a 64 MiB request limit,
+query-free access logs, explicit forwarding headers, and OAuth rate limits.
+Replace its hostname and certificate paths, confirm the upstream address, run
+`nginx -t`, and reload only after the syntax check succeeds. Its OAuth start
+bucket allows one request per second with a burst of eight, while desktop
+redemption allows five requests per second with a burst of twenty. These are
+self-hosting starting values, not universal capacity targets.
+
+The limits use the directly connected client IP. If another proxy sits in front
+of Nginx, configure `ngx_http_realip_module` with only that proxy's published
+address ranges before relying on the limits. Never accept an arbitrary
+client-supplied forwarding header as the rate-limit key.
 
 ## GitHub OAuth
 
@@ -220,7 +244,8 @@ domains for stronger isolation.
 
 OAuth state and desktop grants are stored in the configured database, so
 callbacks can land on a different replica and survive process restarts.
-Internet-facing proxies must rate-limit these exact method and path pairs:
+If a deployment configures edge rate limiting, cover these exact method and
+path pairs:
 
 ```text
 GET  /api/auth/github/start
@@ -228,51 +253,11 @@ GET  /api/auth/github/desktop/start
 POST /api/auth/github/desktop/consume
 ```
 
-The nginx example combines both start routes in one per-client bucket at one
-request per second with a burst of eight, and gives desktop redemption a
-separate five-request-per-second bucket with a burst of twenty. These are
-enforced starting values, not universal capacity targets. They allow one
-browser to use ClickClack's full eight-start concurrency while limiting a
-single source that repeatedly abandons flows.
-
-For a CDN or WAF, create separate rules:
-
-```text
-Start rule:
-  expression:
-    http.request.method eq "GET" and
-    http.request.uri.path in {
-      "/api/auth/github/start"
-      "/api/auth/github/desktop/start"
-    }
-  count by: client identity and hostname
-  initial rate: 60 requests per minute
-  action: log, then managed challenge or block
-
-Consume rule:
-  expression:
-    http.request.method eq "POST" and
-    http.request.uri.path eq "/api/auth/github/desktop/consume"
-  count by: client identity and hostname
-  initial rate: 300 requests per minute
-  action: log, then block
-```
-
-Use the strongest stable client characteristic your provider supports. IP plus
-JA4 is preferable to IP alone when available; shared NATs need enough headroom
-for legitimate users. Do not put an interactive challenge on the desktop
-consume POST. First evaluate the rules against ordinary and known-abusive
-traffic in log-only mode, then enforce and continue tuning from measured
-percentiles. Cloudflare documents this rollout in its
-[rate-limit analysis guide](https://developers.cloudflare.com/waf/rate-limiting-rules/find-rate-limit/).
-
-CDN limits are another layer, not the only layer. Cloudflare counters are
-maintained per data center and can fail open during infrastructure overload, so
-keep the nginx limits or an equivalent trusted-origin limit in place. See
-Cloudflare's
-[rate-limit troubleshooting notes](https://developers.cloudflare.com/waf/rate-limiting-rules/troubleshooting/)
-and nginx's
-[`limit_req` documentation](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html).
+Use a client identity that is trustworthy for the complete deployment path and
+leave enough headroom for legitimate users behind shared networks. The Go
+server does not implement IP-based OAuth limiting because it cannot assume that
+the directly connected address or a forwarded header identifies the original
+client in every deployment.
 
 The database also rejects new work at 8,192 pending OAuth transactions, eight
 pending starts per browser binding, and 4,096 pending desktop grants. With the
@@ -303,17 +288,20 @@ SELECT
    WHERE expires_at_unix > unixepoch()) AS desktop_oauth_grants;
 ```
 
-Alert on sustained `429`, `503`, or
+When edge limiting is configured, alert on sustained `429` responses. Always
+alert on sustained `503` or
 `clickclack_github_oauth_events_total{event="capacity_rejected"}` activity, and
-on pending-row utilization before it reaches the hard limit. Configure every
-proxy and CDN log sink to omit query strings on all GitHub OAuth routes,
-including `/api/auth/github/callback`: callbacks contain short-lived
-authorization codes, while desktop starts contain verifier challenges. nginx
-error entries include the full request line, so the checked example suppresses
-per-location nginx error logging for these routes and relies on query-free
-status access logs plus ClickClack's correlation-aware server logs. Never log
-`Authorization`, `Cookie`, or `Set-Cookie` headers. ClickClack's own request
-logger records route patterns without query strings.
+on pending-row utilization before it reaches the hard limit.
+
+Configure every proxy and edge log sink to omit query strings on all GitHub
+OAuth routes, including `/api/auth/github/callback`: callbacks contain
+short-lived authorization codes, while desktop starts contain verifier
+challenges. The optional Nginx example suppresses per-location error logging
+for these routes because Nginx error entries can include the full request line;
+it relies on query-free status access logs plus ClickClack's
+correlation-aware server logs. Never log `Authorization`, `Cookie`, or
+`Set-Cookie` headers. ClickClack's own request logger records route patterns
+without query strings.
 
 ## Migrations
 
