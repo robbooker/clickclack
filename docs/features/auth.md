@@ -165,12 +165,14 @@ Request-host derivation exists only for explicit loopback development. Configure
 GitHub with `<public-url>/api/auth/github/callback`.
 
 OAuth starts are public endpoints. The database enforces global and per-browser
-pending-row bounds, but internet-facing deployments must also rate-limit
-`/api/auth/github/start` and `/api/auth/github/desktop/start` at the trusted
-edge, and separately rate-limit `/api/auth/github/desktop/consume`. Do not
-derive security limits from untrusted forwarded IP headers. The production
-nginx baseline, CDN rule shapes, staged rollout, capacity math, and logging
-requirements are in [deployment.md](../deployment.md#github-oauth).
+pending-row bounds. A deployment may also rate-limit
+`/api/auth/github/start`, `/api/auth/github/desktop/start`, and
+`/api/auth/github/desktop/consume` at an edge that has a trustworthy client
+identity. Do not derive security limits from untrusted forwarded IP headers or
+add a naive application-level IP limiter. See the deployment documentation for
+[hosted edge ownership](../deployment.md#hosted-deployment) and the
+[optional self-hosted Nginx example](../deployment.md#optional-self-hosted-nginx-example),
+capacity limits, monitoring, and sensitive logging requirements.
 
 When metrics are enabled, `clickclack_github_oauth_events_total` exposes only a
 fixed event category, including starts, state rejection, provider failure,
