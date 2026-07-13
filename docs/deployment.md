@@ -291,9 +291,9 @@ Monitor live pool occupancy directly until a bounded metric is available:
 -- Postgres
 SELECT
   (SELECT count(*) FROM oauth_transactions
-   WHERE expires_at_unix > extract(epoch FROM now())) AS oauth_transactions,
+   WHERE expires_at_unix > (extract(epoch FROM now()))::bigint) AS oauth_transactions,
   (SELECT count(*) FROM desktop_oauth_grants
-   WHERE expires_at_unix > extract(epoch FROM now())) AS desktop_oauth_grants;
+   WHERE expires_at_unix > (extract(epoch FROM now()))::bigint) AS desktop_oauth_grants;
 
 -- SQLite
 SELECT
