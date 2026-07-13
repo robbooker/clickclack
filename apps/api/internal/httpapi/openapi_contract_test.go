@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -76,11 +75,11 @@ func TestDesktopOAuthGrantOpenAPIContractMatchesRuntime(t *testing.T) {
 
 func loadDesktopOAuthGrantCodeSchema(t *testing.T) openAPIStringSchema {
 	t.Helper()
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test file path")
+	packageDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	specBytes, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "../../../../packages/protocol/openapi.yaml"))
+	specBytes, err := os.ReadFile(filepath.Join(packageDir, "../../../../packages/protocol/openapi.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
