@@ -1274,10 +1274,18 @@ components:
       required: [code, code_verifier]
       properties:
         code:
-          type: string
-          minLength: 32
-          maxLength: 32
-          pattern: "^[a-f0-9]+$"
+          description: Opaque one-time grant from a legacy protocol-1 or current protocol-2 desktop callback
+          oneOf:
+            - type: string
+              title: Desktop OAuth protocol 1 grant
+              minLength: 32
+              maxLength: 32
+              pattern: "^[a-f0-9]{32}$"
+            - type: string
+              title: Desktop OAuth protocol 2 grant
+              minLength: 43
+              maxLength: 43
+              pattern: "^[A-Za-z0-9_-]{43}$"
         code_verifier:
           type: string
           minLength: 43
