@@ -160,6 +160,8 @@ paths:
           description: Malformed request or invalid, expired, or previously consumed desktop grant
         "403":
           description: Cross-site redemption rejected
+        "413":
+          description: JSON request body exceeds the application limit
         "415":
           description: Request content type is not application/json
         "429":
