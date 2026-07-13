@@ -12,6 +12,11 @@ try {
   cpSync(resolve(root, "go.mod"), join(worktree, "go.mod"));
   cpSync(resolve(root, "go.sum"), join(worktree, "go.sum"));
   cpSync(resolve(root, "apps/api"), join(worktree, "apps/api"), { recursive: true });
+  mkdirSync(join(worktree, "packages/protocol"), { recursive: true });
+  cpSync(
+    resolve(root, "packages/protocol/openapi.yaml"),
+    join(worktree, "packages/protocol/openapi.yaml"),
+  );
 
   const embeddedDist = join(worktree, "apps/api/internal/webassets/dist");
   const stagedDist = join(tempRoot, "dist");
