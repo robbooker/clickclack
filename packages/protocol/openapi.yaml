@@ -105,7 +105,7 @@ paths:
         "429":
           description: Trusted edge rate limit exceeded
         "500":
-          description: OAuth state generation or persistence failed
+          description: OAuth browser binding, state, PKCE generation, or persistence failed
         "501":
           description: GitHub OAuth not configured
         "503":
@@ -133,13 +133,13 @@ paths:
         "302":
           description: Redirect the system browser to GitHub OAuth authorization
         "400":
-          description: Invalid desktop code challenge or unsupported protocol
+          description: Invalid desktop code challenge, unsupported protocol, or ambiguous OAuth browser-binding cookies
         "426":
           description: Desktop app upgrade required before a namespaced server can begin authentication
         "429":
           description: Trusted edge rate limit exceeded
         "500":
-          description: OAuth state generation or persistence failed
+          description: OAuth browser binding, state, PKCE generation, or persistence failed
         "501":
           description: GitHub OAuth not configured
         "503":
@@ -157,7 +157,7 @@ paths:
         "200":
           description: One-time desktop grant consumed and session cookie created
         "400":
-          description: Invalid, expired, or previously consumed desktop grant
+          description: Malformed request or invalid, expired, or previously consumed desktop grant
         "403":
           description: Cross-site redemption rejected
         "415":
@@ -186,7 +186,7 @@ paths:
         "403":
           description: GitHub account is not allowed
         "500":
-          description: Identity, workspace, session, or desktop grant persistence failed
+          description: Identity, workspace, session, or desktop grant generation or persistence failed
         "502":
           description: GitHub provider request failed
         "503":
