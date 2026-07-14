@@ -114,6 +114,9 @@
   let status = "loading";
   let authRequired = false;
   let desktopAuthStatus = "";
+  let signInCode = "";
+  let signInCodeStatus = "";
+  let signInCodeBusy = false;
   let connected = false;
   let socket: RealtimeConnection | null = null;
   let realtimeMessageLoadQueue: Promise<void> = Promise.resolve();
@@ -288,6 +291,31 @@
       desktopAuthStatus = "Finish signing in in your browser. ClickClack will complete here automatically.";
     } catch {
       desktopAuthStatus = "Could not open your browser. Try again.";
+    }
+  }
+
+  async function signInWithCode(event: SubmitEvent) {
+    event.preventDefault();
+    const token = signInCode.trim();
+    if (!token) {
+      signInCodeStatus = "Enter a sign-in code.";
+      return;
+    }
+    signInCodeBusy = true;
+    signInCodeStatus = "";
+    try {
+      await api("/api/auth/magic/consume", {
+        method: "POST",
+        body: JSON.stringify({ token }),
+      });
+      signInCode = "";
+      authRequired = false;
+      status = "loading";
+      await boot();
+    } catch {
+      signInCodeStatus = "That sign-in code is invalid or expired.";
+    } finally {
+      signInCodeBusy = false;
     }
   }
 
@@ -2801,8 +2829,8 @@
         </div>
       </div>
       <div class="auth-copy">
-        <h1>Welcome.</h1>
-        <p>Sign in with GitHub to join the guest room.</p>
+        <h1>Welcome back.</h1>
+        <p>Sign in to continue to your workspaces.</p>
       </div>
       <a class="github-login" href="/api/auth/github/start" onclick={signInWithGitHub}>
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -2810,7 +2838,27 @@
         </svg>
         Continue with GitHub
       </a>
-      <p class="auth-foot">{desktopAuthStatus || "Any GitHub account can join."}</p>
+      <div class="auth-divider"><span>or</span></div>
+      <form class="code-login" onsubmit={signInWithCode}>
+        <label for="sign-in-code">One-time sign-in code</label>
+        <div class="code-login-row">
+          <input
+            id="sign-in-code"
+            bind:value={signInCode}
+            autocomplete="one-time-code"
+            placeholder="mgt_..."
+            spellcheck="false"
+            aria-describedby="sign-in-code-status"
+          />
+          <button type="submit" disabled={signInCodeBusy || !signInCode.trim()}>
+            {signInCodeBusy ? "Signing in..." : "Sign in"}
+          </button>
+        </div>
+        <p id="sign-in-code-status" class:error={Boolean(signInCodeStatus)} aria-live="polite">
+          {signInCodeStatus || "Existing members keep their assigned workspace role."}
+        </p>
+      </form>
+      {#if desktopAuthStatus}<p class="auth-foot" aria-live="polite">{desktopAuthStatus}</p>{/if}
     </section>
   </main>
 {:else}

@@ -71,6 +71,10 @@ exists:
 clickclack admin magic-link create --email steipete@gmail.com --name "Peter"
 ```
 
+The web sign-in screen accepts the printed `mgt_...` token directly. Consuming
+it sets the same HTTP-only 30-day session cookie as GitHub OAuth, and an
+existing identity keeps its current workspace memberships and roles.
+
 The client CLI can consume that token directly:
 
 ```sh

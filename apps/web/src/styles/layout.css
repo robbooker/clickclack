@@ -112,6 +112,84 @@
   transform: translateY(-1px);
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted-2);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+
+.code-login {
+  display: grid;
+  gap: 8px;
+}
+
+.code-login label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.code-login-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.code-login input,
+.code-login button {
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.code-login input {
+  min-width: 0;
+  padding: 0 12px;
+  background: var(--panel-2);
+  color: var(--text-strong);
+}
+
+.code-login input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.code-login button {
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.code-login button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.code-login p {
+  min-height: 18px;
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
+.code-login p.error {
+  color: var(--danger);
+}
+
 .auth-foot {
   margin: 0;
   color: var(--muted-2);
