@@ -1215,8 +1215,14 @@ export interface components {
       kind?: string;
       archived?: boolean;
     };
+    /** @description A non-empty body or an upload_id is required. */
     CreateMessageRequest: {
-      body: string;
+      body?: string;
+      /**
+       * @description Optional upload to attach atomically while creating the message.
+       *     The upload must belong to the caller and the message workspace.
+       */
+      upload_id?: string;
       /**
        * @default markdown
        * @enum {string}

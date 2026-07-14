@@ -1760,7 +1760,7 @@
 
   async function sendMessage() {
     const body = messageBody.trim();
-    if (!body) return;
+    if (!body && !pendingUpload) return;
     if (!selectedChannelID && !selectedDirectID) {
       status = "pick or create a channel";
       return;
@@ -1802,34 +1802,13 @@
       : `/api/channels/${draft.channelID}/messages`;
     const payload: Record<string, unknown> = { body: draft.body, nonce };
     if (draft.quotedMessageID) payload.quoted_message_id = draft.quotedMessageID;
+    if (draft.upload) payload.upload_id = draft.upload.id;
     try {
       const data = await api<{ message: Message }>(path, {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      let message = data.message;
-      if (draft.upload) {
-        try {
-          await api(`/api/messages/${message.id}/attachments`, {
-            method: "POST",
-            body: JSON.stringify({ upload_id: draft.upload.id }),
-          });
-          message = {
-            ...message,
-            attachments: [...(message.attachments || []), draft.upload],
-          };
-        } catch (err) {
-          console.warn("attachment failed", err);
-          const failedMessage: Message = {
-            ...message,
-            nonce,
-            status: "failed",
-            attachments: draft.upload ? [...(message.attachments || []), draft.upload] : message.attachments,
-          };
-          setActiveMessages(messages.map((m) => (m.id === localID ? failedMessage : m)));
-          return;
-        }
-      }
+      const message = data.message;
       pendingDrafts.delete(nonce);
       // Replace placeholder with the real message (or append if a concurrent
       // realtime reload already removed our placeholder).
@@ -2089,9 +2068,7 @@
     }
   }
 
-  async function uploadFile(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
+  async function stageUpload(file: File) {
     if (!file || !selectedWorkspaceID) return;
     const probe = await probeMediaDimensions(file);
     const form = new FormData();
@@ -2102,7 +2079,27 @@
     if (probe.durationMS > 0) form.set("duration_ms", String(probe.durationMS));
     const data = await api<{ upload: Upload }>("/api/uploads", { method: "POST", body: form });
     pendingUpload = data.upload;
+  }
+
+  async function uploadFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    await stageUpload(file);
     input.value = "";
+  }
+
+  async function pasteFile(event: ClipboardEvent) {
+    const image = Array.from(event.clipboardData?.items || []).find(
+      (item) => item.kind === "file" && item.type.startsWith("image/"),
+    )?.getAsFile();
+    if (!image) return;
+    event.preventDefault();
+    if (pendingUpload) {
+      status = "remove the current attachment before pasting another image";
+      return;
+    }
+    await stageUpload(image);
   }
 
   async function loadDirectConversations() {
@@ -3013,6 +3010,7 @@
       onFocus={() => (activeComposerContext = "message")}
       onInputRef={(node) => (messageInput = node)}
       onUploadFile={uploadFile}
+      onPasteFile={pasteFile}
       onRemoveUpload={() => (pendingUpload = null)}
       onClearReply={clearReplyTarget}
       onApplyMarkdownWrap={applyMarkdownWrap}

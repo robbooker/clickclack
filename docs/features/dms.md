@@ -18,7 +18,7 @@ GET  /api/dms/{conversation_id}                          # direct access, includ
 DELETE /api/dms/{conversation_id}                        # close for the current human user
 POST /api/dms/{conversation_id}/open                     # reopen for the current human user
 GET  /api/dms/{conversation_id}/messages?after_seq=&limit=
-POST /api/dms/{conversation_id}/messages                 # { body, quoted_message_id?, nonce? }
+POST /api/dms/{conversation_id}/messages                 # { body?, upload_id?, quoted_message_id?, nonce? }
 POST /api/dms/{conversation_id}/read                     # { seq }
 ```
 

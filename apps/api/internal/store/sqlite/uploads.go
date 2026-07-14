@@ -350,6 +350,46 @@ func (s *Store) UploadHasOtherDirectMessageAttachment(ctx context.Context, uploa
 	return s.q.UploadHasOtherDirectMessageAttachment(ctx, storedb.UploadHasOtherDirectMessageAttachmentParams{UploadID: uploadID, MessageID: messageID})
 }
 
+func prepareMessageUploadTx(ctx context.Context, qtx *storedb.Queries, workspaceID, userID, uploadID string) (*store.Upload, error) {
+	uploadID = strings.TrimSpace(uploadID)
+	if uploadID == "" {
+		return nil, nil
+	}
+	row, err := qtx.GetUpload(ctx, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	upload := storeUploadFromGetUpload(row)
+	if upload.WorkspaceID != workspaceID {
+		return nil, errors.New("upload and message workspaces differ")
+	}
+	if upload.OwnerID != userID {
+		return nil, errors.New("message attachments must be owned by the author")
+	}
+	return &upload, nil
+}
+
+func attachMessageUploadTx(ctx context.Context, qtx *storedb.Queries, messageID string, upload *store.Upload) error {
+	if upload == nil {
+		return nil
+	}
+	_, err := qtx.AttachUpload(ctx, storedb.AttachUploadParams{
+		MessageID: messageID,
+		UploadID:  upload.ID,
+		CreatedAt: now(),
+	})
+	return err
+}
+
+func messageHasUploadTx(ctx context.Context, tx *sql.Tx, messageID, uploadID string) (bool, error) {
+	var one int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM message_attachments WHERE message_id = ? AND upload_id = ?`, messageID, uploadID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s *Store) AttachUpload(ctx context.Context, input store.AttachUploadInput) (store.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

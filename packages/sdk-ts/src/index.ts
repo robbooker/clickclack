@@ -165,8 +165,11 @@ export type Topic = {
 
 export type MessageKind = "message" | "agent_commentary" | "agent_tool";
 
-type MessageInputBase = {
-  body: string;
+type MessageContentInput =
+  | { body: string; upload_id?: string }
+  | { body?: string; upload_id: string };
+
+type MessageInputBase = MessageContentInput & {
   quoted_message_id?: string;
   nonce?: string;
 };

@@ -889,6 +889,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Body            string `json:"body"`
+		UploadID        string `json:"upload_id"`
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 		TopicID         string `json:"topic_id"`
@@ -899,6 +900,12 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if strings.TrimSpace(body.UploadID) != "" {
+		if err := act.requireScope("uploads:write"); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+	}
 	kind, turnID, ok := s.resolveMessageKind(w, act, body.Kind, body.TurnID)
 	if !ok {
 		return
@@ -906,7 +913,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, TopicID: body.TopicID, Kind: kind, TurnID: turnID})
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, UploadID: body.UploadID, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, TopicID: body.TopicID, Kind: kind, TurnID: turnID})
 	if err == nil && event.ID != "" {
 		s.publishEvent(r.Context(), event)
 		if !store.IsActivityMessageKind(message.Kind) {

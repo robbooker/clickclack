@@ -211,6 +211,65 @@ func TestStoreChatThreadsSearchUploadsAndEvents(t *testing.T) {
 	}
 }
 
+func TestCreateAttachmentOnlyMessageIsAtomicAndRetrySafe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	owner, err := st.EnsureBootstrap(ctx, "Owner", "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err := st.ListWorkspaces(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channels, err := st.ListChannels(ctx, workspaces[0].ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := st.CreateUpload(ctx, store.CreateUploadInput{
+		WorkspaceID: workspaces[0].ID,
+		OwnerID:     owner.ID,
+		Filename:    "clipboard.png",
+		ContentType: "image/png",
+		ByteSize:    68,
+		StoragePath: "/tmp/clipboard.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := store.CreateMessageInput{
+		ChannelID: channels[0].ID,
+		AuthorID:  owner.ID,
+		UploadID:  upload.ID,
+		Nonce:     "attachment-only-message",
+	}
+	created, event, err := st.CreateMessage(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Body != "" || len(created.Attachments) != 1 || created.Attachments[0].ID != upload.ID || event.Type != "message.created" {
+		t.Fatalf("unexpected attachment-only message: %#v %#v", created, event)
+	}
+
+	replayed, replayEvent, err := st.CreateMessage(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ID != created.ID || len(replayed.Attachments) != 1 || replayed.Attachments[0].ID != upload.ID || replayEvent.ID != "" {
+		t.Fatalf("unexpected attachment-only replay: %#v %#v", replayed, replayEvent)
+	}
+
+	page, err := st.ListMessages(ctx, channels[0].ID, owner.ID, store.MessagePageRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 1 || len(page.Messages[0].Attachments) != 1 || page.Messages[0].Attachments[0].ID != upload.ID {
+		t.Fatalf("attachment-only message was not persisted atomically: %#v", page.Messages)
+	}
+}
+
 func TestMessageSequenceAllocationIsConcurrentSafe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

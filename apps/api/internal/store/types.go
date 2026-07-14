@@ -539,6 +539,7 @@ type CreateMessageInput struct {
 	ChannelID       string
 	AuthorID        string
 	Body            string
+	UploadID        string
 	QuotedMessageID *string
 	Nonce           string
 	TopicID         string
@@ -669,6 +670,7 @@ type CreateDirectMessageInput struct {
 	ConversationID  string
 	AuthorID        string
 	Body            string
+	UploadID        string
 	QuotedMessageID *string
 	Nonce           string
 	Kind            string

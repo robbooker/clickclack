@@ -1827,10 +1827,15 @@ components:
           type: boolean
     CreateMessageRequest:
       type: object
-      required: [body]
+      description: A non-empty body or an upload_id is required.
       properties:
         body:
           type: string
+        upload_id:
+          type: string
+          description: |
+            Optional upload to attach atomically while creating the message.
+            The upload must belong to the caller and the message workspace.
         body_format:
           type: string
           enum: [markdown]

@@ -1132,6 +1132,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Body            string `json:"body"`
+		UploadID        string `json:"upload_id"`
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 		Kind            string `json:"kind"`
@@ -1145,6 +1146,12 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if strings.TrimSpace(body.UploadID) != "" {
+		if err := act.requireScope("uploads:write"); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+	}
 	kind, turnID, ok := s.resolveMessageKind(w, act, body.Kind, body.TurnID)
 	if !ok {
 		return
@@ -1152,7 +1159,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotDirectWorkspace(w, r, act, chi.URLParam(r, "conversation_id")) {
 		return
 	}
-	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, Kind: kind, TurnID: turnID})
+	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, UploadID: body.UploadID, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, Kind: kind, TurnID: turnID})
 	if err == nil && event.ID != "" {
 		s.publishEvent(r.Context(), event)
 		if !store.IsActivityMessageKind(message.Kind) {

@@ -33,7 +33,9 @@ DELETE /api/messages/{message_id}
   a zero-reply state, so clients can render thread activity without fetching
   each thread.
 - `POST /messages` accepts
-  `{body, quoted_message_id?, nonce?, topic_id?, kind?, turn_id?}`.
+  `{body?, upload_id?, quoted_message_id?, nonce?, topic_id?, kind?, turn_id?}`.
+  A non-empty body or an `upload_id` is required. Supplying an upload attaches
+  it atomically, so image-only messages do not need placeholder text.
   Empty bodies are rejected. `nonce` is an optional client idempotency key;
   replaying the same nonce with the same body, quote, and topic returns the
   existing message with HTTP 200 instead of creating a duplicate.
@@ -114,7 +116,8 @@ without a migration. The frontend renders a sanitized subset.
 The web composer is a Slack-like message well with a format bar for bold,
 italic, inline code, code blocks, links, attachments, and GIF insertion. The GIF
 picker inserts standard Markdown image syntax, so no provider-specific durable
-schema is required for V1.
+schema is required for V1. Pasting an image from the clipboard stages it through
+the same authenticated upload flow as the paperclip control.
 
 ## Attachments
 
