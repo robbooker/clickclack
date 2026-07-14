@@ -238,7 +238,6 @@ test("OpenClaw install snippets use supported workspace identifiers", () => {
     token: "ccb_test'value",
     mode: "single",
   });
-  expect(shell).toContain("openclaw plugins install @openclaw/clickclack");
   expect(shell).toContain(`export CLICKCLACK_BOT_TOKEN='ccb_test'"'"'value'`);
 });
 
@@ -1325,6 +1324,25 @@ test("sends messages, searches, uploads, opens a thread, and creates a DM", asyn
     page.getByLabel("Image viewer").getByRole("link", { name: "Open original" }),
   ).toBeVisible();
   await page.getByLabel("Image viewer").getByRole("button", { name: "Close image viewer" }).click();
+
+  await page.getByLabel("Message body").evaluate((node) => {
+    const bytes = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+      ),
+      (character) => character.charCodeAt(0),
+    );
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], "clipboard.png", { type: "image/png" }));
+    node.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, clipboardData: transfer }));
+  });
+  await expect(page.getByText("clipboard.png")).toBeVisible();
+  await expect(page.getByLabel("Message body")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(
+    page.locator(".media-tile--image").filter({ hasText: "clipboard.png" }),
+  ).toBeVisible();
 
   await page.getByLabel("Upload file").setInputFiles({
     name: "clip.mp4",

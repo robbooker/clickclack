@@ -226,16 +226,6 @@ paths:
                 properties:
                   user:
                     $ref: "#/components/schemas/User"
-  /api/event-types:
-    get:
-      operationId: listEventTypes
-      responses:
-        "200":
-          description: Durable event types accepted by outgoing event subscriptions
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventTypesResponse"
   /api/me/bots:
     get:
       operationId: listMyBots
@@ -657,10 +647,6 @@ paths:
       responses:
         "200":
           description: Active app installations for a workspace
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AppInstallationListResponse"
     post:
       operationId: createAppInstallation
       parameters:
@@ -674,12 +660,6 @@ paths:
       responses:
         "201":
           description: Installed app binding
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AppInstallationResponse"
-        "403":
-          description: Workspace manager permission required
   /api/app-installations/{installation_id}/revoke:
     post:
       operationId: revokeAppInstallation
@@ -689,21 +669,9 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RevokeAppInstallationRequest"
       responses:
         "200":
-          description: Revoked app installation and requested attached resources
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RevokeAppInstallationResponse"
-        "403":
-          description: Workspace manager permission required
+          description: Revoked app installation
   /api/workspaces/{workspace_id}/slash-commands:
     get:
       operationId: listSlashCommands
@@ -712,10 +680,6 @@ paths:
       responses:
         "200":
           description: Active registered slash commands
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SlashCommandListResponse"
     post:
       operationId: createSlashCommand
       parameters:
@@ -729,12 +693,6 @@ paths:
       responses:
         "201":
           description: Registered slash command and one-time signing secret
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SlashCommandResponse"
-        "403":
-          description: Workspace manager permission required
   /api/slash-commands/{command_id}/revoke:
     post:
       operationId: revokeSlashCommand
@@ -747,32 +705,6 @@ paths:
       responses:
         "200":
           description: Revoked slash command
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SlashCommandResponse"
-        "403":
-          description: Workspace manager permission required
-  /api/slash-commands/{command_id}/rotate-secret:
-    post:
-      operationId: rotateSlashCommandSecret
-      parameters:
-        - name: command_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Slash command with its fresh one-time signing secret
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SlashCommandResponse"
-        "400":
-          description: Cannot rotate a revoked slash command
-        "403":
-          description: Workspace manager permission required
   /api/workspaces/{workspace_id}/event-subscriptions:
     get:
       operationId: listEventSubscriptions
@@ -781,10 +713,6 @@ paths:
       responses:
         "200":
           description: Active outgoing event subscriptions
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventSubscriptionListResponse"
     post:
       operationId: createEventSubscription
       parameters:
@@ -798,14 +726,6 @@ paths:
       responses:
         "201":
           description: Created event subscription and one-time signing secret
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventSubscriptionResponse"
-        "400":
-          description: Invalid or unknown event type
-        "403":
-          description: Workspace manager permission required
   /api/event-subscriptions/{subscription_id}/revoke:
     post:
       operationId: revokeEventSubscription
@@ -818,32 +738,6 @@ paths:
       responses:
         "200":
           description: Revoked event subscription
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventSubscriptionResponse"
-        "403":
-          description: Workspace manager permission required
-  /api/event-subscriptions/{subscription_id}/rotate-secret:
-    post:
-      operationId: rotateEventSubscriptionSecret
-      parameters:
-        - name: subscription_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Event subscription with its fresh one-time signing secret
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventSubscriptionResponse"
-        "400":
-          description: Cannot rotate a revoked event subscription
-        "403":
-          description: Workspace manager permission required
   /api/event-subscriptions/{subscription_id}/deliveries:
     get:
       operationId: listEventDeliveryAttempts
@@ -853,27 +747,9 @@ paths:
           required: true
           schema:
             type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
-        - name: before
-          in: query
-          description: Delivery attempt ID; returns attempts strictly older than this cursor.
-          schema:
-            type: string
       responses:
         "200":
           description: Event delivery attempts
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventDeliveryAttemptsResponse"
-        "400":
-          description: Invalid or stale delivery cursor
   /api/workspaces/{workspace_id}/audit-log:
     get:
       operationId: listAuditLogEntries
@@ -1656,11 +1532,6 @@ components:
           type: array
           items:
             type: string
-        setup_nonce:
-          type: string
-          minLength: 16
-          maxLength: 128
-          description: Retry key for integration setup. Replays reuse the same bot and token row while returning a fresh raw token.
     CreateBotTokenRequest:
       type: object
       properties:
@@ -1670,11 +1541,6 @@ components:
           type: array
           items:
             type: string
-        setup_nonce:
-          type: string
-          minLength: 16
-          maxLength: 128
-          description: Retry key for integration setup. Replays reuse the same token row while returning a fresh raw token.
     AppInstallation:
       type: object
       required: [id, workspace_id, app_slug, display_name, bot_user_id, config, created_at]
@@ -1714,61 +1580,6 @@ components:
         config:
           type: object
           additionalProperties: true
-        setup_nonce:
-          type: string
-          minLength: 16
-          maxLength: 128
-          description: Retry key that returns the original installation instead of creating a duplicate.
-    AppInstallationResponse:
-      type: object
-      required: [app_installation]
-      properties:
-        app_installation:
-          $ref: "#/components/schemas/AppInstallation"
-    AppInstallationListResponse:
-      type: object
-      required: [app_installations]
-      properties:
-        app_installations:
-          type: array
-          items:
-            $ref: "#/components/schemas/AppInstallation"
-    RevokeAppInstallationRequest:
-      type: object
-      properties:
-        revoke_slash_commands:
-          type: boolean
-          description: Defaults to true when omitted.
-          example: true
-        revoke_event_subscriptions:
-          type: boolean
-          description: Defaults to true when omitted.
-          example: true
-        revoke_bot_tokens:
-          type: boolean
-          description: Defaults to false when omitted.
-          example: false
-    AppInstallationRevokedCounts:
-      type: object
-      required: [slash_commands, event_subscriptions, bot_tokens]
-      properties:
-        slash_commands:
-          type: integer
-          minimum: 0
-        event_subscriptions:
-          type: integer
-          minimum: 0
-        bot_tokens:
-          type: integer
-          minimum: 0
-    RevokeAppInstallationResponse:
-      type: object
-      required: [installation, revoked]
-      properties:
-        installation:
-          $ref: "#/components/schemas/AppInstallation"
-        revoked:
-          $ref: "#/components/schemas/AppInstallationRevokedCounts"
     SlashCommand:
       type: object
       required: [id, workspace_id, command, description, callback_url, bot_user_id, created_at]
@@ -1816,20 +1627,6 @@ components:
           format: uri
         bot_user_id:
           type: string
-    SlashCommandResponse:
-      type: object
-      required: [slash_command]
-      properties:
-        slash_command:
-          $ref: "#/components/schemas/SlashCommand"
-    SlashCommandListResponse:
-      type: object
-      required: [slash_commands]
-      properties:
-        slash_commands:
-          type: array
-          items:
-            $ref: "#/components/schemas/SlashCommand"
     EventSubscription:
       type: object
       required: [id, workspace_id, event_types, callback_url, created_at]
@@ -1871,20 +1668,6 @@ components:
         callback_url:
           type: string
           format: uri
-    EventSubscriptionResponse:
-      type: object
-      required: [event_subscription]
-      properties:
-        event_subscription:
-          $ref: "#/components/schemas/EventSubscription"
-    EventSubscriptionListResponse:
-      type: object
-      required: [event_subscriptions]
-      properties:
-        event_subscriptions:
-          type: array
-          items:
-            $ref: "#/components/schemas/EventSubscription"
     EventDeliveryAttempt:
       type: object
       required: [id, subscription_id, event_id, workspace_id, event_type, attempt, response_status, created_at, completed_at]
@@ -1915,26 +1698,6 @@ components:
         completed_at:
           type: string
           format: date-time
-    EventDeliveryAttemptsResponse:
-      type: object
-      required: [deliveries, next_cursor]
-      properties:
-        deliveries:
-          type: array
-          items:
-            $ref: "#/components/schemas/EventDeliveryAttempt"
-        next_cursor:
-          anyOf:
-            - type: string
-            - type: "null"
-    EventTypesResponse:
-      type: object
-      required: [event_types]
-      properties:
-        event_types:
-          type: array
-          items:
-            type: string
     AuditLogEntry:
       type: object
       required: [id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at]
@@ -2064,10 +1827,15 @@ components:
           type: boolean
     CreateMessageRequest:
       type: object
-      required: [body]
+      description: A non-empty body or an upload_id is required.
       properties:
         body:
           type: string
+        upload_id:
+          type: string
+          description: |
+            Optional upload to attach atomically while creating the message.
+            The upload must belong to the caller and the message workspace.
         body_format:
           type: string
           enum: [markdown]

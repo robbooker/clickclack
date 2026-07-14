@@ -560,8 +560,12 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	id := newID("msg")
 	createdAt := now()
 	body := strings.TrimSpace(input.Body)
-	if body == "" {
-		return store.Message{}, store.Event{}, errors.New("message body is required")
+	upload, err := prepareMessageUploadTx(ctx, qtx, workspaceID, input.AuthorID, input.UploadID)
+	if err != nil {
+		return store.Message{}, store.Event{}, err
+	}
+	if body == "" && upload == nil {
+		return store.Message{}, store.Event{}, errors.New("message body or upload is required")
 	}
 	nonce, err := normalizeClientNonce(input.Nonce)
 	if err != nil {
@@ -581,6 +585,16 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 		}
 		if err := requireMessageAccessTx(ctx, tx, existing, input.AuthorID); err != nil {
 			return store.Message{}, store.Event{}, err
+		}
+		if upload != nil {
+			attached, err := messageHasUploadTx(ctx, tx, existing.ID, upload.ID)
+			if err != nil {
+				return store.Message{}, store.Event{}, err
+			}
+			if !attached {
+				return store.Message{}, store.Event{}, store.ErrClientNonceConflict
+			}
+			existing.Attachments = []store.Upload{*upload}
 		}
 		return existing, store.Event{}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -628,6 +642,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	if err := qtx.InsertThreadState(ctx, id); err != nil {
 		return store.Message{}, store.Event{}, err
 	}
+	if err := attachMessageUploadTx(ctx, qtx, id, upload); err != nil {
+		return store.Message{}, store.Event{}, err
+	}
 	eventFields := map[string]string{"message_id": id, "author_id": input.AuthorID}
 	if input.TopicID != "" {
 		eventFields["topic_id"] = input.TopicID
@@ -645,6 +662,9 @@ func (s *Store) CreateMessage(ctx context.Context, input store.CreateMessageInpu
 	msg, err := getMessageTx(ctx, tx, id)
 	if err != nil {
 		return store.Message{}, store.Event{}, err
+	}
+	if upload != nil {
+		msg.Attachments = []store.Upload{*upload}
 	}
 	return msg, event, tx.Commit()
 }

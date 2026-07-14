@@ -16,7 +16,7 @@ func (s *Store) ListAppInstallations(ctx context.Context, workspaceID, requester
 	}
 	rows, err := s.db.QueryContext(ctx, appInstallationSelect()+`
 		WHERE workspace_id = $1 AND revoked_at IS NULL
-		ORDER BY app_slug, created_at, id`, workspaceID)
+		ORDER BY app_slug`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +45,6 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 		return store.AppInstallation{}, errors.New("bot_user_id is required")
 	}
 	createdBy := strings.TrimSpace(input.CreatedBy)
-	setupNonce, err := normalizeSetupNonce(input.SetupNonce)
-	if err != nil {
-		return store.AppInstallation{}, err
-	}
 	config := input.Config
 	if config == nil {
 		config = map[string]any{}
@@ -62,39 +58,8 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 		return store.AppInstallation{}, err
 	}
 	defer tx.Rollback()
-	if setupNonce != "" {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, "clickclack.app-installation-setup."+createdBy, setupNonce); err != nil {
-			return store.AppInstallation{}, err
-		}
-	}
-	if err := requireWorkspaceManagerTx(ctx, tx, workspaceID, createdBy); err != nil {
+	if err := requireMembershipTx(ctx, tx, workspaceID, createdBy); err != nil {
 		return store.AppInstallation{}, err
-	}
-	if setupNonce != "" {
-		existing, replayErr := scanAppInstallation(tx.QueryRowContext(
-			ctx,
-			appInstallationSelect()+` WHERE created_by = $1 AND setup_nonce = $2 FOR UPDATE`,
-			createdBy,
-			setupNonce,
-		))
-		if replayErr == nil {
-			existingConfigJSON, marshalErr := json.Marshal(existing.Config)
-			if marshalErr != nil {
-				return store.AppInstallation{}, marshalErr
-			}
-			if existing.WorkspaceID != workspaceID ||
-				existing.AppSlug != appSlug ||
-				existing.DisplayName != displayName ||
-				existing.BotUserID != botUserID ||
-				existing.RevokedAt != nil ||
-				string(existingConfigJSON) != string(configJSON) {
-				return store.AppInstallation{}, store.ErrSetupNonceConflict
-			}
-			return existing, tx.Commit()
-		}
-		if !errors.Is(replayErr, sql.ErrNoRows) {
-			return store.AppInstallation{}, replayErr
-		}
 	}
 	var botKind string
 	if err := tx.QueryRowContext(ctx, `
@@ -118,8 +83,8 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 		CreatedAt:   now(),
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO app_installations (id, workspace_id, app_slug, display_name, bot_user_id, config_json, created_by, setup_nonce, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		INSERT INTO app_installations (id, workspace_id, app_slug, display_name, bot_user_id, config_json, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		installation.ID,
 		installation.WorkspaceID,
 		installation.AppSlug,
@@ -127,97 +92,34 @@ func (s *Store) CreateAppInstallation(ctx context.Context, input store.CreateApp
 		installation.BotUserID,
 		string(configJSON),
 		sqlOptionalText(installation.CreatedBy),
-		setupNonce,
 		installation.CreatedAt,
 	)
 	if err != nil {
+		if strings.Contains(err.Error(), "idx_app_installations_active_slug") {
+			return store.AppInstallation{}, errors.New("app is already installed")
+		}
 		return store.AppInstallation{}, err
 	}
 	return installation, tx.Commit()
 }
 
-func (s *Store) RevokeAppInstallation(ctx context.Context, installationID, requesterID string, options store.RevokeAppInstallationOptions) (store.RevokeAppInstallationResult, error) {
+func (s *Store) RevokeAppInstallation(ctx context.Context, installationID, requesterID string) (store.AppInstallation, error) {
 	installationID = strings.TrimSpace(installationID)
 	if installationID == "" {
-		return store.RevokeAppInstallationResult{}, errors.New("installation_id is required")
+		return store.AppInstallation{}, errors.New("installation_id is required")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	installation, err := s.getAppInstallation(ctx, installationID)
 	if err != nil {
-		return store.RevokeAppInstallationResult{}, err
+		return store.AppInstallation{}, err
 	}
-	defer tx.Rollback()
-	installation, err := scanAppInstallation(tx.QueryRowContext(ctx, appInstallationSelect()+` WHERE id = $1 FOR UPDATE`, installationID))
-	if err != nil {
-		return store.RevokeAppInstallationResult{}, err
-	}
-	if err := requireWorkspaceManagerTx(ctx, tx, installation.WorkspaceID, requesterID); err != nil {
-		return store.RevokeAppInstallationResult{}, err
-	}
-	result := store.RevokeAppInstallationResult{Installation: installation}
-	if installation.RevokedAt != nil {
-		if err := tx.Commit(); err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
-		return result, nil
-	}
-	if options.RevokeBotTokens {
-		bot, err := scanUser(tx.QueryRowContext(ctx, `
-			SELECT id, kind, owner_user_id, display_name, handle, avatar_url, created_at
-			FROM users
-			WHERE id = $1`, installation.BotUserID))
-		if err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
-		if err := requireBotTokenManagerTx(ctx, tx, installation.WorkspaceID, bot, requesterID); err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
+	if err := s.requireMembership(ctx, installation.WorkspaceID, requesterID); err != nil {
+		return store.AppInstallation{}, err
 	}
 	revokedAt := now()
-	count, err := revokeRows(ctx, tx, `UPDATE app_installations SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL`, revokedAt, installationID)
-	if err != nil {
-		return store.RevokeAppInstallationResult{}, err
+	if _, err := s.db.ExecContext(ctx, `UPDATE app_installations SET revoked_at = COALESCE(revoked_at, $1) WHERE id = $2`, revokedAt, installationID); err != nil {
+		return store.AppInstallation{}, err
 	}
-	if count != 1 {
-		return store.RevokeAppInstallationResult{}, errors.New("app installation changed during revoke")
-	}
-	if options.RevokeSlashCommands {
-		count, err = revokeRows(ctx, tx, `UPDATE slash_commands SET revoked_at = $1 WHERE app_installation_id = $2 AND revoked_at IS NULL`, revokedAt, installationID)
-		if err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
-		result.Revoked.SlashCommands = count
-	}
-	if options.RevokeEventSubscriptions {
-		count, err = revokeRows(ctx, tx, `UPDATE event_subscriptions SET revoked_at = $1 WHERE app_installation_id = $2 AND revoked_at IS NULL`, revokedAt, installationID)
-		if err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
-		result.Revoked.EventSubscriptions = count
-	}
-	if options.RevokeBotTokens {
-		count, err = revokeRows(ctx, tx, `UPDATE bot_tokens SET revoked_at = $1 WHERE workspace_id = $2 AND bot_user_id = $3 AND revoked_at IS NULL`, revokedAt, installation.WorkspaceID, installation.BotUserID)
-		if err != nil {
-			return store.RevokeAppInstallationResult{}, err
-		}
-		result.Revoked.BotTokens = count
-	}
-	result.Installation.RevokedAt = &revokedAt
-	if err := tx.Commit(); err != nil {
-		return store.RevokeAppInstallationResult{}, err
-	}
-	return result, nil
-}
-
-func revokeRows(ctx context.Context, tx *sql.Tx, query string, args ...any) (int, error) {
-	result, err := tx.ExecContext(ctx, query, args...)
-	if err != nil {
-		return 0, err
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-	return int(count), nil
+	return s.getAppInstallation(ctx, installationID)
 }
 
 func (s *Store) getAppInstallation(ctx context.Context, installationID string) (store.AppInstallation, error) {

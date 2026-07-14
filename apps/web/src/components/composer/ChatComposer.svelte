@@ -47,6 +47,7 @@
     onFocus: () => void;
     onInputRef: (node: HTMLTextAreaElement | null) => void;
     onUploadFile?: (event: Event) => void;
+    onPasteFile?: (event: ClipboardEvent) => void;
     onRemoveUpload?: () => void;
     onClearReply?: () => void;
     onApplyMarkdownWrap?: (before: string, after?: string) => void;
@@ -77,6 +78,7 @@
     onFocus,
     onInputRef,
     onUploadFile = () => {},
+    onPasteFile = () => {},
     onRemoveUpload = () => {},
     onClearReply = () => {},
     onApplyMarkdownWrap = () => {},
@@ -317,13 +319,14 @@
         {placeholder}
         aria-label={ariaLabel}
         oninput={handleInput}
+        onpaste={onPasteFile}
         onfocus={handleFocus}
         onkeydown={handleKeydown}
         onkeyup={() => updateCaret()}
         onmouseup={() => updateCaret()}
         onselect={() => updateCaret()}
       ></textarea>
-      <button type="submit" class="send" aria-label={submitLabel} disabled={!value.trim()}>
+      <button type="submit" class="send" aria-label={submitLabel} disabled={!value.trim() && !pendingUpload}>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <path fill="currentColor" d="M3 3.5 21 12 3 20.5l3.6-7.5L15 12 6.6 11l-3.6-7.5Z"/>
         </svg>

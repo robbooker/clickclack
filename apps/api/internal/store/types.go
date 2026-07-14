@@ -15,17 +15,9 @@ var ErrQuotedMessageOutOfScope = errors.New("quoted message is not in this chann
 // for a different message request.
 var ErrClientNonceConflict = errors.New("client nonce was already used for a different message")
 
-// ErrSetupNonceConflict is returned when a retry-safe integration setup nonce
-// is reused with different inputs or after its credential was revoked.
-var ErrSetupNonceConflict = errors.New("setup nonce was already used for a different request")
-
 // ErrInvalidMessagePage is returned when a message-history request combines
 // mutually exclusive cursors or uses an invalid cursor value.
 var ErrInvalidMessagePage = errors.New("invalid message page request")
-
-// ErrInvalidEventDeliveryCursor is returned when a delivery-attempt cursor
-// does not exist for the requested subscription.
-var ErrInvalidEventDeliveryCursor = errors.New("invalid or stale event delivery cursor")
 
 // ErrModerationRestricted is returned when a workspace moderation rule blocks
 // a write. HTTP callers surface it as a 403 or 429 depending on the rule.
@@ -278,7 +270,6 @@ type CreateBotInput struct {
 	AvatarURL   string
 	TokenName   string
 	Scopes      []string
-	SetupNonce  string
 	CreatedBy   string
 }
 
@@ -318,7 +309,6 @@ type CreateBotTokenInput struct {
 	BotUserID   string
 	Name        string
 	Scopes      []string
-	SetupNonce  string
 	CreatedBy   string
 }
 
@@ -340,25 +330,7 @@ type CreateAppInstallationInput struct {
 	DisplayName string
 	BotUserID   string
 	Config      map[string]any
-	SetupNonce  string
 	CreatedBy   string
-}
-
-type RevokeAppInstallationOptions struct {
-	RevokeSlashCommands      bool
-	RevokeEventSubscriptions bool
-	RevokeBotTokens          bool
-}
-
-type AppInstallationRevokedCounts struct {
-	SlashCommands      int `json:"slash_commands"`
-	EventSubscriptions int `json:"event_subscriptions"`
-	BotTokens          int `json:"bot_tokens"`
-}
-
-type RevokeAppInstallationResult struct {
-	Installation AppInstallation              `json:"installation"`
-	Revoked      AppInstallationRevokedCounts `json:"revoked"`
 }
 
 type SlashCommand struct {
@@ -567,6 +539,7 @@ type CreateMessageInput struct {
 	ChannelID       string
 	AuthorID        string
 	Body            string
+	UploadID        string
 	QuotedMessageID *string
 	Nonce           string
 	TopicID         string
@@ -697,6 +670,7 @@ type CreateDirectMessageInput struct {
 	ConversationID  string
 	AuthorID        string
 	Body            string
+	UploadID        string
 	QuotedMessageID *string
 	Nonce           string
 	Kind            string
@@ -832,21 +806,19 @@ type Store interface {
 	ListBotsOwnedBy(ctx context.Context, ownerUserID string) ([]OwnedBotEntry, error)
 	ListAppInstallations(ctx context.Context, workspaceID, requesterID string) ([]AppInstallation, error)
 	CreateAppInstallation(ctx context.Context, input CreateAppInstallationInput) (AppInstallation, error)
-	RevokeAppInstallation(ctx context.Context, installationID, requesterID string, options RevokeAppInstallationOptions) (RevokeAppInstallationResult, error)
+	RevokeAppInstallation(ctx context.Context, installationID, requesterID string) (AppInstallation, error)
 	ListSlashCommands(ctx context.Context, workspaceID, requesterID string) ([]SlashCommand, error)
 	CreateSlashCommand(ctx context.Context, input CreateSlashCommandInput) (SlashCommand, error)
 	RevokeSlashCommand(ctx context.Context, commandID, requesterID string) (SlashCommand, error)
-	RotateSlashCommandSecret(ctx context.Context, commandID, requesterID string) (SlashCommand, error)
 	GetSlashCommandForChannel(ctx context.Context, channelID, command, requesterID string) (SlashCommand, error)
 	CreateSlashCommandInvocation(ctx context.Context, input CreateSlashCommandInvocationInput) (SlashCommandInvocation, error)
 	CompleteSlashCommandInvocation(ctx context.Context, invocationID string, status int, responseBody, invokeError string) (SlashCommandInvocation, error)
 	ListEventSubscriptions(ctx context.Context, workspaceID, requesterID string) ([]EventSubscription, error)
 	CreateEventSubscription(ctx context.Context, input CreateEventSubscriptionInput) (EventSubscription, error)
 	RevokeEventSubscription(ctx context.Context, subscriptionID, requesterID string) (EventSubscription, error)
-	RotateEventSubscriptionSecret(ctx context.Context, subscriptionID, requesterID string) (EventSubscription, error)
 	ListEventSubscriptionsForEvent(ctx context.Context, event Event) ([]EventSubscription, error)
 	CreateEventDeliveryAttempt(ctx context.Context, input CreateEventDeliveryAttemptInput) (EventDeliveryAttempt, error)
-	ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string, limit int, before string) ([]EventDeliveryAttempt, error)
+	ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string) ([]EventDeliveryAttempt, error)
 	CreateAuditLogEntry(ctx context.Context, input CreateAuditLogEntryInput) (AuditLogEntry, error)
 	ListAuditLogEntries(ctx context.Context, workspaceID, requesterID string, limit int) ([]AuditLogEntry, error)
 	ListConnectedAccounts(ctx context.Context, workspaceID, requesterID string) ([]ConnectedAccount, error)

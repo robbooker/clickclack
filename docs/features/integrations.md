@@ -12,8 +12,7 @@ of Mattermost so existing scripts can post messages without rewriting.
 ## App installations
 
 An app installation binds a named integration to a workspace and to the bot user
-that will act for it. It is workspace integration metadata, not a runtime plugin
-loader.
+that will act for it. It is control-plane metadata, not a runtime plugin loader.
 
 ```http
 POST /api/workspaces/{workspace_id}/app-installations
@@ -31,35 +30,16 @@ Content-Type: application/json
 
 Behavior:
 
-- Any human workspace member can list installations.
-- Creating or revoking requires a human workspace owner or moderator. Bot
-  tokens cannot mutate app installations.
+- Requires a human session. Bot tokens cannot create, list, or revoke app
+  installations.
 - `bot_user_id` must be a bot member of the same workspace.
-- `app_slug` identifies the app manifest, not a singleton. A workspace may
-  create any number of active installations for the same slug; each
-  installation has its own ID, bot binding, token lifecycle, and config.
-- Guided setup sends a private `setup_nonce` with bot-token and installation
-  creation. Retrying after a lost response reuses the same bot, token row, and
-  installation instead of creating duplicate active resources. The token row
-  receives a fresh raw token on retry, so the previous unconfirmed secret no
-  longer authenticates and no raw token is stored for replay.
 - `GET /api/workspaces/{workspace_id}/app-installations` lists active
   installations.
-- `POST /api/app-installations/{installation_id}/revoke` atomically revokes the
-  binding and, by default, its attached slash commands and event subscriptions.
-- Its optional body fields are `revoke_slash_commands` (default `true`),
-  `revoke_event_subscriptions` (default `true`), and `revoke_bot_tokens`
-  (default `false`).
-- Bot tokens for the installation's bot remain active unless
-  `revoke_bot_tokens` is explicitly `true`, because the bot may serve other
-  integrations.
-- The revoke response contains the installation plus exact counts for revoked
-  slash commands, event subscriptions, and bot tokens. Repeating the revoke
-  returns zero counts.
+- `POST /api/app-installations/{installation_id}/revoke` revokes the binding
+  without deleting historical metadata.
 
 The TypeScript SDK exposes this as `client.apps.list(workspaceId)`,
-`client.apps.install(workspaceId, input)`, and
-`client.apps.revoke(id, options)`.
+`client.apps.install(workspaceId, input)`, and `client.apps.revoke(id)`.
 
 ## Incoming webhook
 
@@ -102,17 +82,13 @@ Content-Type: application/json
 
 Behavior:
 
-- Any human workspace member can list slash commands.
-- Creating, revoking, or rotating a secret requires a human workspace owner or
-  moderator. Bot tokens cannot mutate slash command registrations.
+- Requires a human session. Bot tokens cannot create, list, or revoke slash
+  command registrations.
 - `bot_user_id` must be a bot member of the same workspace.
 - `command` is normalized to a lowercase leading-slash command such as
   `/deploy`.
 - `POST /api/workspaces/{workspace_id}/slash-commands` returns a one-time
   `signing_secret`; list calls redact it.
-- `POST /api/slash-commands/{command_id}/rotate-secret` updates the
-  registration in place and returns the fresh one-time `signing_secret`.
-  Rotating a revoked command returns `400`.
 - Invoking the command through `/api/hooks/slash/{channel_id}` sends JSON to
   `callback_url` with `X-ClickClack-Timestamp` and
   `X-ClickClack-Signature: sha256=<hex hmac>`, where the signed string is
@@ -126,9 +102,8 @@ The callback payload includes `command_id`, `command`, `text`, `workspace_id`,
 stored with callback status/body/error metadata for later audit.
 
 The TypeScript SDK exposes this as `client.slashCommands.list(workspaceId)`,
-`client.slashCommands.create(workspaceId, input)`,
-`client.slashCommands.revoke(id)`, and
-`client.slashCommands.rotateSecret(id)`.
+`client.slashCommands.create(workspaceId, input)`, and
+`client.slashCommands.revoke(id)`.
 
 In the web app, channel composers discover registered commands inline: type
 `/` at the start of a draft to open the slash-command menu, keep typing to
@@ -159,38 +134,22 @@ Content-Type: application/json
 
 Behavior:
 
-- Any human workspace member can list subscriptions and delivery attempts.
-- Creating, revoking, or rotating a secret requires a human workspace owner or
-  moderator. Bot tokens cannot mutate subscriptions.
-- `event_types` accepts exact durable event types or `*`; unknown event types
-  return `400`.
-- `GET /api/event-types` returns the accepted durable event vocabulary to any
-  authenticated user.
+- Requires a human session. Bot tokens cannot create, list, or revoke
+  subscriptions.
+- `event_types` accepts exact durable event types or `*`.
 - Creation returns a one-time `signing_secret`; list calls redact it.
-- `POST /api/event-subscriptions/{subscription_id}/rotate-secret` updates the
-  subscription in place and returns the fresh one-time `signing_secret`.
-  Existing delivery history remains attached. Rotating a revoked subscription
-  returns `400`.
 - Delivery posts `{"subscription_id":"sub_...","event": Event}` as JSON to the
   callback URL.
 - Delivery uses the same signature headers as slash commands, plus
   `X-ClickClack-Event-ID`.
 - Every delivery attempt is stored with response status, response body, error,
   and attempt number.
-- `GET /api/event-subscriptions/{subscription_id}/deliveries` accepts `limit`
-  (default `50`, maximum `200`) and a `before` delivery-attempt ID. Results are
-  newest first and return `{"deliveries":[...],"next_cursor":"eda_..."}`.
-  `next_cursor` is `null` on the last page. If retention removes the delivery
-  referenced by `before`, the API returns `400` instead of silently treating
-  the stale cursor as the final page.
 
 The TypeScript SDK exposes this as
 `client.eventSubscriptions.list(workspaceId)`,
 `client.eventSubscriptions.create(workspaceId, input)`,
 `client.eventSubscriptions.revoke(id)`, and
-`client.eventSubscriptions.rotateSecret(id)`.
-Use `client.eventSubscriptions.deliveries(id, { limit, before })` for delivery
-pages and `client.eventTypes.list()` for the durable event vocabulary.
+`client.eventSubscriptions.deliveries(id)`.
 
 ## Connected accounts and audit log
 
@@ -213,14 +172,12 @@ Content-Type: application/json
 
 Behavior:
 
-- Any human workspace member can list connected accounts.
-- Creating a connected account requires a human workspace owner or moderator.
+- Requires a human session.
 - The target `user_id` must be a member of the workspace.
 - `GET /api/workspaces/{workspace_id}/connected-accounts` lists active
   connected accounts.
 - `POST /api/connected-accounts/{account_id}/revoke` revokes the account
-  binding. A workspace owner or moderator can revoke any binding; the bound
-  user can revoke their own.
+  binding.
 - Create and revoke write audit entries.
 
 Audit entries are available from `GET /api/workspaces/{workspace_id}/audit-log`.

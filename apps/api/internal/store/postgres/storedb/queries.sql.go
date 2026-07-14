@@ -1060,25 +1060,6 @@ func (q *Queries) GetDirectConversationWorkspace(ctx context.Context, id string)
 	return workspace_id, err
 }
 
-const getEventDeliveryAttemptCursor = `-- name: GetEventDeliveryAttemptCursor :one
-SELECT created_at
-FROM event_delivery_attempts
-WHERE subscription_id = $1
-  AND id = $2
-`
-
-type GetEventDeliveryAttemptCursorParams struct {
-	SubscriptionID string `json:"subscription_id"`
-	BeforeID       string `json:"before_id"`
-}
-
-func (q *Queries) GetEventDeliveryAttemptCursor(ctx context.Context, arg GetEventDeliveryAttemptCursorParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, getEventDeliveryAttemptCursor, arg.SubscriptionID, arg.BeforeID)
-	var created_at string
-	err := row.Scan(&created_at)
-	return created_at, err
-}
-
 const getMagicLinkByToken = `-- name: GetMagicLinkByToken :one
 SELECT id, token, token_hash, email, display_name, created_at, expires_at, used_at
 FROM auth_magic_links
@@ -1564,8 +1545,8 @@ func (q *Queries) HideDirectConversation(ctx context.Context, arg HideDirectConv
 }
 
 const insertBotToken = `-- name: InsertBotToken :exec
-INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, setup_nonce, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertBotTokenParams struct {
@@ -1577,7 +1558,6 @@ type InsertBotTokenParams struct {
 	Name        string         `json:"name"`
 	ScopesJson  string         `json:"scopes_json"`
 	CreatedBy   sql.NullString `json:"created_by"`
-	SetupNonce  string         `json:"setup_nonce"`
 	CreatedAt   string         `json:"created_at"`
 }
 
@@ -1591,7 +1571,6 @@ func (q *Queries) InsertBotToken(ctx context.Context, arg InsertBotTokenParams) 
 		arg.Name,
 		arg.ScopesJson,
 		arg.CreatedBy,
-		arg.SetupNonce,
 		arg.CreatedAt,
 	)
 	return err
@@ -2633,119 +2612,6 @@ func (q *Queries) ListDirectPushNotificationRecipients(ctx context.Context, arg 
 	for rows.Next() {
 		var i ListDirectPushNotificationRecipientsRow
 		if err := rows.Scan(&i.UserID, &i.DisplayName, &i.PushoverUserKey); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEventDeliveryAttemptsFirstPage = `-- name: ListEventDeliveryAttemptsFirstPage :many
-SELECT eda.id, eda.subscription_id, eda.event_id, eda.workspace_id, eda.event_type,
-       eda.attempt, eda.request_json, eda.response_status, eda.response_body,
-       eda.error, eda.created_at, eda.completed_at
-FROM event_delivery_attempts eda
-WHERE eda.subscription_id = $1
-ORDER BY eda.created_at DESC, eda.id DESC
-LIMIT $2
-`
-
-type ListEventDeliveryAttemptsFirstPageParams struct {
-	SubscriptionID string `json:"subscription_id"`
-	PageLimit      int32  `json:"page_limit"`
-}
-
-func (q *Queries) ListEventDeliveryAttemptsFirstPage(ctx context.Context, arg ListEventDeliveryAttemptsFirstPageParams) ([]EventDeliveryAttempt, error) {
-	rows, err := q.db.QueryContext(ctx, listEventDeliveryAttemptsFirstPage, arg.SubscriptionID, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []EventDeliveryAttempt
-	for rows.Next() {
-		var i EventDeliveryAttempt
-		if err := rows.Scan(
-			&i.ID,
-			&i.SubscriptionID,
-			&i.EventID,
-			&i.WorkspaceID,
-			&i.EventType,
-			&i.Attempt,
-			&i.RequestJson,
-			&i.ResponseStatus,
-			&i.ResponseBody,
-			&i.Error,
-			&i.CreatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEventDeliveryAttemptsPage = `-- name: ListEventDeliveryAttemptsPage :many
-SELECT eda.id, eda.subscription_id, eda.event_id, eda.workspace_id, eda.event_type,
-       eda.attempt, eda.request_json, eda.response_status, eda.response_body,
-       eda.error, eda.created_at, eda.completed_at
-FROM event_delivery_attempts eda
-WHERE eda.subscription_id = $1
-  AND (eda.created_at, eda.id) < (
-    $2::text,
-    $3
-  )
-ORDER BY eda.created_at DESC, eda.id DESC
-LIMIT $4
-`
-
-type ListEventDeliveryAttemptsPageParams struct {
-	SubscriptionID  string `json:"subscription_id"`
-	BeforeCreatedAt string `json:"before_created_at"`
-	BeforeID        string `json:"before_id"`
-	PageLimit       int32  `json:"page_limit"`
-}
-
-func (q *Queries) ListEventDeliveryAttemptsPage(ctx context.Context, arg ListEventDeliveryAttemptsPageParams) ([]EventDeliveryAttempt, error) {
-	rows, err := q.db.QueryContext(ctx, listEventDeliveryAttemptsPage,
-		arg.SubscriptionID,
-		arg.BeforeCreatedAt,
-		arg.BeforeID,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []EventDeliveryAttempt
-	for rows.Next() {
-		var i EventDeliveryAttempt
-		if err := rows.Scan(
-			&i.ID,
-			&i.SubscriptionID,
-			&i.EventID,
-			&i.WorkspaceID,
-			&i.EventType,
-			&i.Attempt,
-			&i.RequestJson,
-			&i.ResponseStatus,
-			&i.ResponseBody,
-			&i.Error,
-			&i.CreatedAt,
-			&i.CompletedAt,
-		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

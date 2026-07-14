@@ -16,7 +16,6 @@ type AppInstallation struct {
 	BotUserID   string         `json:"bot_user_id"`
 	ConfigJson  string         `json:"config_json"`
 	CreatedBy   sql.NullString `json:"created_by"`
-	SetupNonce  string         `json:"setup_nonce"`
 	CreatedAt   string         `json:"created_at"`
 	RevokedAt   sql.NullString `json:"revoked_at"`
 }
@@ -52,7 +51,6 @@ type BotToken struct {
 	Name        string         `json:"name"`
 	ScopesJson  string         `json:"scopes_json"`
 	CreatedBy   sql.NullString `json:"created_by"`
-	SetupNonce  string         `json:"setup_nonce"`
 	CreatedAt   string         `json:"created_at"`
 	LastUsedAt  sql.NullString `json:"last_used_at"`
 	RevokedAt   sql.NullString `json:"revoked_at"`

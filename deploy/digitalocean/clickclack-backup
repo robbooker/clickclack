@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+backup_dir=/var/backups/clickclack
+data_dir=/var/lib/clickclack
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+backup="$backup_dir/clickclack-$stamp.db"
+
+install -d -m 0750 "$backup_dir"
+docker exec clickclack mkdir -p /app/data/backups
+docker exec clickclack \
+  clickclack backup --data /app/data --out "/app/data/backups/clickclack-$stamp.db"
+mv "$data_dir/backups/clickclack-$stamp.db" "$backup"
+
+integrity="$(sqlite3 "$backup" 'PRAGMA integrity_check;')"
+if [[ "$integrity" != "ok" ]]; then
+  printf 'backup integrity check failed: %s\n' "$integrity" >&2
+  exit 1
+fi
+
+gzip -9 "$backup"
+find "$backup_dir" -type f -name 'clickclack-*.db.gz' -mtime +14 -delete

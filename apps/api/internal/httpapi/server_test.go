@@ -1434,7 +1434,6 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected topic in list, got %#v", listedTopics.Topics)
 	}
 	var signingSecret string
-	var oldSigningSecret string
 	var callbackPayload map[string]any
 	callbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -1442,12 +1441,8 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 			t.Fatal(err)
 		}
 		timestamp := r.Header.Get("X-ClickClack-Timestamp")
-		signature := r.Header.Get("X-ClickClack-Signature")
-		if timestamp == "" || signature != signSlashCallback(signingSecret, timestamp, body) {
+		if timestamp == "" || r.Header.Get("X-ClickClack-Signature") != signSlashCallback(signingSecret, timestamp, body) {
 			t.Fatalf("callback signature mismatch: timestamp=%q signature=%q body=%s", timestamp, r.Header.Get("X-ClickClack-Signature"), string(body))
-		}
-		if oldSigningSecret != "" && signature == signSlashCallback(oldSigningSecret, timestamp, body) {
-			t.Fatal("callback still verifies with the old slash command secret")
 		}
 		if err := json.Unmarshal(body, &callbackPayload); err != nil {
 			t.Fatal(err)
@@ -1487,26 +1482,13 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if callbackPayload["trigger_id"] == "" || callbackPayload["channel_id"] != channel.ID {
 		t.Fatalf("unexpected callback payload: %#v", callbackPayload)
 	}
-	oldSigningSecret = signingSecret
-	rotatedCommand := postJSONAsUser[struct {
-		SlashCommand store.SlashCommand `json:"slash_command"`
-	}](t, owner.ID, server.URL+"/api/slash-commands/"+registeredCommand.SlashCommand.ID+"/rotate-secret", map[string]any{})
-	if rotatedCommand.SlashCommand.ID != registeredCommand.SlashCommand.ID || rotatedCommand.SlashCommand.SigningSecret == "" || rotatedCommand.SlashCommand.SigningSecret == oldSigningSecret {
-		t.Fatalf("unexpected rotated slash command: %#v", rotatedCommand.SlashCommand)
-	}
-	signingSecret = rotatedCommand.SlashCommand.SigningSecret
-	postForm[struct {
-		Text string `json:"text"`
-	}](t, server.URL+"/api/hooks/slash/"+channel.ID, url.Values{"command": {"/deploy"}, "text": {"rotated"}})
 	revokedCommand := postJSONAsUser[struct {
 		SlashCommand store.SlashCommand `json:"slash_command"`
 	}](t, owner.ID, server.URL+"/api/slash-commands/"+registeredCommand.SlashCommand.ID+"/revoke", map[string]any{})
 	if revokedCommand.SlashCommand.RevokedAt == nil {
 		t.Fatalf("expected revoked_at on slash command, got %#v", revokedCommand.SlashCommand)
 	}
-	expectStatusAsUser(t, owner.ID, http.MethodPost, server.URL+"/api/slash-commands/"+registeredCommand.SlashCommand.ID+"/rotate-secret", strings.NewReader(`{}`), http.StatusBadRequest)
 	var eventSigningSecret string
-	var oldEventSigningSecret string
 	var eventPayload map[string]any
 	eventCallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -1514,12 +1496,8 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 			t.Fatal(err)
 		}
 		timestamp := r.Header.Get("X-ClickClack-Timestamp")
-		signature := r.Header.Get("X-ClickClack-Signature")
-		if r.Header.Get("X-ClickClack-Event-ID") == "" || timestamp == "" || signature != signSlashCallback(eventSigningSecret, timestamp, body) {
+		if r.Header.Get("X-ClickClack-Event-ID") == "" || timestamp == "" || r.Header.Get("X-ClickClack-Signature") != signSlashCallback(eventSigningSecret, timestamp, body) {
 			t.Fatalf("event callback signature mismatch")
-		}
-		if oldEventSigningSecret != "" && signature == signSlashCallback(oldEventSigningSecret, timestamp, body) {
-			t.Fatal("event callback still verifies with the old subscription secret")
 		}
 		if err := json.Unmarshal(body, &eventPayload); err != nil {
 			t.Fatal(err)
@@ -1554,63 +1532,17 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		t.Fatalf("expected message.created event payload, got %#v", eventPayload)
 	}
 	deliveries := getJSONAsUser[struct {
-		Deliveries []store.EventDeliveryAttempt `json:"deliveries"`
+		EventDeliveryAttempts []store.EventDeliveryAttempt `json:"event_delivery_attempts"`
 	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries")
-	if len(deliveries.Deliveries) == 0 || deliveries.Deliveries[0].ResponseStatus != http.StatusAccepted {
-		t.Fatalf("expected accepted event delivery attempt, got %#v", deliveries.Deliveries)
+	if len(deliveries.EventDeliveryAttempts) == 0 || deliveries.EventDeliveryAttempts[0].ResponseStatus != http.StatusAccepted {
+		t.Fatalf("expected accepted event delivery attempt, got %#v", deliveries.EventDeliveryAttempts)
 	}
-	oldEventSigningSecret = eventSigningSecret
-	rotatedSubscription := postJSONAsUser[struct {
-		EventSubscription store.EventSubscription `json:"event_subscription"`
-	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/rotate-secret", map[string]any{})
-	if rotatedSubscription.EventSubscription.ID != eventSubscription.EventSubscription.ID || rotatedSubscription.EventSubscription.SigningSecret == "" || rotatedSubscription.EventSubscription.SigningSecret == oldEventSigningSecret {
-		t.Fatalf("unexpected rotated event subscription: %#v", rotatedSubscription.EventSubscription)
-	}
-	eventSigningSecret = rotatedSubscription.EventSubscription.SigningSecret
-	postJSONAsUser[struct {
-		Message store.Message `json:"message"`
-	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "deliver after rotation"})
-	deliveriesAfterRotation := getJSONAsUser[struct {
-		Deliveries []store.EventDeliveryAttempt `json:"deliveries"`
-	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries")
-	if len(deliveriesAfterRotation.Deliveries) != len(deliveries.Deliveries)+1 {
-		t.Fatalf("rotation must preserve delivery history: before=%d after=%d", len(deliveries.Deliveries), len(deliveriesAfterRotation.Deliveries))
-	}
-	postJSONAsUser[struct {
-		Message store.Message `json:"message"`
-	}](t, owner.ID, server.URL+"/api/channels/"+channel.ID+"/messages", map[string]any{"body": "third delivery"})
-	firstDeliveryPage := getJSONAsUser[struct {
-		Deliveries []store.EventDeliveryAttempt `json:"deliveries"`
-		NextCursor *string                      `json:"next_cursor"`
-	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries?limit=2")
-	if len(firstDeliveryPage.Deliveries) != 2 || firstDeliveryPage.NextCursor == nil || *firstDeliveryPage.NextCursor != firstDeliveryPage.Deliveries[1].ID {
-		t.Fatalf("unexpected first delivery page: %#v", firstDeliveryPage)
-	}
-	secondDeliveryPage := getJSONAsUser[struct {
-		Deliveries []store.EventDeliveryAttempt `json:"deliveries"`
-		NextCursor *string                      `json:"next_cursor"`
-	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries?limit=2&before="+url.QueryEscape(*firstDeliveryPage.NextCursor))
-	if len(secondDeliveryPage.Deliveries) != 1 || secondDeliveryPage.NextCursor != nil {
-		t.Fatalf("unexpected final delivery page: %#v", secondDeliveryPage)
-	}
-	if secondDeliveryPage.Deliveries[0].ID == firstDeliveryPage.Deliveries[0].ID || secondDeliveryPage.Deliveries[0].ID == firstDeliveryPage.Deliveries[1].ID {
-		t.Fatalf("delivery pages overlap: first=%#v second=%#v", firstDeliveryPage.Deliveries, secondDeliveryPage.Deliveries)
-	}
-	expectStatusAsUser(
-		t,
-		owner.ID,
-		http.MethodGet,
-		server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/deliveries?before=eda_missing",
-		nil,
-		http.StatusBadRequest,
-	)
 	revokedSubscription := postJSONAsUser[struct {
 		EventSubscription store.EventSubscription `json:"event_subscription"`
 	}](t, owner.ID, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/revoke", map[string]any{})
 	if revokedSubscription.EventSubscription.RevokedAt == nil {
 		t.Fatalf("expected revoked_at on event subscription, got %#v", revokedSubscription.EventSubscription)
 	}
-	expectStatusAsUser(t, owner.ID, http.MethodPost, server.URL+"/api/event-subscriptions/"+eventSubscription.EventSubscription.ID+"/rotate-secret", strings.NewReader(`{}`), http.StatusBadRequest)
 	connectedAccount := postJSONAsUser[struct {
 		ConnectedAccount store.ConnectedAccount `json:"connected_account"`
 	}](t, owner.ID, server.URL+"/api/workspaces/"+workspace.ID+"/connected-accounts", map[string]any{
@@ -1642,9 +1574,11 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	if len(auditLog.AuditLogEntries) < 2 || auditLog.AuditLogEntries[0].Action != "connected_account.revoked" {
 		t.Fatalf("expected connected account audit entries, got %#v", auditLog.AuditLogEntries)
 	}
-	revokedInstall := postJSONAsUser[store.RevokeAppInstallationResult](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})
-	if revokedInstall.Installation.RevokedAt == nil {
-		t.Fatalf("expected revoked_at on app installation, got %#v", revokedInstall.Installation)
+	revokedInstall := postJSONAsUser[struct {
+		AppInstallation store.AppInstallation `json:"app_installation"`
+	}](t, owner.ID, server.URL+"/api/app-installations/"+createdInstall.AppInstallation.ID+"/revoke", map[string]any{})
+	if revokedInstall.AppInstallation.RevokedAt == nil {
+		t.Fatalf("expected revoked_at on app installation, got %#v", revokedInstall.AppInstallation)
 	}
 	readOnlyBot, readOnlyToken, err := st.CreateBot(context.Background(), store.CreateBotInput{
 		WorkspaceID: workspace.ID,
@@ -1675,10 +1609,6 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 	}
 	resp.Body.Close()
 	messageID := messages[len(messages)-1].ID
-	botTokenError := map[string]string{
-		"rotate slash command secret":      "bot tokens cannot rotate slash command secrets",
-		"rotate event subscription secret": "bot tokens cannot rotate event subscription secrets",
-	}
 	for _, tc := range []struct {
 		name        string
 		method      string
@@ -1722,11 +1652,9 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 		{"list slash commands", http.MethodGet, "/api/workspaces/" + workspace.ID + "/slash-commands", "", ""},
 		{"create slash command", http.MethodPost, "/api/workspaces/" + workspace.ID + "/slash-commands", `{"command":"/x"}`, "application/json"},
 		{"revoke slash command", http.MethodPost, "/api/slash-commands/" + registeredCommand.SlashCommand.ID + "/revoke", `{}`, "application/json"},
-		{"rotate slash command secret", http.MethodPost, "/api/slash-commands/" + registeredCommand.SlashCommand.ID + "/rotate-secret", `{}`, "application/json"},
 		{"list event subscriptions", http.MethodGet, "/api/workspaces/" + workspace.ID + "/event-subscriptions", "", ""},
 		{"create event subscription", http.MethodPost, "/api/workspaces/" + workspace.ID + "/event-subscriptions", `{"event_types":["message.created"]}`, "application/json"},
 		{"revoke event subscription", http.MethodPost, "/api/event-subscriptions/" + eventSubscription.EventSubscription.ID + "/revoke", `{}`, "application/json"},
-		{"rotate event subscription secret", http.MethodPost, "/api/event-subscriptions/" + eventSubscription.EventSubscription.ID + "/rotate-secret", `{}`, "application/json"},
 		{"list event deliveries", http.MethodGet, "/api/event-subscriptions/" + eventSubscription.EventSubscription.ID + "/deliveries", "", ""},
 		{"list audit log", http.MethodGet, "/api/workspaces/" + workspace.ID + "/audit-log", "", ""},
 		{"list connected accounts", http.MethodGet, "/api/workspaces/" + workspace.ID + "/connected-accounts", "", ""},
@@ -1750,12 +1678,9 @@ func TestHTTPErrorPathsAndSPA(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer resp.Body.Close()
-			payload, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusForbidden {
+				payload, _ := io.ReadAll(resp.Body)
 				t.Fatalf("%s %s: expected forbidden, got %s %s", tc.method, tc.path, resp.Status, string(payload))
-			}
-			if want := botTokenError[tc.name]; want != "" && !strings.Contains(string(payload), want) {
-				t.Fatalf("%s %s: expected %q, got %s", tc.method, tc.path, want, string(payload))
 			}
 		})
 	}

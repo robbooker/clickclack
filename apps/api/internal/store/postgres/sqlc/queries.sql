@@ -428,8 +428,8 @@ INSERT INTO users (id, kind, owner_user_id, display_name, handle, avatar_url, cr
 VALUES (sqlc.arg(id), 'bot', sqlc.arg(owner_user_id), sqlc.arg(display_name), sqlc.arg(handle), sqlc.arg(avatar_url), sqlc.arg(created_at));
 
 -- name: InsertBotToken :exec
-INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, setup_nonce, created_at)
-VALUES (sqlc.arg(id), sqlc.arg(token_hash), sqlc.arg(bot_user_id), sqlc.arg(workspace_id), sqlc.arg(owner_user_id), sqlc.arg(name), sqlc.arg(scopes_json), sqlc.arg(created_by), sqlc.arg(setup_nonce), sqlc.arg(created_at));
+INSERT INTO bot_tokens (id, token_hash, bot_user_id, workspace_id, owner_user_id, name, scopes_json, created_by, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(token_hash), sqlc.arg(bot_user_id), sqlc.arg(workspace_id), sqlc.arg(owner_user_id), sqlc.arg(name), sqlc.arg(scopes_json), sqlc.arg(created_by), sqlc.arg(created_at));
 
 -- name: ListWorkspaceBots :many
 SELECT u.id, u.kind, COALESCE(u.owner_user_id, '') AS owner_user_id,
@@ -1153,31 +1153,3 @@ WHERE e.workspace_id = sqlc.arg(workspace_id_arg)
     ORDER BY kept.cursor DESC
     LIMIT sqlc.arg(keep_latest)
   );
-
--- name: GetEventDeliveryAttemptCursor :one
-SELECT created_at
-FROM event_delivery_attempts
-WHERE subscription_id = sqlc.arg(subscription_id)
-  AND id = sqlc.arg(before_id);
-
--- name: ListEventDeliveryAttemptsFirstPage :many
-SELECT eda.id, eda.subscription_id, eda.event_id, eda.workspace_id, eda.event_type,
-       eda.attempt, eda.request_json, eda.response_status, eda.response_body,
-       eda.error, eda.created_at, eda.completed_at
-FROM event_delivery_attempts eda
-WHERE eda.subscription_id = sqlc.arg(subscription_id)
-ORDER BY eda.created_at DESC, eda.id DESC
-LIMIT sqlc.arg(page_limit);
-
--- name: ListEventDeliveryAttemptsPage :many
-SELECT eda.id, eda.subscription_id, eda.event_id, eda.workspace_id, eda.event_type,
-       eda.attempt, eda.request_json, eda.response_status, eda.response_body,
-       eda.error, eda.created_at, eda.completed_at
-FROM event_delivery_attempts eda
-WHERE eda.subscription_id = sqlc.arg(subscription_id)
-  AND (eda.created_at, eda.id) < (
-    sqlc.arg(before_created_at)::text,
-    sqlc.arg(before_id)
-  )
-ORDER BY eda.created_at DESC, eda.id DESC
-LIMIT sqlc.arg(page_limit);

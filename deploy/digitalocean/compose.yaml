@@ -1,0 +1,50 @@
+name: clickclack-longboard
+
+services:
+  app:
+    container_name: clickclack
+    image: clickclack:${CLICKCLACK_WEB_VERSION:?set CLICKCLACK_WEB_VERSION}
+    build:
+      context: ../..
+      args:
+        CLICKCLACK_WEB_VERSION: ${CLICKCLACK_WEB_VERSION}
+    command: ["serve", "--addr", ":8080", "--data", "/app/data"]
+    environment:
+      CLICKCLACK_ADDR: ":8080"
+      CLICKCLACK_DATA: "/app/data"
+      CLICKCLACK_DB: "sqlite:///app/data/clickclack.db"
+      CLICKCLACK_UPLOADS: "file:///app/data/uploads"
+      CLICKCLACK_PUBLIC_URL: ${CLICKCLACK_PUBLIC_URL:?set CLICKCLACK_PUBLIC_URL}
+      CLICKCLACK_GITHUB_CLIENT_ID: ${CLICKCLACK_GITHUB_CLIENT_ID:?set CLICKCLACK_GITHUB_CLIENT_ID}
+      CLICKCLACK_GITHUB_CLIENT_SECRET: ${CLICKCLACK_GITHUB_CLIENT_SECRET:?set CLICKCLACK_GITHUB_CLIENT_SECRET}
+      CLICKCLACK_DEV_BOOTSTRAP: "false"
+      CLICKCLACK_ENVIRONMENT: "longboard-pilot"
+      CLICKCLACK_METRICS_ENABLED: "false"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - /var/lib/clickclack:/app/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: 1.0
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

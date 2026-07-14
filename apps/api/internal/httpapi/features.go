@@ -612,7 +612,6 @@ func (s *Server) createBot(w http.ResponseWriter, r *http.Request) {
 		AvatarURL   string   `json:"avatar_url"`
 		TokenName   string   `json:"token_name"`
 		Scopes      []string `json:"scopes"`
-		SetupNonce  string   `json:"setup_nonce"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -626,7 +625,6 @@ func (s *Server) createBot(w http.ResponseWriter, r *http.Request) {
 		AvatarURL:   body.AvatarURL,
 		TokenName:   body.TokenName,
 		Scopes:      body.Scopes,
-		SetupNonce:  body.SetupNonce,
 		CreatedBy:   act.user.ID,
 	})
 	writeResultStatus(w, http.StatusCreated, map[string]any{"bot": bot, "bot_token": token}, err)
@@ -679,9 +677,8 @@ func (s *Server) createBotTokenForWorkspace(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var body struct {
-		Name       string   `json:"name"`
-		Scopes     []string `json:"scopes"`
-		SetupNonce string   `json:"setup_nonce"`
+		Name   string   `json:"name"`
+		Scopes []string `json:"scopes"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -692,7 +689,6 @@ func (s *Server) createBotTokenForWorkspace(w http.ResponseWriter, r *http.Reque
 		BotUserID:   chi.URLParam(r, "bot_user_id"),
 		Name:        body.Name,
 		Scopes:      body.Scopes,
-		SetupNonce:  body.SetupNonce,
 		CreatedBy:   act.user.ID,
 	})
 	writeResultStatus(w, http.StatusCreated, map[string]any{"bot_token": token}, err)
@@ -748,16 +744,6 @@ func (s *Server) listAppInstallations(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, map[string]any{"app_installations": installations}, err)
 }
 
-func (s *Server) listEventTypes(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.currentActor(r); err != nil {
-		writeError(w, http.StatusUnauthorized, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"event_types": append([]string(nil), store.DurableEventTypes...),
-	})
-}
-
 func (s *Server) createAppInstallation(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -773,7 +759,6 @@ func (s *Server) createAppInstallation(w http.ResponseWriter, r *http.Request) {
 		DisplayName string         `json:"display_name"`
 		BotUserID   string         `json:"bot_user_id"`
 		Config      map[string]any `json:"config"`
-		SetupNonce  string         `json:"setup_nonce"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -785,7 +770,6 @@ func (s *Server) createAppInstallation(w http.ResponseWriter, r *http.Request) {
 		DisplayName: body.DisplayName,
 		BotUserID:   body.BotUserID,
 		Config:      body.Config,
-		SetupNonce:  body.SetupNonce,
 		CreatedBy:   act.user.ID,
 	})
 	writeResultStatus(w, http.StatusCreated, map[string]any{"app_installation": installation}, err)
@@ -801,30 +785,8 @@ func (s *Server) revokeAppInstallation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot revoke app installations"))
 		return
 	}
-	options := store.RevokeAppInstallationOptions{
-		RevokeSlashCommands:      true,
-		RevokeEventSubscriptions: true,
-	}
-	var body struct {
-		RevokeSlashCommands      *bool `json:"revoke_slash_commands"`
-		RevokeEventSubscriptions *bool `json:"revoke_event_subscriptions"`
-		RevokeBotTokens          *bool `json:"revoke_bot_tokens"`
-	}
-	if err := readJSON(w, r, &body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if body.RevokeSlashCommands != nil {
-		options.RevokeSlashCommands = *body.RevokeSlashCommands
-	}
-	if body.RevokeEventSubscriptions != nil {
-		options.RevokeEventSubscriptions = *body.RevokeEventSubscriptions
-	}
-	if body.RevokeBotTokens != nil {
-		options.RevokeBotTokens = *body.RevokeBotTokens
-	}
-	result, err := s.store.RevokeAppInstallation(r.Context(), chi.URLParam(r, "installation_id"), act.user.ID, options)
-	writeResult(w, result, err)
+	installation, err := s.store.RevokeAppInstallation(r.Context(), chi.URLParam(r, "installation_id"), act.user.ID)
+	writeResult(w, map[string]any{"app_installation": installation}, err)
 }
 
 func (s *Server) listSlashCommands(w http.ResponseWriter, r *http.Request) {
@@ -888,20 +850,6 @@ func (s *Server) revokeSlashCommand(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, map[string]any{"slash_command": command}, err)
 }
 
-func (s *Server) rotateSlashCommandSecret(w http.ResponseWriter, r *http.Request) {
-	act, err := s.currentActor(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err)
-		return
-	}
-	if act.botTokenID != "" {
-		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot rotate slash command secrets"))
-		return
-	}
-	command, err := s.store.RotateSlashCommandSecret(r.Context(), chi.URLParam(r, "command_id"), act.user.ID)
-	writeResult(w, map[string]any{"slash_command": command}, err)
-}
-
 func (s *Server) listEventSubscriptions(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -959,20 +907,6 @@ func (s *Server) revokeEventSubscription(w http.ResponseWriter, r *http.Request)
 	writeResult(w, map[string]any{"event_subscription": subscription}, err)
 }
 
-func (s *Server) rotateEventSubscriptionSecret(w http.ResponseWriter, r *http.Request) {
-	act, err := s.currentActor(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err)
-		return
-	}
-	if act.botTokenID != "" {
-		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot rotate event subscription secrets"))
-		return
-	}
-	subscription, err := s.store.RotateEventSubscriptionSecret(r.Context(), chi.URLParam(r, "subscription_id"), act.user.ID)
-	writeResult(w, map[string]any{"event_subscription": subscription}, err)
-}
-
 func (s *Server) listEventDeliveryAttempts(w http.ResponseWriter, r *http.Request) {
 	act, err := s.currentActor(r)
 	if err != nil {
@@ -983,34 +917,8 @@ func (s *Server) listEventDeliveryAttempts(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, errors.New("bot tokens cannot list event delivery attempts"))
 		return
 	}
-	limit := queryInt(r, "limit", 50)
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	attempts, err := s.store.ListEventDeliveryAttempts(
-		r.Context(),
-		chi.URLParam(r, "subscription_id"),
-		act.user.ID,
-		limit+1,
-		r.URL.Query().Get("before"),
-	)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	var nextCursor *string
-	if len(attempts) > limit {
-		attempts = attempts[:limit]
-		cursor := attempts[len(attempts)-1].ID
-		nextCursor = &cursor
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"deliveries":  attempts,
-		"next_cursor": nextCursor,
-	})
+	attempts, err := s.store.ListEventDeliveryAttempts(r.Context(), chi.URLParam(r, "subscription_id"), act.user.ID)
+	writeResult(w, map[string]any{"event_delivery_attempts": attempts}, err)
 }
 
 func (s *Server) listAuditLogEntries(w http.ResponseWriter, r *http.Request) {
@@ -1224,6 +1132,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Body            string `json:"body"`
+		UploadID        string `json:"upload_id"`
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 		Kind            string `json:"kind"`
@@ -1237,6 +1146,12 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
+	if strings.TrimSpace(body.UploadID) != "" {
+		if err := act.requireScope("uploads:write"); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+	}
 	kind, turnID, ok := s.resolveMessageKind(w, act, body.Kind, body.TurnID)
 	if !ok {
 		return
@@ -1244,7 +1159,7 @@ func (s *Server) createDirectMessage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotDirectWorkspace(w, r, act, chi.URLParam(r, "conversation_id")) {
 		return
 	}
-	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, Kind: kind, TurnID: turnID})
+	message, event, err := s.store.CreateDirectMessage(r.Context(), store.CreateDirectMessageInput{ConversationID: chi.URLParam(r, "conversation_id"), AuthorID: act.user.ID, Body: body.Body, UploadID: body.UploadID, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, Kind: kind, TurnID: turnID})
 	if err == nil && event.ID != "" {
 		s.publishEvent(r.Context(), event)
 		if !store.IsActivityMessageKind(message.Kind) {

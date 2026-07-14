@@ -20,6 +20,9 @@ GET  /api/uploads/{upload_id}                      # streams the file
 POST /api/messages/{message_id}/attachments        # { upload_id }
 ```
 
+Channel and DM message-create requests also accept `upload_id`. In that path,
+the message and attachment row are committed together and the body may be empty.
+
 - Upload size cap: `64 MiB` per request.
 - The file is written to the configured upload backend under a random
   `upload-*` key. The original filename is recorded in the `uploads` row but

@@ -167,22 +167,6 @@ export interface paths {
     patch: operations["updateMe"];
     trace?: never;
   };
-  "/api/event-types": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get: operations["listEventTypes"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/me/bots": {
     parameters: {
       query?: never;
@@ -487,22 +471,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/slash-commands/{command_id}/rotate-secret": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post: operations["rotateSlashCommandSecret"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/workspaces/{workspace_id}/event-subscriptions": {
     parameters: {
       query?: never;
@@ -529,22 +497,6 @@ export interface paths {
     get?: never;
     put?: never;
     post: operations["revokeEventSubscription"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/event-subscriptions/{subscription_id}/rotate-secret": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post: operations["rotateEventSubscriptionSecret"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1103,14 +1055,10 @@ export interface components {
       avatar_url?: string;
       token_name?: string;
       scopes?: string[];
-      /** @description Retry key for integration setup. Replays reuse the same bot and token row while returning a fresh raw token. */
-      setup_nonce?: string;
     };
     CreateBotTokenRequest: {
       name?: string;
       scopes?: string[];
-      /** @description Retry key for integration setup. Replays reuse the same token row while returning a fresh raw token. */
-      setup_nonce?: string;
     };
     AppInstallation: {
       id: string;
@@ -1134,40 +1082,6 @@ export interface components {
       config?: {
         [key: string]: unknown;
       };
-      /** @description Retry key that returns the original installation instead of creating a duplicate. */
-      setup_nonce?: string;
-    };
-    AppInstallationResponse: {
-      app_installation: components["schemas"]["AppInstallation"];
-    };
-    AppInstallationListResponse: {
-      app_installations: components["schemas"]["AppInstallation"][];
-    };
-    RevokeAppInstallationRequest: {
-      /**
-       * @description Defaults to true when omitted.
-       * @example true
-       */
-      revoke_slash_commands?: boolean;
-      /**
-       * @description Defaults to true when omitted.
-       * @example true
-       */
-      revoke_event_subscriptions?: boolean;
-      /**
-       * @description Defaults to false when omitted.
-       * @example false
-       */
-      revoke_bot_tokens?: boolean;
-    };
-    AppInstallationRevokedCounts: {
-      slash_commands: number;
-      event_subscriptions: number;
-      bot_tokens: number;
-    };
-    RevokeAppInstallationResponse: {
-      installation: components["schemas"]["AppInstallation"];
-      revoked: components["schemas"]["AppInstallationRevokedCounts"];
     };
     SlashCommand: {
       id: string;
@@ -1195,12 +1109,6 @@ export interface components {
       callback_url: string;
       bot_user_id: string;
     };
-    SlashCommandResponse: {
-      slash_command: components["schemas"]["SlashCommand"];
-    };
-    SlashCommandListResponse: {
-      slash_commands: components["schemas"]["SlashCommand"][];
-    };
     EventSubscription: {
       id: string;
       workspace_id: string;
@@ -1222,12 +1130,6 @@ export interface components {
       /** Format: uri */
       callback_url: string;
     };
-    EventSubscriptionResponse: {
-      event_subscription: components["schemas"]["EventSubscription"];
-    };
-    EventSubscriptionListResponse: {
-      event_subscriptions: components["schemas"]["EventSubscription"][];
-    };
     EventDeliveryAttempt: {
       id: string;
       subscription_id: string;
@@ -1243,13 +1145,6 @@ export interface components {
       created_at: string;
       /** Format: date-time */
       completed_at: string;
-    };
-    EventDeliveryAttemptsResponse: {
-      deliveries: components["schemas"]["EventDeliveryAttempt"][];
-      next_cursor: string | null;
-    };
-    EventTypesResponse: {
-      event_types: string[];
     };
     AuditLogEntry: {
       id: string;
@@ -1320,8 +1215,14 @@ export interface components {
       kind?: string;
       archived?: boolean;
     };
+    /** @description A non-empty body or an upload_id is required. */
     CreateMessageRequest: {
-      body: string;
+      body?: string;
+      /**
+       * @description Optional upload to attach atomically while creating the message.
+       *     The upload must belong to the caller and the message workspace.
+       */
+      upload_id?: string;
       /**
        * @default markdown
        * @enum {string}
@@ -2024,26 +1925,6 @@ export interface operations {
       };
     };
   };
-  listEventTypes: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Durable event types accepted by outgoing event subscriptions */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EventTypesResponse"];
-        };
-      };
-    };
-  };
   listMyBots: {
     parameters: {
       query?: never;
@@ -2702,9 +2583,7 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["AppInstallationListResponse"];
-        };
+        content?: never;
       };
     };
   };
@@ -2728,15 +2607,6 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["AppInstallationResponse"];
-        };
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
         content?: never;
       };
     };
@@ -2750,23 +2620,10 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: {
-      content: {
-        "application/json": components["schemas"]["RevokeAppInstallationRequest"];
-      };
-    };
+    requestBody?: never;
     responses: {
-      /** @description Revoked app installation and requested attached resources */
+      /** @description Revoked app installation */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RevokeAppInstallationResponse"];
-        };
-      };
-      /** @description Workspace manager permission required */
-      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -2790,9 +2647,7 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["SlashCommandListResponse"];
-        };
+        content?: never;
       };
     };
   };
@@ -2816,15 +2671,6 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["SlashCommandResponse"];
-        };
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
         content?: never;
       };
     };
@@ -2842,51 +2688,6 @@ export interface operations {
     responses: {
       /** @description Revoked slash command */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SlashCommandResponse"];
-        };
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  rotateSlashCommandSecret: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        command_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Slash command with its fresh one-time signing secret */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SlashCommandResponse"];
-        };
-      };
-      /** @description Cannot rotate a revoked slash command */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Workspace manager permission required */
-      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -2910,9 +2711,7 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["EventSubscriptionListResponse"];
-        };
+        content?: never;
       };
     };
   };
@@ -2936,22 +2735,6 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["EventSubscriptionResponse"];
-        };
-      };
-      /** @description Invalid or unknown event type */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
         content?: never;
       };
     };
@@ -2972,20 +2755,11 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["EventSubscriptionResponse"];
-        };
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
         content?: never;
       };
     };
   };
-  rotateEventSubscriptionSecret: {
+  listEventDeliveryAttempts: {
     parameters: {
       query?: never;
       header?: never;
@@ -2996,57 +2770,8 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Event subscription with its fresh one-time signing secret */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EventSubscriptionResponse"];
-        };
-      };
-      /** @description Cannot rotate a revoked event subscription */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Workspace manager permission required */
-      403: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-    };
-  };
-  listEventDeliveryAttempts: {
-    parameters: {
-      query?: {
-        limit?: number;
-        /** @description Delivery attempt ID; returns attempts strictly older than this cursor. */
-        before?: string;
-      };
-      header?: never;
-      path: {
-        subscription_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
       /** @description Event delivery attempts */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EventDeliveryAttemptsResponse"];
-        };
-      };
-      /** @description Invalid or stale delivery cursor */
-      400: {
         headers: {
           [name: string]: unknown;
         };

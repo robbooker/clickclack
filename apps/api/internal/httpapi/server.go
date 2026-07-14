@@ -125,7 +125,6 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/me", s.me)
 		r.Patch("/me", s.updateMe)
 		r.Get("/me/bots", s.listMyBots)
-		r.Get("/event-types", s.listEventTypes)
 		r.Get("/workspaces", s.listWorkspaces)
 		r.Post("/workspaces", s.createWorkspace)
 		r.Get("/routes/{workspace_route_id}/{target_route_id}", s.resolveRoute)
@@ -154,11 +153,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/workspaces/{workspace_id}/slash-commands", s.listSlashCommands)
 		r.Post("/workspaces/{workspace_id}/slash-commands", s.createSlashCommand)
 		r.Post("/slash-commands/{command_id}/revoke", s.revokeSlashCommand)
-		r.Post("/slash-commands/{command_id}/rotate-secret", s.rotateSlashCommandSecret)
 		r.Get("/workspaces/{workspace_id}/event-subscriptions", s.listEventSubscriptions)
 		r.Post("/workspaces/{workspace_id}/event-subscriptions", s.createEventSubscription)
 		r.Post("/event-subscriptions/{subscription_id}/revoke", s.revokeEventSubscription)
-		r.Post("/event-subscriptions/{subscription_id}/rotate-secret", s.rotateEventSubscriptionSecret)
 		r.Get("/event-subscriptions/{subscription_id}/deliveries", s.listEventDeliveryAttempts)
 		r.Get("/workspaces/{workspace_id}/audit-log", s.listAuditLogEntries)
 		r.Get("/workspaces/{workspace_id}/connected-accounts", s.listConnectedAccounts)
@@ -892,6 +889,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Body            string `json:"body"`
+		UploadID        string `json:"upload_id"`
 		QuotedMessageID string `json:"quoted_message_id"`
 		Nonce           string `json:"nonce"`
 		TopicID         string `json:"topic_id"`
@@ -902,6 +900,12 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if strings.TrimSpace(body.UploadID) != "" {
+		if err := act.requireScope("uploads:write"); err != nil {
+			writeError(w, http.StatusForbidden, err)
+			return
+		}
+	}
 	kind, turnID, ok := s.resolveMessageKind(w, act, body.Kind, body.TurnID)
 	if !ok {
 		return
@@ -909,7 +913,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireBotChannelWorkspace(w, r, act, chi.URLParam(r, "channel_id")) {
 		return
 	}
-	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, TopicID: body.TopicID, Kind: kind, TurnID: turnID})
+	message, event, err := s.store.CreateMessage(r.Context(), store.CreateMessageInput{ChannelID: chi.URLParam(r, "channel_id"), AuthorID: act.user.ID, Body: body.Body, UploadID: body.UploadID, QuotedMessageID: optionalString(body.QuotedMessageID), Nonce: body.Nonce, TopicID: body.TopicID, Kind: kind, TurnID: turnID})
 	if err == nil && event.ID != "" {
 		s.publishEvent(r.Context(), event)
 		if !store.IsActivityMessageKind(message.Kind) {
@@ -1501,8 +1505,6 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrUploadQuotaExceeded):
 		writeError(w, http.StatusRequestEntityTooLarge, err)
 	case errors.Is(err, store.ErrUploadNonceConflict):
-		writeError(w, http.StatusConflict, err)
-	case errors.Is(err, store.ErrSetupNonceConflict):
 		writeError(w, http.StatusConflict, err)
 	case errors.Is(err, store.ErrModerationRestricted):
 		writeError(w, http.StatusForbidden, err)

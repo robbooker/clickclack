@@ -5,11 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/openclaw/clickclack/apps/api/internal/store"
-	"github.com/openclaw/clickclack/apps/api/internal/store/postgres/storedb"
 )
 
 func (s *Store) ListEventSubscriptions(ctx context.Context, workspaceID, requesterID string) ([]store.EventSubscription, error) {
@@ -49,7 +47,7 @@ func (s *Store) CreateEventSubscription(ctx context.Context, input store.CreateE
 		return store.EventSubscription{}, err
 	}
 	defer tx.Rollback()
-	if err := requireWorkspaceManagerTx(ctx, tx, workspaceID, createdBy); err != nil {
+	if err := requireMembershipTx(ctx, tx, workspaceID, createdBy); err != nil {
 		return store.EventSubscription{}, err
 	}
 	appInstallationID := strings.TrimSpace(input.AppInstallationID)
@@ -58,8 +56,7 @@ func (s *Store) CreateEventSubscription(ctx context.Context, input store.CreateE
 		if err := tx.QueryRowContext(ctx, `
 			SELECT 1
 			FROM app_installations
-			WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL
-			FOR KEY SHARE`, appInstallationID, workspaceID).Scan(&one); err != nil {
+			WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL`, appInstallationID, workspaceID).Scan(&one); err != nil {
 			return store.EventSubscription{}, err
 		}
 	}
@@ -100,7 +97,7 @@ func (s *Store) RevokeEventSubscription(ctx context.Context, subscriptionID, req
 	if err != nil {
 		return store.EventSubscription{}, err
 	}
-	if err := s.requireWorkspaceManager(ctx, subscription.WorkspaceID, requesterID); err != nil {
+	if err := s.requireMembership(ctx, subscription.WorkspaceID, requesterID); err != nil {
 		return store.EventSubscription{}, err
 	}
 	revokedAt := now()
@@ -110,50 +107,8 @@ func (s *Store) RevokeEventSubscription(ctx context.Context, subscriptionID, req
 	return s.getEventSubscription(ctx, subscriptionID, false)
 }
 
-func (s *Store) RotateEventSubscriptionSecret(ctx context.Context, subscriptionID, requesterID string) (store.EventSubscription, error) {
-	subscriptionID = strings.TrimSpace(subscriptionID)
-	if subscriptionID == "" {
-		return store.EventSubscription{}, errors.New("subscription_id is required")
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return store.EventSubscription{}, err
-	}
-	defer tx.Rollback()
-	subscription, err := scanEventSubscription(tx.QueryRowContext(ctx, eventSubscriptionSelect(true)+` WHERE id = $1`, subscriptionID))
-	if err != nil {
-		return store.EventSubscription{}, err
-	}
-	if err := requireWorkspaceManagerTx(ctx, tx, subscription.WorkspaceID, requesterID); err != nil {
-		return store.EventSubscription{}, err
-	}
-	if subscription.RevokedAt != nil {
-		return store.EventSubscription{}, errors.New("cannot rotate a revoked event subscription")
-	}
-	secret := newID("ccs")
-	result, err := tx.ExecContext(ctx, `UPDATE event_subscriptions SET signing_secret = $1 WHERE id = $2 AND revoked_at IS NULL`, secret, subscriptionID)
-	if err != nil {
-		return store.EventSubscription{}, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return store.EventSubscription{}, err
-	}
-	if affected != 1 {
-		return store.EventSubscription{}, errors.New("cannot rotate a revoked event subscription")
-	}
-	subscription.SigningSecret = secret
-	if err := tx.Commit(); err != nil {
-		return store.EventSubscription{}, err
-	}
-	return subscription, nil
-}
-
 func (s *Store) ListEventSubscriptionsForEvent(ctx context.Context, event store.Event) ([]store.EventSubscription, error) {
 	if event.ID == "" || event.Cursor == "" {
-		return nil, nil
-	}
-	if len(event.RecipientUserIDs) > 0 {
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, eventSubscriptionSelect(true)+`
@@ -222,7 +177,7 @@ func (s *Store) CreateEventDeliveryAttempt(ctx context.Context, input store.Crea
 	return attempt, err
 }
 
-func (s *Store) ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string, limit int, before string) ([]store.EventDeliveryAttempt, error) {
+func (s *Store) ListEventDeliveryAttempts(ctx context.Context, subscriptionID, requesterID string) ([]store.EventDeliveryAttempt, error) {
 	subscription, err := s.getEventSubscription(ctx, subscriptionID, false)
 	if err != nil {
 		return nil, err
@@ -230,45 +185,14 @@ func (s *Store) ListEventDeliveryAttempts(ctx context.Context, subscriptionID, r
 	if err := s.requireMembership(ctx, subscription.WorkspaceID, requesterID); err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 201 {
-		limit = 201
-	}
-	before = strings.TrimSpace(before)
-	var rows []storedb.EventDeliveryAttempt
-	if before == "" {
-		rows, err = s.q.ListEventDeliveryAttemptsFirstPage(ctx, storedb.ListEventDeliveryAttemptsFirstPageParams{
-			SubscriptionID: subscriptionID,
-			PageLimit:      int32(limit),
-		})
-	} else {
-		beforeCreatedAt, cursorErr := s.q.GetEventDeliveryAttemptCursor(ctx, storedb.GetEventDeliveryAttemptCursorParams{
-			SubscriptionID: subscriptionID,
-			BeforeID:       before,
-		})
-		if errors.Is(cursorErr, sql.ErrNoRows) {
-			return nil, store.ErrInvalidEventDeliveryCursor
-		}
-		if cursorErr != nil {
-			return nil, cursorErr
-		}
-		rows, err = s.q.ListEventDeliveryAttemptsPage(ctx, storedb.ListEventDeliveryAttemptsPageParams{
-			SubscriptionID:  subscriptionID,
-			BeforeCreatedAt: beforeCreatedAt,
-			BeforeID:        before,
-			PageLimit:       int32(limit),
-		})
-	}
+	rows, err := s.db.QueryContext(ctx, eventDeliveryAttemptSelect()+`
+		WHERE subscription_id = $1
+		ORDER BY created_at DESC`, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]store.EventDeliveryAttempt, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, storeEventDeliveryAttemptFromDB(row))
-	}
-	return out, nil
+	defer rows.Close()
+	return scanEventDeliveryAttempts(rows)
 }
 
 func (s *Store) getEventSubscription(ctx context.Context, subscriptionID string, includeSecret bool) (store.EventSubscription, error) {
@@ -283,8 +207,8 @@ func normalizeEventTypes(values []string) ([]string, error) {
 		if value == "" {
 			continue
 		}
-		if value != "*" && !store.IsDurableEventType(value) {
-			return nil, fmt.Errorf("unknown event type %q", value)
+		if value != "*" && !strings.Contains(value, ".") {
+			return nil, errors.New("event type must be '*' or a dotted event type")
 		}
 		if seen[value] {
 			continue
@@ -357,4 +281,33 @@ func scanEventSubscription(row scanner) (store.EventSubscription, error) {
 		return store.EventSubscription{}, err
 	}
 	return subscription, nil
+}
+
+func eventDeliveryAttemptSelect() string {
+	return `SELECT id, subscription_id, event_id, workspace_id, event_type, attempt, request_json, response_status, response_body, error, created_at, completed_at FROM event_delivery_attempts`
+}
+
+func scanEventDeliveryAttempts(rows *sql.Rows) ([]store.EventDeliveryAttempt, error) {
+	out := []store.EventDeliveryAttempt{}
+	for rows.Next() {
+		var attempt store.EventDeliveryAttempt
+		if err := rows.Scan(
+			&attempt.ID,
+			&attempt.SubscriptionID,
+			&attempt.EventID,
+			&attempt.WorkspaceID,
+			&attempt.EventType,
+			&attempt.Attempt,
+			&attempt.RequestJSON,
+			&attempt.ResponseStatus,
+			&attempt.ResponseBody,
+			&attempt.Error,
+			&attempt.CreatedAt,
+			&attempt.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, attempt)
+	}
+	return out, rows.Err()
 }

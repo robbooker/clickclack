@@ -53,23 +53,6 @@ export type AppInstallation = {
   revoked_at?: string;
 };
 
-export type RevokeAppInstallationOptions = {
-  revoke_slash_commands?: boolean;
-  revoke_event_subscriptions?: boolean;
-  revoke_bot_tokens?: boolean;
-};
-
-export type AppInstallationRevokedCounts = {
-  slash_commands: number;
-  event_subscriptions: number;
-  bot_tokens: number;
-};
-
-export type RevokeAppInstallationResult = {
-  installation: AppInstallation;
-  revoked: AppInstallationRevokedCounts;
-};
-
 export type SlashCommand = {
   id: string;
   workspace_id: string;
@@ -109,16 +92,6 @@ export type EventDeliveryAttempt = {
   error?: string;
   created_at: string;
   completed_at: string;
-};
-
-export type EventDeliveryAttemptsOptions = {
-  limit?: number;
-  before?: string;
-};
-
-export type EventDeliveryAttemptsPage = {
-  deliveries: EventDeliveryAttempt[];
-  next_cursor: string | null;
 };
 
 export type AuditLogEntry = {
@@ -192,8 +165,11 @@ export type Topic = {
 
 export type MessageKind = "message" | "agent_commentary" | "agent_tool";
 
-type MessageInputBase = {
-  body: string;
+type MessageContentInput =
+  | { body: string; upload_id?: string }
+  | { body?: string; upload_id: string };
+
+type MessageInputBase = MessageContentInput & {
   quoted_message_id?: string;
   nonce?: string;
 };
@@ -452,7 +428,6 @@ export class ClickClackClient {
         avatar_url?: string;
         token_name?: string;
         scopes?: string[];
-        setup_nonce?: string;
       },
     ): Promise<{ bot: User; bot_token: BotToken }> => {
       return this.request(`/api/workspaces/${workspaceId}/bots`, {
@@ -474,7 +449,7 @@ export class ClickClackClient {
     createWorkspaceToken: async (
       workspaceId: string,
       botUserId: string,
-      input: { name?: string; scopes?: string[]; setup_nonce?: string },
+      input: { name?: string; scopes?: string[] },
     ): Promise<BotToken> => {
       const data = await this.request<{ bot_token: BotToken }>(
         `/api/workspaces/${workspaceId}/bots/${botUserId}/tokens`,
@@ -491,7 +466,7 @@ export class ClickClackClient {
     },
     createToken: async (
       botUserId: string,
-      input: { name?: string; scopes?: string[]; setup_nonce?: string },
+      input: { name?: string; scopes?: string[] },
     ): Promise<BotToken> => {
       const data = await this.request<{ bot_token: BotToken }>(`/api/bots/${botUserId}/tokens`, {
         method: "POST",
@@ -525,7 +500,6 @@ export class ClickClackClient {
         display_name?: string;
         bot_user_id: string;
         config?: Record<string, unknown>;
-        setup_nonce?: string;
       },
     ): Promise<AppInstallation> => {
       const data = await this.request<{ app_installation: AppInstallation }>(
@@ -537,17 +511,15 @@ export class ClickClackClient {
       );
       return data.app_installation;
     },
-    revoke: async (
-      installationId: string,
-      options: RevokeAppInstallationOptions = {},
-    ): Promise<RevokeAppInstallationResult> => {
-      return this.request<RevokeAppInstallationResult>(
+    revoke: async (installationId: string): Promise<AppInstallation> => {
+      const data = await this.request<{ app_installation: AppInstallation }>(
         `/api/app-installations/${installationId}/revoke`,
         {
           method: "POST",
-          body: JSON.stringify(options),
+          body: JSON.stringify({}),
         },
       );
+      return data.app_installation;
     },
   };
 
@@ -580,16 +552,6 @@ export class ClickClackClient {
     revoke: async (commandId: string): Promise<SlashCommand> => {
       const data = await this.request<{ slash_command: SlashCommand }>(
         `/api/slash-commands/${commandId}/revoke`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
-      );
-      return data.slash_command;
-    },
-    rotateSecret: async (commandId: string): Promise<SlashCommand> => {
-      const data = await this.request<{ slash_command: SlashCommand }>(
-        `/api/slash-commands/${commandId}/rotate-secret`,
         {
           method: "POST",
           body: JSON.stringify({}),
@@ -633,38 +595,11 @@ export class ClickClackClient {
       );
       return data.event_subscription;
     },
-    rotateSecret: async (subscriptionId: string): Promise<EventSubscription> => {
-      const data = await this.request<{ event_subscription: EventSubscription }>(
-        `/api/event-subscriptions/${subscriptionId}/rotate-secret`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
+    deliveries: async (subscriptionId: string): Promise<EventDeliveryAttempt[]> => {
+      const data = await this.request<{ event_delivery_attempts: EventDeliveryAttempt[] }>(
+        `/api/event-subscriptions/${subscriptionId}/deliveries`,
       );
-      return data.event_subscription;
-    },
-    deliveries: async (
-      subscriptionId: string,
-      options: EventDeliveryAttemptsOptions = {},
-    ): Promise<EventDeliveryAttemptsPage> => {
-      const query = new URLSearchParams();
-      if (options.limit !== undefined) {
-        query.set("limit", String(options.limit));
-      }
-      if (options.before) {
-        query.set("before", options.before);
-      }
-      const suffix = query.toString();
-      return this.request<EventDeliveryAttemptsPage>(
-        `/api/event-subscriptions/${subscriptionId}/deliveries${suffix ? `?${suffix}` : ""}`,
-      );
-    },
-  };
-
-  eventTypes = {
-    list: async (): Promise<string[]> => {
-      const data = await this.request<{ event_types: string[] }>("/api/event-types");
-      return data.event_types;
+      return data.event_delivery_attempts;
     },
   };
 

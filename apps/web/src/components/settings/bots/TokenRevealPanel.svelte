@@ -5,52 +5,36 @@
     buildOpenClawShellSnippet,
     type OpenClawAccountMode,
   } from "../../../lib/bots";
-  import type { AppSnippetInput } from "../../../lib/app-catalog";
-
-  type SnippetBuilder = (input: AppSnippetInput) => string;
 
   type Props = {
     token: BotToken;
     botHandle: string;
     botUserID: string;
     workspace: string;
-    defaultTo?: string;
-    allowFrom?: string[];
-    agentActivity?: boolean;
-    configSnippetBuilder?: SnippetBuilder | null;
-    shellSnippetBuilder?: SnippetBuilder | null;
     onDismiss: () => void;
   };
 
-  let {
-    token,
-    botHandle,
-    botUserID,
-    workspace,
-    defaultTo,
-    allowFrom,
-    agentActivity,
-    configSnippetBuilder = (input) => buildOpenClawConfigSnippet(input),
-    shellSnippetBuilder = (input) => buildOpenClawShellSnippet(input),
-    onDismiss,
-  }: Props = $props();
+  let { token, botHandle, botUserID, workspace, onDismiss }: Props = $props();
 
   let acknowledged = $state(false);
   let mode = $state<OpenClawAccountMode>("single");
   let copied = $state<"token" | "config" | "shell" | null>(null);
 
-  const snippetInput = $derived<AppSnippetInput>({
-    workspace,
-    botHandle,
-    botUserID,
-    token: token.token ?? "",
-    mode,
-    defaultTo,
-    allowFrom,
-    agentActivity,
-  });
-  const configSnippet = $derived(configSnippetBuilder?.(snippetInput) ?? "");
-  const shellSnippet = $derived(shellSnippetBuilder?.(snippetInput) ?? "");
+  const configSnippet = $derived(
+    buildOpenClawConfigSnippet({
+      workspace,
+      botHandle,
+      botUserID,
+      mode,
+    }),
+  );
+  const shellSnippet = $derived(
+    buildOpenClawShellSnippet({
+      botHandle,
+      token: token.token ?? "",
+      mode,
+    }),
+  );
 
   async function copyTo(value: string, kind: "token" | "config" | "shell") {
     try {
@@ -96,7 +80,6 @@
     </div>
   </div>
 
-  {#if configSnippetBuilder || shellSnippetBuilder}
   <div class="ws-bots__reveal-field">
     <span class="ws-bots__reveal-label">OpenClaw account shape</span>
     <div class="ws-bots__setup-mode" role="group" aria-label="OpenClaw account shape">
@@ -117,38 +100,33 @@
     </div>
   </div>
 
-  {#if configSnippetBuilder}
-    <div class="ws-bots__reveal-field">
-      <div class="ws-bots__reveal-snippet-header">
-        <span class="ws-bots__reveal-label">OpenClaw config</span>
-        <button
-          type="button"
-          class="ws-btn"
-          onclick={() => copyTo(configSnippet, "config")}
-        >
-          {copied === "config" ? "Copied" : "Copy config"}
-        </button>
-      </div>
-      <pre class="ws-bots__reveal-snippet"><code>{configSnippet}</code></pre>
+  <div class="ws-bots__reveal-field">
+    <div class="ws-bots__reveal-snippet-header">
+      <span class="ws-bots__reveal-label">OpenClaw config</span>
+      <button
+        type="button"
+        class="ws-btn"
+        onclick={() => copyTo(configSnippet, "config")}
+      >
+        {copied === "config" ? "Copied" : "Copy config"}
+      </button>
     </div>
-  {/if}
+    <pre class="ws-bots__reveal-snippet"><code>{configSnippet}</code></pre>
+  </div>
 
-  {#if shellSnippetBuilder}
-    <div class="ws-bots__reveal-field">
-      <div class="ws-bots__reveal-snippet-header">
-        <span class="ws-bots__reveal-label">Install, export, and start</span>
-        <button
-          type="button"
-          class="ws-btn"
-          onclick={() => copyTo(shellSnippet, "shell")}
-        >
-          {copied === "shell" ? "Copied" : "Copy commands"}
-        </button>
-      </div>
-      <pre class="ws-bots__reveal-snippet"><code>{shellSnippet}</code></pre>
+  <div class="ws-bots__reveal-field">
+    <div class="ws-bots__reveal-snippet-header">
+      <span class="ws-bots__reveal-label">Export and start</span>
+      <button
+        type="button"
+        class="ws-btn"
+        onclick={() => copyTo(shellSnippet, "shell")}
+      >
+        {copied === "shell" ? "Copied" : "Copy commands"}
+      </button>
     </div>
-  {/if}
-  {/if}
+    <pre class="ws-bots__reveal-snippet"><code>{shellSnippet}</code></pre>
+  </div>
 
   {#if token.scopes?.length}
     <div class="ws-bots__reveal-field">
