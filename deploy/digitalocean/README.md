@@ -76,11 +76,25 @@ copy them to object storage before treating the pilot as durable production.
 ## Authentication and onboarding
 
 Rob Booker's bootstrapped owner has both the local and GitHub identities and
-owns the private `ClickClack` workspace. With no GitHub organization gate,
+owns the private `Longboard` workspace. With no GitHub organization gate,
 other GitHub logins enter ClickClack's isolated `Guests` workspace and cannot
 see the private workspace. Adding a pilot member currently requires an admin
 user/membership step; ClickClack does not yet expose a general invite-consume
 endpoint.
+
+The sign-in screen also accepts a one-time code. Create an owner code on the
+host, paste the printed `mgt_...` value into the browser within 15 minutes, and
+the resulting browser session remains valid for 30 days:
+
+```sh
+docker exec clickclack clickclack admin magic-link create \
+  --data /app/data \
+  --email madspreadsheets@gmail.com \
+  --name "Rob Booker"
+```
+
+The code is a short-lived secret. Do not place it in shell history, logs, chat,
+or source control.
 
 OpenClaw is not required for human chat. Add Buddy later as a scoped bot token
 after the human workflow is accepted.

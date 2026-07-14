@@ -416,6 +416,37 @@ test("app subdomain root opens the chat app", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
 });
 
+test("signs in with a one-time code without changing the workspace role", async ({ page }) => {
+  let signedIn = false;
+  let consumedToken = "";
+  await page.route("**/api/me", async (route) => {
+    if (signedIn) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 401, json: { error: "authentication required" } });
+  });
+  await page.route("**/api/auth/magic/consume", async (route) => {
+    const body = route.request().postDataJSON() as { token?: string };
+    consumedToken = body.token || "";
+    signedIn = true;
+    await route.fulfill({ status: 200, json: { user: {}, session: {}, token: "session" } });
+  });
+
+  await page.goto("/app");
+  await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
+  await expect(page.getByText("Sign in to continue to your workspaces.")).toBeVisible();
+  await expect(
+    page.getByText("Existing members keep their assigned workspace role."),
+  ).toBeVisible();
+  await expect(page.getByText(/guest room/i)).toHaveCount(0);
+
+  await page.getByRole("textbox", { name: "One-time sign-in code" }).fill("mgt_owner_test");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect.poll(() => consumedToken).toBe("mgt_owner_test");
+  await expect(page.getByRole("heading", { name: "#general" })).toBeVisible();
+});
+
 test("shows realtime connection state in the shell", async ({ page }) => {
   await page.goto("/app");
   await expect(page.locator('.shell[data-connected="true"]')).toBeVisible();
