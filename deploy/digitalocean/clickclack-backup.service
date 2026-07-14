@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up ClickClack SQLite data
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/clickclack-backup

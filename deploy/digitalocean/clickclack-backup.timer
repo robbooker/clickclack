@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ClickClack backup daily
+
+[Timer]
+OnCalendar=*-*-* 07:15:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
