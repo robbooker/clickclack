@@ -99,6 +99,35 @@ or source control.
 OpenClaw is not required for human chat. Add Buddy later as a scoped bot token
 after the human workflow is accepted.
 
+## Buddy media connector
+
+OpenClaw `2026.7.1` ships a ClickClack connector that delivers text but drops
+generated `mediaUrl` and `mediaUrls` payloads. The checked-in media patch adds
+multipart upload and message attachment delivery for local files and public
+URLs. It patches Buddy's installed connector, not the ClickClack application
+binary or an upstream repository.
+
+Copy the patch to Buddy, apply it as the `openclaw` service user, validate the
+plugin, and restart the gateway:
+
+```sh
+scp -i ~/.ssh/longboard-bot \
+  deploy/digitalocean/patch-openclaw-clickclack-media.mjs \
+  root@45.55.64.14:/opt/patch-openclaw-clickclack-media.mjs
+
+ssh -i ~/.ssh/longboard-bot root@45.55.64.14
+plugin_dir=$(dirname "$(find /home/openclaw/.openclaw/npm/projects \
+  -path '*/node_modules/@openclaw/clickclack/package.json' -print -quit)")
+runuser -u openclaw -- node /opt/patch-openclaw-clickclack-media.mjs "$plugin_dir"
+systemctl restart openclaw
+systemctl is-active openclaw
+```
+
+The patch is idempotent and leaves a sibling `.pre-clickclack-media-attachments-v1`
+backup. It deliberately fails if a future connector bundle no longer matches
+the tested structure. Recheck whether the connector has gained native media
+support before reapplying it after an OpenClaw plugin upgrade.
+
 ## Checks
 
 ```sh
