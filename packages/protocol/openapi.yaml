@@ -1062,6 +1062,29 @@ paths:
       responses:
         "200":
           description: Search results
+  /api/link-preview:
+    get:
+      operationId: getLinkPreview
+      description: Fetches bounded Open Graph metadata for a public HTTP or HTTPS URL.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 2048
+            format: uri
+      responses:
+        "200":
+          description: Link preview metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkPreviewResponse"
+        "204":
+          description: The public page has no usable preview metadata or could not be fetched
+        "400":
+          description: The URL is invalid or targets a non-public network address
   /api/uploads:
     post:
       operationId: createUpload
@@ -2168,6 +2191,28 @@ components:
       properties:
         message:
           $ref: "#/components/schemas/Message"
+    LinkPreview:
+      type: object
+      required: [url, title, site_name]
+      properties:
+        url:
+          type: string
+          format: uri
+        title:
+          type: string
+        description:
+          type: string
+        site_name:
+          type: string
+        image_url:
+          type: string
+          format: uri
+    LinkPreviewResponse:
+      type: object
+      required: [preview]
+      properties:
+        preview:
+          $ref: "#/components/schemas/LinkPreview"
     Upload:
       type: object
       required: [id, workspace_id, owner_id, filename, content_type, byte_size, created_at]

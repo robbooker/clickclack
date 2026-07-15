@@ -456,6 +456,79 @@ test("shows realtime connection state in the shell", async ({ page }) => {
   ).toContainText("Active");
 });
 
+test("renders a bounded Open Graph link preview card", async ({ page }) => {
+  const workspacesResponse = await page.request.get("/api/workspaces");
+  const workspaces = (await workspacesResponse.json()) as {
+    workspaces: { id: string; route_id: string }[];
+  };
+  const workspace = workspaces.workspaces[0];
+  const channelResponse = await page.request.post(`/api/workspaces/${workspace.id}/channels`, {
+    data: { name: `zz-link-preview-${Date.now()}`, kind: "public" },
+  });
+  expect(channelResponse.ok()).toBe(true);
+  const { channel } = (await channelResponse.json()) as {
+    channel: { id: string; route_id: string };
+  };
+  const body = "Chart setup: `https://ignored.example/code` https://charts.example/setup).";
+  const messageResponse = await page.request.post(`/api/channels/${channel.id}/messages`, {
+    data: { body },
+  });
+  expect(messageResponse.ok()).toBe(true);
+
+  let requestedPreviewURL = "";
+  await page.route("https://images.example/preview.png", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  });
+  await page.route("**/api/link-preview?**", async (route) => {
+    requestedPreviewURL = new URL(route.request().url()).searchParams.get("url") || "";
+    await route.fulfill({
+      status: 200,
+      json: {
+        preview: {
+          url: "https://charts.example/setup",
+          title: "NASDAQ:TEST Chart Image",
+          description: "A concise chart preview for the active setup.",
+          site_name: "Example Charts",
+          image_url: "https://images.example/preview.png",
+        },
+      },
+    });
+  });
+
+  await page.goto(`/app/${workspace.route_id}/${channel.route_id}`);
+  await waitForAppReady(page);
+  const card = page.getByRole("link", { name: "Open link preview: NASDAQ:TEST Chart Image" });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("Example Charts");
+  await expect(card).toContainText("A concise chart preview for the active setup.");
+  await expect(card.locator("img")).toHaveAttribute("src", "https://images.example/preview.png");
+  expect(requestedPreviewURL).toBe("https://charts.example/setup");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      card.evaluate((element) => ({
+        cardRight: element.getBoundingClientRect().right,
+        viewportWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      })),
+    )
+    .toMatchObject({ viewportWidth: 390, scrollWidth: 390 });
+  const geometry = await card.evaluate((element) => ({
+    left: element.getBoundingClientRect().left,
+    right: element.getBoundingClientRect().right,
+  }));
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(390);
+});
+
 test("coalesces durable agent activity and applies activity preferences", async ({ page }) => {
   const meResponse = await page.request.get("/api/me");
   const me = (await meResponse.json()) as { user: { id: string } };

@@ -5,6 +5,7 @@
   import { uploadURL } from "../../lib/uploads";
   import type { Message, Upload } from "../../lib/types";
   import MediaAttachment from "../MediaAttachment.svelte";
+  import LinkPreviewCard from "./LinkPreviewCard.svelte";
   import QuoteBlock from "./QuoteBlock.svelte";
   import PreambleBlock from "./PreambleBlock.svelte";
 
@@ -130,6 +131,7 @@
     {:else}
     <QuoteBlock {message} onJump={onJumpToQuote} />
     <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(message.body)}</div>
+    <LinkPreviewCard body={message.body} />
     {#if message.attachments?.length}
       <div class="attachment-grid" aria-label="Attachments">
         {#each message.attachments as attachment (attachment.id)}

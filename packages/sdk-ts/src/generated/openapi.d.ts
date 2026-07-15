@@ -791,6 +791,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/link-preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Fetches bounded Open Graph metadata for a public HTTP or HTTPS URL. */
+    get: operations["getLinkPreview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/uploads": {
     parameters: {
       query?: never;
@@ -1421,6 +1438,18 @@ export interface components {
     };
     MessageResponse: {
       message: components["schemas"]["Message"];
+    };
+    LinkPreview: {
+      /** Format: uri */
+      url: string;
+      title: string;
+      description?: string;
+      site_name: string;
+      /** Format: uri */
+      image_url?: string;
+    };
+    LinkPreviewResponse: {
+      preview: components["schemas"]["LinkPreview"];
     };
     Upload: {
       id: string;
@@ -3281,6 +3310,42 @@ export interface operations {
     responses: {
       /** @description Search results */
       200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getLinkPreview: {
+    parameters: {
+      query: {
+        url: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Link preview metadata */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LinkPreviewResponse"];
+        };
+      };
+      /** @description The public page has no usable preview metadata or could not be fetched */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The URL is invalid or targets a non-public network address */
+      400: {
         headers: {
           [name: string]: unknown;
         };

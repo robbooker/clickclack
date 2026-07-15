@@ -36,6 +36,8 @@ type Server struct {
 	pushNotifier   PushNotifier
 	metrics        *metricsRegistry
 	build          buildMetadata
+	linkPreviews   *linkPreviewCache
+	previewFetcher func(context.Context, string) (linkPreview, error)
 }
 
 const (
@@ -93,6 +95,8 @@ func New(st store.Store, hub *realtime.Hub, options Options) *Server {
 		disableDevAuth: options.DisableDevAuth,
 		pushNotifier:   options.PushNotifier,
 		metrics:        metrics,
+		linkPreviews:   newLinkPreviewCache(256, 6*time.Hour),
+		previewFetcher: fetchLinkPreview,
 		build: buildMetadata{
 			Environment: options.Environment,
 			Version:     options.Version,
@@ -177,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/realtime/ephemeral", s.publishEphemeral)
 		r.Get("/realtime/ws", s.websocket)
 		r.Get("/search", s.search)
+		r.Get("/link-preview", s.getLinkPreview)
 		r.Post("/uploads", s.createUpload)
 		r.Get("/uploads/by-nonce", s.getUploadByNonce)
 		r.Get("/uploads/{upload_id}", s.getUpload)

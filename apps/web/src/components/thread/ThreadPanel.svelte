@@ -7,6 +7,7 @@
   import type { Message, ThreadState, Upload, User } from "../../lib/types";
   import ChatComposer from "../composer/ChatComposer.svelte";
   import MediaAttachment from "../MediaAttachment.svelte";
+  import LinkPreviewCard from "../messages/LinkPreviewCard.svelte";
   import QuoteBlock from "../messages/QuoteBlock.svelte";
 
   type Props = {
@@ -129,6 +130,7 @@
         <div class="message-deleted">This message was deleted.</div>
       {:else}
         <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(root.body)}</div>
+        <LinkPreviewCard body={root.body} />
       {/if}
       {#if !root.deleted_at && root.attachments?.length}
         <div class="attachment-grid compact" aria-label="Attachments">
@@ -193,6 +195,7 @@
           {:else}
             <QuoteBlock message={reply} onJump={onJumpToQuote} />
             <div class="markdown" use:enhanceMarkdownGifs>{@html markdown(reply.body)}</div>
+            <LinkPreviewCard body={reply.body} />
           {/if}
           {#if !reply.deleted_at && reply.attachments?.length}
             <div class="attachment-grid compact" aria-label="Attachments">

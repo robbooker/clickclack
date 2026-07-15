@@ -127,6 +127,14 @@ export type Upload = {
   created_at: string;
 };
 
+export type LinkPreview = {
+  url: string;
+  title: string;
+  description?: string;
+  site_name: string;
+  image_url?: string;
+};
+
 export type SearchResult = {
   message: Message;
   rank: number;
